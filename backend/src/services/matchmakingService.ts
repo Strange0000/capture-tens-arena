@@ -145,8 +145,10 @@ export class MatchmakingService {
       seat,
       userId: player.userId,
       username: player.username,
+      socketId: player.socketId,
       connected: true,
-      isBot: false
+      isBot: !!(player as any).isBot,
+      botDifficulty: (player as any).botDifficulty
     }));
   }
 }

@@ -53,9 +53,33 @@ class _GameScreenState extends State<GameScreen> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('$selector selected ${match.powerSuit!.toUpperCase()} as the Power Suit!'),
-            backgroundColor: const Color(0xFF30B89C),
-            duration: const Duration(seconds: 3),
+            elevation: 0,
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.transparent,
+            content: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF101826).withOpacity(0.85),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFF30B89C).withOpacity(0.5)),
+                boxShadow: [
+                  BoxShadow(color: const Color(0xFF30B89C).withOpacity(0.2), blurRadius: 20, spreadRadius: 2),
+                ],
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.flash_on, color: Color(0xFFFFC857)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      '$selector selected ${match.powerSuit!.toUpperCase()} as the Power Suit!',
+                      style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            duration: const Duration(seconds: 4),
           ),
         );
       });
