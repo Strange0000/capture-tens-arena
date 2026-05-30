@@ -77,6 +77,24 @@ export class MatchmakingService {
     return room.length === 4 ? room : undefined;
   }
 
+  startRoomWithBots(code: string, difficulty: "easy" | "medium" | "hard" = "medium"): QueuePlayer[] {
+    const room = this.rooms.get(code);
+    if (!room) throw new Error("Room not found");
+    const botNames = ["Vector", "Nova", "Cipher"];
+    while (room.length < 4) {
+      room.push({
+        userId: `bot-${nanoid(4)}`,
+        username: botNames[room.length - 1] || "Bot",
+        socketId: "bot",
+        mmr: 0,
+        isBot: true,
+        botDifficulty: difficulty
+      } as any);
+    }
+    this.rooms.delete(code);
+    return room;
+  }
+
   createParty(owner: QueuePlayer) {
     const id = nanoid(8);
     this.parties.set(id, [owner]);

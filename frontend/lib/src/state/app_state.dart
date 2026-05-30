@@ -19,7 +19,7 @@ class AppState extends ChangeNotifier {
     //           2) --dart-define=BACKEND_URL
     //           3) ?backend= query parameter
     //           4) localhost fallback
-    String url = 'http://localhost:8080';
+    String url = 'https://capture-tens-arena.onrender.com';
 
     // Read from JavaScript global (set by backend_config.js)
     try {
@@ -32,13 +32,13 @@ class AppState extends ChangeNotifier {
     } catch (_) {}
 
     // Fallback to dart-define
-    if (url == 'http://localhost:8080') {
+    if (url == 'https://capture-tens-arena.onrender.com') {
       const envUrl = String.fromEnvironment('BACKEND_URL');
       if (envUrl.isNotEmpty) url = envUrl;
     }
 
     // Fallback to query parameter
-    if (url == 'http://localhost:8080' &&
+    if (url == 'https://capture-tens-arena.onrender.com' &&
         Uri.base.queryParameters['backend'] != null) {
       url = Uri.base.queryParameters['backend']!;
     }
@@ -357,6 +357,12 @@ class AppState extends ChangeNotifier {
 
   void joinRoom(String code) {
     socket.joinRoom(code);
+  }
+
+  void startRoomWithBots() {
+    if (roomCode != null) {
+      socket.startRoomWithBots(roomCode!);
+    }
   }
 
   void selectPower(String suit) {

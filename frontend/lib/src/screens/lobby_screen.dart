@@ -172,6 +172,21 @@ class _LobbyScreenState extends State<LobbyScreen>
                       app.roomCode != null) ...[
                     _RoomBanner(code: app.roomCode!),
                     const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF30B89C),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      onPressed: () {
+                        app.startRoomWithBots();
+                        Navigator.pushNamed(context, '/matchmaking');
+                      },
+                      icon: const Icon(Icons.smart_toy, size: 20),
+                      label: const Text('Start with Bots', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                    const SizedBox(height: 12),
                   ],
 
                   // ── Main actions ──────────────────────────────────────

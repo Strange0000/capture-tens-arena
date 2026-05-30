@@ -157,6 +157,15 @@ export function registerGameSockets(io: Server) {
       }
     });
 
+    socket.on("room:startWithBots", ({ code }: { code: string }) => {
+      try {
+        const group = matchmaking.startRoomWithBots(code.toUpperCase(), "hard");
+        if (group) startMatch(io, matchmaking.toSeats(group), "private");
+      } catch (err: any) {
+        socket.emit("error", { message: err.message });
+      }
+    });
+
     socket.on("bot:offline", ({ difficulty = "medium" }: { difficulty?: "easy" | "medium" | "hard" }) => {
       // If user is already in a match, clean it up first
       const existing = matchStore.findByUser(userId);

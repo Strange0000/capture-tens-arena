@@ -73,6 +73,8 @@ class SocketService {
 
   void joinRoom(String code) => _emit('room:join', {'code': code.toUpperCase()});
 
+  void startRoomWithBots(String code) => _emit('room:startWithBots', {'code': code});
+
   void inviteToParty(String targetUserId) => _emit('party:invite', {'targetUserId': targetUserId});
   
   void acceptPartyInvite(String partyId) => _emit('party:accept', {'partyId': partyId});
