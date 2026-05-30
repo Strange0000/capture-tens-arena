@@ -12,7 +12,7 @@ export const usersRouter = Router();
 usersRouter.get("/me", requireAuth, async (req, res, next) => {
   if (env.OFFLINE_DEV_MODE) {
     const rank = rankForMmr(0);
-    return res.json({ user: req.user, ranking: { mmr: 0, ...rank, wins: 0, losses: 0, peakMmr: 0 }, statistics: null });
+    return res.json({ user: req.user, ranking: { ...rank, wins: 0, losses: 0, peakMmr: 0 }, statistics: null });
   }
   try {
     const [ranking, statistics] = await Promise.all([
@@ -27,17 +27,15 @@ usersRouter.get("/me", requireAuth, async (req, res, next) => {
     res.json({
       user: req.user,
       ranking: ranking ? {
-        mmr: ranking.mmr,
+        ...rank,
         peakMmr: ranking.peakMmr ?? ranking.mmr,
         wins: ranking.wins,
         losses: ranking.losses,
-        ...rank,
       } : {
-        mmr: 0,
+        ...rank,
         peakMmr: 0,
         wins: 0,
         losses: 0,
-        ...rank,
       },
       statistics,
       season: currentSeason(),
@@ -72,10 +70,9 @@ usersRouter.get("/leaderboard", async (_req, res, next) => {
     const leaders = await RankingModel.find({ season: currentSeason() }).sort({ mmr: -1 }).limit(100);
     const enriched = leaders.map(l => ({
       userId: l.userId,
-      mmr: l.mmr,
+      ...rankForMmr(l.mmr),
       wins: l.wins,
       losses: l.losses,
-      ...rankForMmr(l.mmr),
     }));
     res.json({ season: currentSeason(), leaders: enriched });
   } catch (error) {
