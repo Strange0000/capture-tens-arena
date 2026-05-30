@@ -72,6 +72,7 @@ class MatchCaptures {
 class MatchPlayer {
   const MatchPlayer({
     required this.seat,
+    required this.userId,
     required this.username,
     required this.team,
     required this.cardCount,
@@ -80,6 +81,7 @@ class MatchPlayer {
   });
 
   final int seat;
+  final String userId;
   final String username;
   final String team;
   final int cardCount;
@@ -89,6 +91,7 @@ class MatchPlayer {
   factory MatchPlayer.fromJson(Map<String, dynamic> json) {
     return MatchPlayer(
       seat: json['seat'] as int,
+      userId: json['userId'] as String? ?? '',
       username: json['username'] as String,
       team: json['team'] as String,
       cardCount: json['cardCount'] as int,
@@ -107,6 +110,7 @@ class MatchState {
     required this.currentTurnSeat,
     required this.captures,
     required this.completedTricksCount,
+    required this.firstPlayerSeat,
     this.powerSuit,
     this.winnerTeam,
     this.currentTrick,
@@ -126,6 +130,7 @@ class MatchState {
   final CurrentTrick? currentTrick;
   final MatchCaptures captures;
   final int completedTricksCount;
+  final int firstPlayerSeat;
   final int? turnDeadline;
   final String? lastTrickWinner;
 
@@ -205,6 +210,7 @@ class MatchState {
           ? MatchCaptures.fromJson(json['captures'] as Map<String, dynamic>)
           : MatchCaptures.empty,
       completedTricksCount: tricks.length,
+      firstPlayerSeat: json['firstPlayerSeat'] as int? ?? 0,
       turnDeadline: json['turnDeadline'] as int?,
       lastTrickWinner: lastWinner,
     );

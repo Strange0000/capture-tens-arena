@@ -1,4 +1,5 @@
 import { RankingModel } from "../models/Ranking.js";
+import { env } from "../config/env.js";
 
 export interface TierDef {
   name: string;
@@ -84,7 +85,7 @@ export function calculateMmr(current: number, opponent: number, won: boolean) {
 const offlineMmrStore = new Map<string, number>();
 
 export async function applyRankedResult(userId: string, season: string, opponentAverage: number, won: boolean) {
-  if (process.env.OFFLINE_DEV_MODE === "true") {
+  if (env.OFFLINE_DEV_MODE) {
     const oldMmr = offlineMmrStore.get(userId) ?? 0;
     const newMmr = calculateMmr(oldMmr, opponentAverage, won);
     offlineMmrStore.set(userId, newMmr);

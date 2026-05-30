@@ -61,7 +61,7 @@ export function registerGameSockets(io: Server) {
           console.log(`[RankedQueue] Timeout fired for user ${userId}. InQueue: ${matchmaking.isUserInRankedQueue(userId)}`);
           if (!matchmaking.isUserInRankedQueue(userId)) return;
           
-          matchmaking.removeFromQueue(userId);
+          for (const p of party) matchmaking.removeFromQueue(p.userId);
           const seats: PlayerSeat[] = [];
           
           if (party.length === 2) {
@@ -188,9 +188,18 @@ export function registerGameSockets(io: Server) {
           const result = await applyRankedResult(userId, currentSeason(), 0, false);
           socket.emit("rank:updated", result);
         }
-        matchStore.delete(state.id);
+        const player = state.players.find(p => p.userId === userId);
+        if (player) {
+          player.connected = false;
+          player.isBot = true;
+          player.botDifficulty = "medium";
+        }
         socket.leave(`match:${state.id}`);
         io.to(`match:${state.id}`).emit("match:abandoned", { userLeft: userId });
+        matchStore.set(state);
+        if (state.phase === "playing" && state.currentTurnSeat === player?.seat) {
+          maybeBotTurn(io, state.id);
+        }
       }
     });
 
@@ -488,7 +497,6 @@ function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, 
     let cardToPlay = legalCards[0];
     
     try {
-      state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
       const result = playCard(state, expectedSeat, cardToPlay.id);
       matchStore.set(state);
       broadcastState(io, matchId);

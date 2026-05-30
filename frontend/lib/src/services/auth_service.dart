@@ -172,7 +172,7 @@ class AuthService {
 
   Future<List<Map<String, dynamic>>> searchUsers(String token, String query) async {
     final response = await http.get(
-      Uri.parse('$baseUrl/users/search?q=$query'),
+      Uri.parse('$baseUrl/users/search').replace(queryParameters: {'q': query}),
       headers: _authHeaders(token),
     );
     if (response.statusCode >= 400) throw Exception('Search failed');

@@ -18,7 +18,7 @@ class ArenaCardWidget extends StatefulWidget {
 
   final ArenaCard card;
   final String? powerSuit;
-  final VoidCallback onPlay;
+  final VoidCallback? onPlay;
   final bool dimmed;
   final bool small;
   final bool faceDown;

@@ -266,7 +266,7 @@ class ProfileScreen extends StatelessWidget {
                     onPressed: () async {
                       await app.logout();
                       if (context.mounted) {
-                        Navigator.pushNamedAndRemoveUntil(context, '/login', (r) => false);
+                        Navigator.pushNamedAndRemoveUntil(context, '/', (r) => false);
                       }
                     },
                     icon: const Icon(Icons.logout),

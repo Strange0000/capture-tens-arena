@@ -55,9 +55,9 @@ class _LobbyScreenState extends State<LobbyScreen>
     // Show errors
     if (app.errorMessage != null) {
       final msg = app.errorMessage!;
-      app.clearError();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted) return;
+        app.clearError();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(msg),
@@ -329,9 +329,8 @@ class _LobbyScreenState extends State<LobbyScreen>
           ),
           ElevatedButton(
             onPressed: () {
-              // we temporarily store it back to accept
-              app.pendingPartyInvite = invite;
-              app.acceptPartyInvite();
+              final partyId = invite['partyId'] as String?;
+              if (partyId != null) app.socket.acceptPartyInvite(partyId);
               Navigator.pop(context);
             },
             child: const Text('Accept'),

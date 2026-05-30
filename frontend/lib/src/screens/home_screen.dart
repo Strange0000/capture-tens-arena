@@ -33,10 +33,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (app.errorMessage != null) {
+      final msg = app.errorMessage!;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(app.errorMessage!), backgroundColor: Colors.redAccent),
+          SnackBar(content: Text(msg), backgroundColor: Colors.redAccent),
         );
         app.clearError();
       });

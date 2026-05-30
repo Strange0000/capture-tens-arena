@@ -55,7 +55,7 @@ class SocketService {
   }
 
   void disconnect() {
-    _socket?.disconnect();
+    _socket?.dispose();
     _socket = null;
   }
 

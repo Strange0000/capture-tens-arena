@@ -116,6 +116,7 @@ export function startNextTrick(state: MatchState): MatchState {
 export function publicStateForSeat(state: MatchState, viewerSeat?: number) {
   return {
     id: state.id,
+    mode: state.mode,
     phase: state.phase,
     players: state.players.map((player) => ({
       seat: player.seat,
@@ -136,7 +137,8 @@ export function publicStateForSeat(state: MatchState, viewerSeat?: number) {
       B: { tens: state.captures.B.tens.length, tenCards: state.captures.B.tens, cards: state.captures.B.cards.length, aces: state.captures.B.aces.length }
     },
     winnerTeam: state.winnerTeam,
-    turnDeadline: state.turnDeadline
+    turnDeadline: state.turnDeadline,
+    firstPlayerSeat: state.firstPlayerSeat
   };
 }
 

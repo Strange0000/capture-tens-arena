@@ -349,6 +349,8 @@ class AppState extends ChangeNotifier {
 
   void startOffline(String difficulty) {
     socket.startOffline(difficulty);
+    lobbyStatus = LobbyStatus.inMatch;
+    notifyListeners();
   }
 
   void createRoom() {
@@ -391,7 +393,7 @@ class AppState extends ChangeNotifier {
   String get myTeam {
     if (match == null || userId == null) return 'A';
     final player = match!.players.firstWhere(
-      (p) => p.username == username,
+      (p) => p.userId == userId,
       orElse: () => match!.players.first,
     );
     return player.team;

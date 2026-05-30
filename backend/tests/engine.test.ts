@@ -11,21 +11,21 @@ const players = [0, 1, 2, 3].map((seat) => ({
 
 describe("engine lifecycle", () => {
   it("deals in required phases", () => {
-    const state = dealFirstFive(createMatch(players, 42));
+    const state = dealFirstFive(createMatch(players, "casual", 42));
     expect(Object.values(state.hands).map((hand) => hand.length)).toEqual([5, 5, 5, 5]);
-    selectPowerSuit(state, 0, "spades");
+    selectPowerSuit(state, state.firstPlayerSeat, "spades");
     dealRemainingCards(state);
     expect(Object.values(state.hands).map((hand) => hand.length)).toEqual([13, 13, 13, 13]);
     expect(state.phase).toBe("playing");
   });
 
   it("plays a legal opening card", () => {
-    const state = dealFirstFive(createMatch(players, 99));
-    selectPowerSuit(state, 0, "clubs");
+    const state = dealFirstFive(createMatch(players, "casual", 99));
+    selectPowerSuit(state, state.firstPlayerSeat, "clubs");
     dealRemainingCards(state);
-    const legal = state.hands[0].find((card) => card.rank !== "10" && card.suit !== "clubs")!;
-    const result = playCard(state, 0, legal.id);
+    const legal = state.hands[state.firstPlayerSeat].find((card) => card.rank !== "10" && card.suit !== "clubs")!;
+    const result = playCard(state, state.firstPlayerSeat, legal.id);
     expect(result.state.currentTrick?.plays).toHaveLength(1);
-    expect(result.state.hands[0]).toHaveLength(12);
+    expect(result.state.hands[state.firstPlayerSeat]).toHaveLength(12);
   });
 });

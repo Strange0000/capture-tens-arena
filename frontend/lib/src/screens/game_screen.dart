@@ -46,12 +46,12 @@ class _GameScreenState extends State<GameScreen> {
     }
     _lastTrickCount = match.completedTricksCount;
 
-    // Show errors
+    // Error snackbar
     if (app.errorMessage != null) {
       final msg = app.errorMessage!;
-      app.clearError();
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
+        if (!context.mounted) return;
+        app.clearError();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(msg),
@@ -223,19 +223,18 @@ class _GameScreenState extends State<GameScreen> {
                   ),
                 ),
 
-                SizedBox(
-                  height: 160,
-                  child: match.phase == 'power-select'
-                      ? (match.players.firstWhere((p) => p.userId == app.userId, orElse: () => match.players.first).seat == match.firstPlayerSeat)
-                          ? PowerSuitPicker(onSelect: app.selectPower)
-                          : Center(
-                              child: Text(
-                                'Waiting for ${match.players.firstWhere((p) => p.seat == match.firstPlayerSeat).username} to select Power Suit...',
-                                style: const TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.bold),
-                              ),
-                            )
-                      : const SizedBox.shrink(),
-                ),
+                if (match.phase == 'power-select')
+                  SizedBox(
+                    height: 160,
+                    child: (match.players.firstWhere((p) => p.userId == app.userId, orElse: () => match.players.first).seat == match.firstPlayerSeat)
+                        ? PowerSuitPicker(onSelect: app.selectPower)
+                        : Center(
+                            child: Text(
+                              'Waiting for ${match.players.firstWhere((p) => p.seat == match.firstPlayerSeat).username} to select Power Suit...',
+                              style: const TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                  ),
 
                 SizedBox(
                   height: 110,
@@ -437,7 +436,7 @@ class _HandArea extends StatelessWidget {
         final cardWidget = ArenaCardWidget(
           card: card,
           powerSuit: match.powerSuit,
-          onPlay: isMyTurn ? () => app.playCard(card.id) : () {},
+          onPlay: isMyTurn ? () => app.playCard(card.id) : null,
           dimmed: !isMyTurn,
         );
 
@@ -452,7 +451,7 @@ class _HandArea extends StatelessWidget {
               child: ArenaCardWidget(
                 card: card,
                 powerSuit: match.powerSuit,
-                onPlay: () {},
+                onPlay: null,
                 dimmed: false,
               ),
             ),
