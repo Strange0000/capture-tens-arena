@@ -222,13 +222,20 @@ class _GameScreenState extends State<GameScreen> {
                   myTeam: app.myTeam,
                   rankUpdate: app.lastRankUpdate,
                   onPlayAgain: () async {
+                    final mode = match.mode;
                     app.leaveMatch();
-                    await app.bootGuest();
                     setState(() {
                       _showDealAnimation = true;
                       _lastTrickCount = 0;
                     });
-                    app.startOffline('hard');
+                    if (mode == 'offline') {
+                      app.startOffline('hard');
+                    } else if (mode == 'ranked') {
+                      app.queueRanked();
+                      if (context.mounted) Navigator.pushReplacementNamed(context, '/matchmaking');
+                    } else {
+                      if (context.mounted) Navigator.pushReplacementNamed(context, '/lobby');
+                    }
                   },
                   onHome: () {
                     app.leaveMatch();

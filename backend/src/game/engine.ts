@@ -14,7 +14,7 @@ export function createMatch(players: PlayerSeat[], mode: MatchMode = "casual", s
   }
 
   const deck = shuffleDeck(createDeck(), seed);
-    const firstPlayerSeat = seed % 4;
+    const firstPlayerSeat = mode === "offline" ? 0 : (seed % 4);
     return {
       id: nanoid(12),
       mode,
