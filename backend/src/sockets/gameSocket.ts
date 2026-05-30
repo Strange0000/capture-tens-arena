@@ -226,6 +226,11 @@ export function registerGameSockets(io: Server) {
         const state = requireMatch(matchId);
         const seat = seatForUser(state.players, userId);
         const result = playCard(state, seat, cardId);
+        
+        if (!result.trickCompleted) {
+          state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+        }
+        
         matchStore.set(state);
         broadcastState(io, state.id);
         persistIfComplete(io, state);
@@ -498,6 +503,11 @@ function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, 
     
     try {
       const result = playCard(state, expectedSeat, cardToPlay.id);
+      
+      if (!result.trickCompleted) {
+        state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+      }
+      
       matchStore.set(state);
       broadcastState(io, matchId);
       persistIfComplete(io, state);
@@ -518,9 +528,9 @@ function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, 
         }, 2000);
       } else {
         maybeBotTurn(io, matchId);
-        if (state.phase === "playing" && !state.players[state.currentTurnSeat].isBot) {
-           scheduleTurnTimeout(io, matchId, state.currentTurnSeat, state.turnDeadline);
-        }
+         if (state.phase === "playing" && !state.players[state.currentTurnSeat].isBot) {
+            scheduleTurnTimeout(io, matchId, state.currentTurnSeat, state.turnDeadline!);
+         }
       }
     } catch (err) {
       console.error("Auto-play timeout error", err);
