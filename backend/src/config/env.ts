@@ -15,7 +15,7 @@ const envSchema = z.object({
   TURN_TIMEOUT_MS: z.coerce.number().default(18000),
   DISCONNECT_GRACE_MS: z.coerce.number().default(60000),
   BOT_THINK_MS: z.coerce.number().default(900),
-  OFFLINE_DEV_MODE: z.string().transform((val) => val.toLowerCase() === "true").default("false")
+  OFFLINE_DEV_MODE: z.string().transform((val) => val.toLowerCase() === "true").default("true")
 });
 
 export const env = envSchema.parse(process.env);

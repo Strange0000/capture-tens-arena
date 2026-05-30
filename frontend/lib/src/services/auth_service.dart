@@ -19,7 +19,7 @@ class GuestSession {
 
 class AuthService {
   AuthService({String? baseUrl}) 
-    : baseUrl = baseUrl ?? 'http://localhost:8080';
+    : baseUrl = baseUrl ?? 'https://capture-tens-arena.onrender.com';
 
   final String baseUrl;
 
