@@ -12,7 +12,7 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().optional(),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX: z.coerce.number().default(120),
-  TURN_TIMEOUT_MS: z.coerce.number().default(18000),
+  TURN_TIMEOUT_MS: z.coerce.number().default(45000),
   DISCONNECT_GRACE_MS: z.coerce.number().default(60000),
   BOT_THINK_MS: z.coerce.number().default(900),
   OFFLINE_DEV_MODE: z.string().transform((val) => val.toLowerCase() === "true").default("true")

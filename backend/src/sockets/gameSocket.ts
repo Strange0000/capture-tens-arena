@@ -470,8 +470,7 @@ async function broadcastFriendStatus(io: Server, userId: string, status: "online
 }
 
 function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, deadline: number) {
-  const waitMs = deadline - Date.now();
-  if (waitMs <= 0) return;
+  const waitMs = Math.max(0, deadline - Date.now());
   
   setTimeout(() => {
     const state = matchStore.get(matchId);
