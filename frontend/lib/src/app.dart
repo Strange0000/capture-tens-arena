@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'screens/game_screen.dart';
 import 'screens/lobby_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/matchmaking_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/replay_screen.dart';
 import 'theme.dart';
@@ -22,6 +23,7 @@ class CaptureTensApp extends StatelessWidget {
           '/': (_) => const LoginScreen(),
           '/lobby': (_) => const LobbyScreen(),
           '/game': (_) => const GameScreen(),
+          '/matchmaking': (_) => const MatchmakingScreen(),
           '/profile': (_) => const ProfileScreen(),
           '/replay': (_) => const ReplayScreen(),
         };

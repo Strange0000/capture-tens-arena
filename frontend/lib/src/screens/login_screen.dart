@@ -92,14 +92,22 @@ class _LoginScreenState extends State<LoginScreen>
         children: [
           // Premium background image
           Positioned.fill(
-            child: Container(
-              decoration: const BoxDecoration(
-                image: DecorationImage(
-                  image: AssetImage('assets/images/game_table_bg.png'),
-                  fit: BoxFit.cover,
+            child: Image.asset('assets/images/login_bg.png', fit: BoxFit.cover),
+          ),
+          // Dark glass overlay
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    const Color(0xFF070B13).withOpacity(0.55),
+                    const Color(0xFF070B13).withOpacity(0.80),
+                    const Color(0xFF070B13).withOpacity(0.92),
+                  ],
                 ),
               ),
-              child: ColoredBox(color: Colors.black.withOpacity(0.5)), // Darken for readability
             ),
           ),
 

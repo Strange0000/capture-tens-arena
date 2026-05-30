@@ -53,7 +53,7 @@ class _GameScreenState extends State<GameScreen> {
     return Container(
       decoration: const BoxDecoration(
         image: DecorationImage(
-          image: AssetImage('assets/images/game_table_bg.png'),
+          image: AssetImage('assets/images/game_bg.png'),
           fit: BoxFit.cover,
         ),
       ),
@@ -71,20 +71,14 @@ class _GameScreenState extends State<GameScreen> {
           ),
           leadingWidth: 80,
           leading: TextButton.icon(
-            onPressed: () {
-              app.leaveMatch();
-              Navigator.of(context).popUntil((r) => r.isFirst);
-            },
+            onPressed: () => _confirmQuit(context, app),
             icon: const Icon(Icons.exit_to_app, color: Colors.redAccent, size: 18),
             label: const Text('QUIT', style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
           ),
           actions: [
             if (match.players.any((p) => p.isBot) && match.mode != 'ranked')
               TextButton.icon(
-                onPressed: () {
-                  app.leaveMatch(); // cleans up backend and frontend
-                  app.startOffline('hard'); // hardcode to hard for now, or just start a new bot match
-                },
+                onPressed: () => _confirmRestart(context, app),
                 icon: const Icon(Icons.refresh, color: Color(0xFFFFC857), size: 18),
                 label: const Text('RESTART', style: TextStyle(color: Color(0xFFFFC857), fontSize: 12, fontWeight: FontWeight.bold)),
               ),
@@ -252,6 +246,83 @@ class _GameScreenState extends State<GameScreen> {
         ),
       ),
     );
+  }
+  Future<void> _confirmQuit(BuildContext context, AppState app) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF101826),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(children: [
+          Icon(Icons.exit_to_app, color: Colors.redAccent, size: 22),
+          SizedBox(width: 10),
+          Text('Quit Match?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+        ]),
+        content: const Text(
+          'Are you sure you want to leave this match? Your progress will be lost.',
+          style: TextStyle(color: Colors.white60, fontSize: 14),
+        ),
+        actionsAlignment: MainAxisAlignment.end,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Stay', style: TextStyle(color: Color(0xFF48E5C2), fontWeight: FontWeight.w700)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Quit', style: TextStyle(fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      app.leaveMatch();
+      Navigator.of(context).popUntil((r) => r.isFirst);
+    }
+  }
+
+  Future<void> _confirmRestart(BuildContext context, AppState app) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF101826),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(children: [
+          Icon(Icons.refresh_rounded, color: Color(0xFFFFC857), size: 22),
+          SizedBox(width: 10),
+          Text('Restart Match?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+        ]),
+        content: const Text(
+          'This will end the current game and start a fresh bot match. Are you sure?',
+          style: TextStyle(color: Colors.white60, fontSize: 14),
+        ),
+        actionsAlignment: MainAxisAlignment.end,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w700)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFC857),
+              foregroundColor: const Color(0xFF070B13),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Restart', style: TextStyle(fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      app.leaveMatch();
+      app.startOffline('hard');
+    }
   }
 }
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
@@ -154,24 +155,31 @@ class _StaticBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: active ? const Color(0xFF48E5C2) : const Color(0xDD101826),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: !player.connected
-              ? Colors.redAccent.withOpacity(0.6)
-              : active
-                  ? const Color(0xFF48E5C2)
-                  : const Color(0xFFD4A017).withOpacity(0.15),
-          width: active ? 1.5 : 0.5,
+    final borderColor = !player.connected
+        ? Colors.redAccent.withOpacity(0.7)
+        : active
+            ? const Color(0xFF48E5C2)
+            : Colors.white.withOpacity(0.18);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: active
+                ? const Color(0xFF48E5C2).withOpacity(0.25)
+                : Colors.white.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderColor, width: active ? 1.5 : 1.0),
+            boxShadow: active
+                ? [BoxShadow(color: const Color(0xFF48E5C2).withOpacity(0.3), blurRadius: 16)]
+                : [],
+          ),
+          child: _BadgeContent(player: player, active: active),
         ),
-        boxShadow: active
-            ? [BoxShadow(color: const Color(0xFF48E5C2).withOpacity(0.2), blurRadius: 12)]
-            : [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4)],
       ),
-      child: _BadgeContent(player: player, active: active),
     );
   }
 }
@@ -220,25 +228,31 @@ class _TimedBadgeState extends State<_TimedBadge> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: const Color(0xFF48E5C2),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withOpacity(0.6)),
-            boxShadow: [BoxShadow(color: color.withOpacity(0.25), blurRadius: 10)],
+        ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.22),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: color.withOpacity(0.7), width: 1.5),
+                boxShadow: [BoxShadow(color: color.withOpacity(0.35), blurRadius: 18, spreadRadius: 1)],
+              ),
+              child: _BadgeContent(player: widget.player, active: true),
+            ),
           ),
-          child: _BadgeContent(player: widget.player, active: true),
         ),
-        const SizedBox(height: 5),
+        const SizedBox(height: 6),
         SizedBox(
-          width: 80,
+          width: 84,
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(3),
+            borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: _progress,
-              minHeight: 4,
-              backgroundColor: Colors.white.withOpacity(0.08),
+              minHeight: 5,
+              backgroundColor: Colors.white.withOpacity(0.1),
               valueColor: AlwaysStoppedAnimation<Color>(color),
             ),
           ),

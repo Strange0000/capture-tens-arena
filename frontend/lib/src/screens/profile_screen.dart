@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../models/rank_info.dart';
 import '../state/app_state.dart';
 
-
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
@@ -17,145 +16,265 @@ class ProfileScreen extends StatelessWidget {
     final tierColor = rank.color;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
+      backgroundColor: const Color(0xFF070B13),
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: const Text(
+          'Profile',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: 1),
+        ),
+      ),
+      body: Stack(
         children: [
-          // Avatar with tier glow
-          Center(
-            child: Container(
-              width: 90,
-              height: 90,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [tierColor, tierColor.withOpacity(0.4)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                boxShadow: [BoxShadow(color: tierColor.withOpacity(0.4), blurRadius: 24, spreadRadius: 4)],
-              ),
-              child: Center(
-                child: Text(
-                  (app.username ?? 'G')[0].toUpperCase(),
-                  style: const TextStyle(fontSize: 38, fontWeight: FontWeight.w900, color: Color(0xFF070B13)),
-                ),
-              ),
+          // Full page background
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/profile_bg.png',
+              fit: BoxFit.cover,
             ),
           ),
-          const SizedBox(height: 16),
-          Text(
-            app.username ?? 'Guest Player',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+          // Dark overlay for readability
+          Positioned.fill(
+            child: Container(color: const Color(0xFF070B13).withOpacity(0.65)),
           ),
-          const SizedBox(height: 6),
 
-          // Rank badge
-          Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              decoration: BoxDecoration(
-                color: tierColor.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: tierColor.withOpacity(0.4)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset(rank.icon, height: 24, width: 24),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${rank.displayName}  ·  ${rank.mmr} MMR',
-                    style: TextStyle(color: tierColor, fontSize: 13, fontWeight: FontWeight.w700),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Season ${rank.seasonDisplay}  ·  Peak ${rank.peakMmr} MMR',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500),
-          ),
-          const SizedBox(height: 20),
-
-          // MMR progress bar
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFF101826),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white10),
-            ),
-            child: Column(
+          // Scrollable content
+          SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: 40),
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                // ── Profile Banner + Avatar ───────────────────────────────
+                Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.bottomCenter,
                   children: [
-                    Text(rank.displayName, style: TextStyle(color: tierColor, fontWeight: FontWeight.w700, fontSize: 12)),
-                    Text('${rank.nextTierMmr} MMR', style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                    // Banner image
+                    Container(
+                      height: 160,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        image: const DecorationImage(
+                          image: AssetImage('assets/images/profile_banner.png'),
+                          fit: BoxFit.cover,
+                        ),
+                        border: Border(
+                          bottom: BorderSide(color: tierColor.withOpacity(0.6), width: 2),
+                        ),
+                      ),
+                    ),
+                    // Avatar circle positioned over the banner bottom edge
+                    Positioned(
+                      bottom: -50,
+                      child: Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: [tierColor, tierColor.withOpacity(0.4)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          border: Border.all(color: const Color(0xFF070B13), width: 4),
+                          boxShadow: [
+                            BoxShadow(color: tierColor.withOpacity(0.5), blurRadius: 28, spreadRadius: 4),
+                          ],
+                        ),
+                        child: Center(
+                          child: Text(
+                            (app.username ?? 'G')[0].toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 42,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF070B13),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
+
+                const SizedBox(height: 62),
+
+                // ── Username & Rank ───────────────────────────────────────
+                Text(
+                  app.username ?? 'Guest Player',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.white),
+                ),
                 const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: rank.progressInTier.clamp(0.0, 1.0),
-                    minHeight: 6,
-                    backgroundColor: Colors.white10,
-                    valueColor: AlwaysStoppedAnimation<Color>(tierColor),
+
+                // Rank badge
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: tierColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: tierColor.withOpacity(0.5)),
+                      boxShadow: [BoxShadow(color: tierColor.withOpacity(0.2), blurRadius: 12)],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Image.asset(rank.icon, height: 22, width: 22),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${rank.displayName}  ·  ${rank.mmr} MMR',
+                          style: TextStyle(color: tierColor, fontSize: 13, fontWeight: FontWeight.w800),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Season ${rank.seasonDisplay}  ·  Peak ${rank.peakMmr} MMR',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500),
+                ),
+
+                const SizedBox(height: 24),
+
+                // ── MMR Progress Bar ──────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.04),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(rank.displayName,
+                                style: TextStyle(color: tierColor, fontWeight: FontWeight.w800, fontSize: 12)),
+                            Text('Next: ${rank.nextTierMmr} MMR',
+                                style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(
+                            value: rank.progressInTier.clamp(0.0, 1.0),
+                            minHeight: 8,
+                            backgroundColor: Colors.white10,
+                            valueColor: AlwaysStoppedAnimation<Color>(tierColor),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // ── Stats Grid ────────────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: _SectionHeader('Season Stats'),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      Expanded(child: _StatCard(label: 'Wins', value: '${rank.wins}', icon: Icons.emoji_events, color: const Color(0xFFFFC857))),
+                      const SizedBox(width: 12),
+                      Expanded(child: _StatCard(label: 'Losses', value: '${rank.losses}', icon: Icons.close, color: Colors.redAccent)),
+                      const SizedBox(width: 12),
+                      Expanded(child: _StatCard(label: 'Win Rate', value: rank.winRate, icon: Icons.percent, color: const Color(0xFF48E5C2))),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // ── Suit Tens captured ────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: _SectionHeader('Suit Captures'),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.04),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _SuitCapture(symbol: '♥', label: 'Hearts', color: const Color(0xFFE53935)),
+                        _SuitCapture(symbol: '♦', label: 'Diamonds', color: const Color(0xFFE53935)),
+                        _SuitCapture(symbol: '♣', label: 'Clubs', color: Colors.white70),
+                        _SuitCapture(symbol: '♠', label: 'Spades', color: Colors.white70),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // ── Live match if in game ─────────────────────────────────
+                if (captures != null) ...[
+                  const SizedBox(height: 24),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: _SectionHeader('Live Match'),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF48E5C2).withOpacity(0.07),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.3)),
+                      ),
+                      child: Column(
+                        children: [
+                          _StatRow('Tens (Team A)', '${captures.a.tens}', accent: true),
+                          _StatRow('Tens (Team B)', '${captures.b.tens}', accent: true),
+                          _StatRow('Cards (A / B)', '${captures.a.cards} / ${captures.b.cards}'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 32),
+
+                // ── Sign out ──────────────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.white24),
+                      foregroundColor: Colors.white70,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () async {
+                      await app.logout();
+                      if (context.mounted) {
+                        Navigator.pushNamedAndRemoveUntil(context, '/login', (r) => false);
+                      }
+                    },
+                    icon: const Icon(Icons.logout),
+                    label: const Text('Sign Out'),
                   ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 20),
-
-          // Current match captures (live if in match)
-          if (captures != null) ...[
-            const _SectionHeader('Live Match'),
-            _StatTile(label: 'Tens Captured (A)', value: '${captures.a.tens}', accent: true),
-            _StatTile(label: 'Tens Captured (B)', value: '${captures.b.tens}', accent: true),
-            _StatTile(label: 'Cards (A / B)', value: '${captures.a.cards} / ${captures.b.cards}'),
-            const SizedBox(height: 20),
-          ],
-
-          // Overall stats
-          const _SectionHeader('Season Stats'),
-          _StatTile(label: 'Win Rate', value: rank.winRate, accent: true),
-          _StatTile(label: 'Wins', value: '${rank.wins}'),
-          _StatTile(label: 'Losses', value: '${rank.losses}'),
-          _StatTile(label: 'Peak MMR', value: '${rank.peakMmr}', accent: true),
-          const SizedBox(height: 28),
-
-          // Suit stat icons row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: ['♥', '♦', '♣', '♠'].asMap().entries.map((e) {
-              final isRed = e.key < 2;
-              return Column(
-                children: [
-                  Text(e.value, style: TextStyle(fontSize: 32, color: isRed ? const Color(0xFFE53935) : Colors.white70)),
-                  const SizedBox(height: 4),
-                  Text('0', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-                  const Text('tens', style: TextStyle(fontSize: 10, color: Colors.white38)),
-                ],
-              );
-            }).toList(),
-          ),
-
-          const SizedBox(height: 28),
-          OutlinedButton.icon(
-            onPressed: () async {
-              await app.logout();
-              if (context.mounted) {
-                Navigator.pushNamedAndRemoveUntil(context, '/login', (r) => false);
-              }
-            },
-            icon: const Icon(Icons.logout),
-            label: const Text('Sign Out'),
           ),
         ],
       ),
@@ -163,38 +282,101 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
+// ── Helper widgets ─────────────────────────────────────────────────────────────
+
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader(this.title);
   final String title;
+
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Text(
         title.toUpperCase(),
-        style: const TextStyle(fontSize: 10, letterSpacing: 2, color: Colors.white38, fontWeight: FontWeight.w700),
+        style: const TextStyle(
+          fontSize: 10,
+          letterSpacing: 2.5,
+          color: Colors.white38,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
 }
 
-class _StatTile extends StatelessWidget {
-  const _StatTile({required this.label, required this.value, this.accent = false});
+class _StatCard extends StatelessWidget {
+  const _StatCard({required this.label, required this.value, required this.icon, required this.color});
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(height: 8),
+          Text(value, style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 4),
+          Text(label, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+        ],
+      ),
+    );
+  }
+}
+
+class _SuitCapture extends StatelessWidget {
+  const _SuitCapture({required this.symbol, required this.label, required this.color});
+  final String symbol;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(symbol, style: TextStyle(fontSize: 34, color: color)),
+        const SizedBox(height: 6),
+        const Text('0', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Colors.white)),
+        const SizedBox(height: 2),
+        Text(label, style: const TextStyle(fontSize: 10, color: Colors.white38)),
+      ],
+    );
+  }
+}
+
+class _StatRow extends StatelessWidget {
+  const _StatRow(this.label, this.value, {this.accent = false});
   final String label;
   final String value;
   final bool accent;
+
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(label, style: const TextStyle(fontSize: 14, color: Colors.white70)),
-      trailing: Text(
-        value,
-        style: TextStyle(
-          fontWeight: FontWeight.w900,
-          fontSize: 15,
-          color: accent ? const Color(0xFFFFC857) : Colors.white,
-        ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 15,
+              color: accent ? const Color(0xFF48E5C2) : Colors.white,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1,8 +1,9 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import 'arena_card_widget.dart';
 
-/// Power suit selector — clean, performant, no BackdropFilter.
+/// Premium glassmorphism power suit picker.
 class PowerSuitPicker extends StatefulWidget {
   const PowerSuitPicker({super.key, required this.onSelect});
   final void Function(String suit) onSelect;
@@ -12,7 +13,7 @@ class PowerSuitPicker extends StatefulWidget {
 }
 
 class _PowerSuitPickerState extends State<PowerSuitPicker> with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat(reverse: true);
+  late final AnimationController _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
 
   @override
   void dispose() {
@@ -25,31 +26,58 @@ class _PowerSuitPickerState extends State<PowerSuitPicker> with SingleTickerProv
     return AnimatedBuilder(
       animation: _ctrl,
       builder: (context, child) {
-        return Transform.scale(
-          scale: 1.0 + (_ctrl.value * 0.02), // subtle breathing scale
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: const Color(0xFF101826).withOpacity(0.95),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFFFC857).withOpacity(0.3 + (_ctrl.value * 0.3))),
-              boxShadow: [
-                BoxShadow(color: const Color(0xFFFFC857).withOpacity(0.08 + (_ctrl.value * 0.1)), blurRadius: 20 + (_ctrl.value * 10), spreadRadius: 2),
-              ],
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFFFC857).withOpacity(0.12 + _ctrl.value * 0.12),
+                blurRadius: 24 + _ctrl.value * 12,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: const Color(0xFFFFC857).withOpacity(0.2 + _ctrl.value * 0.25),
+                    width: 1.2,
+                  ),
+                ),
+                child: child,
+              ),
             ),
-            child: child,
           ),
         );
       },
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            'CHOOSE POWER SUIT',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFFFC857), letterSpacing: 2.5),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              Text('👑', style: TextStyle(fontSize: 16)),
+              SizedBox(width: 8),
+              Text(
+                'CHOOSE POWER SUIT',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFFFFC857),
+                  letterSpacing: 2.5,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
@@ -76,39 +104,56 @@ class _SuitButton extends StatefulWidget {
 
 class _SuitButtonState extends State<_SuitButton> {
   bool _pressed = false;
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     final isRed = widget.suit == 'hearts' || widget.suit == 'diamonds';
     final color = isRed ? const Color(0xFFE53935) : Colors.white;
-    final symbol = suitSymbol(widget.suit);
     final name = widget.suit[0].toUpperCase() + widget.suit.substring(1);
+    final active = _pressed || _hovered;
 
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) => setState(() => _pressed = false),
-      onTap: () => widget.onSelect(widget.suit),
-      onTapCancel: () => setState(() => _pressed = false),
-      child: Transform.scale(
-        scale: _pressed ? 1.1 : 1.0,
-        child: Container(
-          width: 72,
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: _pressed ? color.withOpacity(0.15) : Colors.white.withOpacity(0.06),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _pressed ? color.withOpacity(0.5) : Colors.white12),
-            boxShadow: _pressed
-                ? [BoxShadow(color: color.withOpacity(0.3), blurRadius: 16, spreadRadius: 2)]
-                : [],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              suitImage(widget.suit, 32),
-              const SizedBox(height: 4),
-              Text(name, style: TextStyle(fontSize: 10, color: color.withOpacity(0.8), fontWeight: FontWeight.w700)),
-            ],
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTap: () => widget.onSelect(widget.suit),
+        onTapCancel: () => setState(() => _pressed = false),
+        child: AnimatedScale(
+          scale: _pressed ? 1.12 : _hovered ? 1.05 : 1.0,
+          duration: const Duration(milliseconds: 150),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            width: 76,
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: active ? color.withOpacity(0.18) : Colors.white.withOpacity(0.07),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: active ? color.withOpacity(0.7) : Colors.white.withOpacity(0.12),
+                width: active ? 1.5 : 1.0,
+              ),
+              boxShadow: active
+                  ? [BoxShadow(color: color.withOpacity(0.35), blurRadius: 20, spreadRadius: 2)]
+                  : [],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                suitImage(widget.suit, 34),
+                const SizedBox(height: 6),
+                Text(
+                  name,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: active ? color : color.withOpacity(0.6),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

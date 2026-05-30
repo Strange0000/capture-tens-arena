@@ -319,8 +319,10 @@ function maybeBotPowerSelect(io: Server, matchId: string) {
   const first = state.players[state.firstPlayerSeat];
   if (!first?.isBot || state.phase !== "power-select") return;
   setTimeout(() => {
-    selectPowerSuit(state, state.firstPlayerSeat, "spades");
-    dealRemainingCards(state);
+    const fresh = matchStore.get(matchId);
+    if (!fresh || fresh.phase !== "power-select") return;
+    selectPowerSuit(fresh, fresh.firstPlayerSeat, "spades");
+    dealRemainingCards(fresh);
     broadcastState(io, matchId);
     maybeBotTurn(io, matchId);
   }, env.BOT_THINK_MS);
@@ -332,8 +334,8 @@ function maybeBotTurn(io: Server, matchId: string) {
   const player = state.players[state.currentTurnSeat];
   if (!player?.isBot) return;
   setTimeout(() => {
-    const fresh = requireMatch(matchId);
-    if (fresh.phase !== "playing") return;
+    const fresh = matchStore.get(matchId);
+    if (!fresh || fresh.phase !== "playing") return;
     const bot = fresh.players[fresh.currentTurnSeat];
     if (!bot?.isBot) return;
     const card = chooseBotCard(fresh, fresh.currentTurnSeat, bot.botDifficulty ?? "medium");

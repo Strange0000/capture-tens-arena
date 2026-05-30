@@ -74,17 +74,30 @@ class _LobbyScreenState extends State<LobbyScreen>
       });
     }
 
-    return Container(
-      decoration: const BoxDecoration(
-        image: DecorationImage(
-          image: AssetImage('assets/images/game_table_bg.png'),
-          fit: BoxFit.cover,
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Image.asset('assets/images/lobby_bg.png', fit: BoxFit.cover),
         ),
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: SafeArea(
-        child: FadeTransition(
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  const Color(0xFF070B13).withOpacity(0.60),
+                  const Color(0xFF070B13).withOpacity(0.85),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            body: SafeArea(
+            child: FadeTransition(
           opacity: _entryAnim,
           child: SlideTransition(
             position: Tween<Offset>(
@@ -171,6 +184,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                       subtitle: 'Climb the leaderboard',
                       onTap: () {
                         app.queueRanked();
+                        Navigator.pushNamed(context, '/matchmaking');
                       },
                     ),
                     const SizedBox(height: 10),
@@ -246,10 +260,12 @@ class _LobbyScreenState extends State<LobbyScreen>
         ],
       ),
     ),
-  ),
-),
-      ),
-    );
+  ),          // closes SafeArea(
+          ),  // closes Scaffold body:
+        ),    // closes Scaffold(
+      ),      // closes Positioned.fill(
+    ],        // closes Stack children: [
+    );        // closes Stack(
   }
 
   void _showRulesSheet(BuildContext context) {
