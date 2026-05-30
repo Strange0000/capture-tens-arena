@@ -44,7 +44,7 @@ class _LobbyScreenState extends State<LobbyScreen>
     final app = context.watch<AppState>();
 
     // Auto-navigate to game when match starts
-    if (app.match != null && app.lobbyStatus == LobbyStatus.inMatch) {
+    if (app.match != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (context.mounted && ModalRoute.of(context)?.isCurrent == true) {
           Navigator.pushNamed(context, '/game');
