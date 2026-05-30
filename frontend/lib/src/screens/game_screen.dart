@@ -46,6 +46,22 @@ class _GameScreenState extends State<GameScreen> {
     }
     _lastTrickCount = match.completedTricksCount;
 
+    // Show errors
+    if (app.errorMessage != null) {
+      final msg = app.errorMessage!;
+      app.clearError();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      });
+    }
+
     // Detect power suit selection
     if (match.powerSuit != null && _lastPowerSuit == null) {
       final selector = match.players.firstWhere((p) => p.seat == match.firstPlayerSeat).username;
@@ -409,7 +425,7 @@ class _HandArea extends StatelessWidget {
   Widget build(BuildContext context) {
     final match = app.match!;
     final isMyTurn = match.players.any(
-      (p) => p.username == app.username && p.seat == match.currentTurnSeat,
+      (p) => p.userId == app.userId && p.seat == match.currentTurnSeat,
     );
 
     return ListView.builder(
