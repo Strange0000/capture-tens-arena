@@ -186,7 +186,7 @@ class _GameScreenState extends State<GameScreen> {
                 SizedBox(
                   height: 160,
                   child: match.phase == 'power-select'
-                      ? (match.players.firstWhere((p) => p.username == app.username, orElse: () => match.players.first).seat == match.firstPlayerSeat)
+                      ? (match.players.firstWhere((p) => p.userId == app.userId, orElse: () => match.players.first).seat == match.firstPlayerSeat)
                           ? PowerSuitPicker(onSelect: app.selectPower)
                           : Center(
                               child: Text(
