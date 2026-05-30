@@ -14,16 +14,17 @@ export function createMatch(players: PlayerSeat[], mode: MatchMode = "casual", s
   }
 
   const deck = shuffleDeck(createDeck(), seed);
-  return {
-    id: nanoid(12),
-    mode,
-    phase: "deal-five",
-    players,
-    hands: { 0: [], 1: [], 2: [], 3: [] },
-    deck,
-    dealerSeat: 3,
-    firstPlayerSeat: 0,
-    currentTurnSeat: 0,
+    const firstPlayerSeat = seed % 4;
+    return {
+      id: nanoid(12),
+      mode,
+      phase: "deal-five",
+      players,
+      hands: { 0: [], 1: [], 2: [], 3: [] },
+      deck,
+      dealerSeat: (firstPlayerSeat + 3) % 4,
+      firstPlayerSeat,
+      currentTurnSeat: firstPlayerSeat,
     completedTricks: [],
     captures: emptyCaptures(),
     updatedAt: Date.now(),

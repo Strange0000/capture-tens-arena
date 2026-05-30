@@ -19,6 +19,7 @@ class GameScreen extends StatefulWidget {
 class _GameScreenState extends State<GameScreen> {
   bool _showDealAnimation = true;
   String? _trickWinnerMessage;
+  String? _lastPowerSuit;
   int _lastTrickCount = 0;
 
   @override
@@ -44,6 +45,22 @@ class _GameScreenState extends State<GameScreen> {
       }
     }
     _lastTrickCount = match.completedTricksCount;
+
+    // Detect power suit selection
+    if (match.powerSuit != null && _lastPowerSuit == null) {
+      final selector = match.players.firstWhere((p) => p.seat == match.firstPlayerSeat).username;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$selector selected ${match.powerSuit!.toUpperCase()} as the Power Suit!'),
+            backgroundColor: const Color(0xFF30B89C),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      });
+    }
+    _lastPowerSuit = match.powerSuit;
 
     // Who leads this trick
     final leader = match.currentTrick != null && match.currentTrick!.plays.isEmpty
@@ -169,7 +186,14 @@ class _GameScreenState extends State<GameScreen> {
                 SizedBox(
                   height: 160,
                   child: match.phase == 'power-select'
-                      ? PowerSuitPicker(onSelect: app.selectPower)
+                      ? (match.players.firstWhere((p) => p.username == app.username, orElse: () => match.players.first).seat == match.firstPlayerSeat)
+                          ? PowerSuitPicker(onSelect: app.selectPower)
+                          : Center(
+                              child: Text(
+                                'Waiting for ${match.players.firstWhere((p) => p.seat == match.firstPlayerSeat).username} to select Power Suit...',
+                                style: const TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                            )
                       : const SizedBox.shrink(),
                 ),
 
