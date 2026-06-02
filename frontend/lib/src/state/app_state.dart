@@ -404,4 +404,14 @@ class AppState extends ChangeNotifier {
     );
     return player.team;
   }
+
+  /// Which seat the local player is sitting at (0, 1, 2, or 3).
+  int get mySeat {
+    if (match == null || userId == null) return 0; // Default to 0 for offline/spectator
+    final player = match!.players.firstWhere(
+      (p) => p.userId == userId,
+      orElse: () => match!.players.first,
+    );
+    return player.seat;
+  }
 }

@@ -6,10 +6,11 @@ import 'arena_card_widget.dart';
 /// Renders the 4 cards of the current trick in a cross layout.
 /// New cards fly in from the player's seat direction with a smooth animation.
 class TrickArea extends StatefulWidget {
-  const TrickArea({super.key, required this.trick, required this.powerSuit});
+  const TrickArea({super.key, required this.trick, required this.powerSuit, required this.mySeat});
 
   final CurrentTrick trick;
   final String? powerSuit;
+  final int mySeat;
 
   @override
   State<TrickArea> createState() => _TrickAreaState();
@@ -94,15 +95,18 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
     controller.forward();
   }
 
-  /// Returns the starting offset for the fly-in animation based on seat position.
-  /// Each seat's card enters from the player's direction.
-  Offset _offsetForSeat(int seat) => switch (seat) {
-    0 => const Offset(0.0, 2.5),   // Bottom → flies upward
-    1 => const Offset(2.5, 0.0),   // Right  → flies leftward
-    2 => const Offset(0.0, -2.5),  // Top    → flies downward
-    3 => const Offset(-2.5, 0.0),  // Left   → flies rightward
-    _ => Offset.zero,
-  };
+  /// Returns the starting offset for the fly-in animation based on relative seat position.
+  /// Each seat's card enters from their visual direction.
+  Offset _offsetForSeat(int seat) {
+    final relativeSeat = (seat - widget.mySeat + 4) % 4;
+    return switch (relativeSeat) {
+      0 => const Offset(0.0, 2.5),   // Bottom → flies upward
+      1 => const Offset(2.5, 0.0),   // Right  → flies leftward
+      2 => const Offset(0.0, -2.5),  // Top    → flies downward
+      3 => const Offset(-2.5, 0.0),  // Left   → flies rightward
+      _ => Offset.zero,
+    };
+  }
 
   void _disposeControllers() {
     for (final c in _controllers.values) {
@@ -122,9 +126,11 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final Map<int, TrickPlay> bySeats = {
-      for (final play in widget.trick.plays) play.seat: play,
-    };
+    final Map<int, TrickPlay> byRelativeSeats = {};
+    for (final play in widget.trick.plays) {
+      final relativeSeat = (play.seat - widget.mySeat + 4) % 4;
+      byRelativeSeats[relativeSeat] = play;
+    }
 
     return SizedBox(
       width: 230,
@@ -132,25 +138,25 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Seat 2 → top
-          if (bySeats[2] != null)
+          // Relative Seat 2 → top
+          if (byRelativeSeats[2] != null)
             Positioned(top: 0, left: 0, right: 0,
-              child: Center(child: _buildAnimatedCard(2, bySeats[2]!))),
+              child: Center(child: _buildAnimatedCard(byRelativeSeats[2]!.seat, byRelativeSeats[2]!))),
 
-          // Seat 1 → right
-          if (bySeats[1] != null)
+          // Relative Seat 1 → right
+          if (byRelativeSeats[1] != null)
             Positioned(right: 0, top: 0, bottom: 0,
-              child: Center(child: _buildAnimatedCard(1, bySeats[1]!))),
+              child: Center(child: _buildAnimatedCard(byRelativeSeats[1]!.seat, byRelativeSeats[1]!))),
 
-          // Seat 3 → left
-          if (bySeats[3] != null)
+          // Relative Seat 3 → left
+          if (byRelativeSeats[3] != null)
             Positioned(left: 0, top: 0, bottom: 0,
-              child: Center(child: _buildAnimatedCard(3, bySeats[3]!))),
+              child: Center(child: _buildAnimatedCard(byRelativeSeats[3]!.seat, byRelativeSeats[3]!))),
 
-          // Seat 0 → bottom
-          if (bySeats[0] != null)
+          // Relative Seat 0 → bottom
+          if (byRelativeSeats[0] != null)
             Positioned(bottom: 0, left: 0, right: 0,
-              child: Center(child: _buildAnimatedCard(0, bySeats[0]!))),
+              child: Center(child: _buildAnimatedCard(byRelativeSeats[0]!.seat, byRelativeSeats[0]!))),
 
           // Empty centre hint
           if (widget.trick.plays.isEmpty)

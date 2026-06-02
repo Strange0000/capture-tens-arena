@@ -8,9 +8,10 @@ import 'trick_area.dart';
 
 /// Premium game table with velvet felt, gold trim, and clean player badges.
 class GameTable extends StatelessWidget {
-  const GameTable({super.key, required this.match, this.onCardPlayed});
+  const GameTable({super.key, required this.match, required this.mySeat, this.onCardPlayed});
 
   final MatchState match;
+  final int mySeat;
   final ValueChanged<String>? onCardPlayed;
 
   @override
@@ -50,6 +51,7 @@ class GameTable extends StatelessWidget {
             for (final player in match.players)
               _PlayerBadge(
                 player: player,
+                mySeat: mySeat,
                 active: player.seat == match.currentTurnSeat,
                 deadline: player.seat == match.currentTurnSeat ? match.turnDeadline : null,
               ),
@@ -65,6 +67,7 @@ class GameTable extends StatelessWidget {
                       key: ValueKey(match.currentTrick!.index),
                       trick: match.currentTrick!,
                       powerSuit: match.powerSuit,
+                      mySeat: mySeat,
                     );
                   }
                   return _CentreLabel(match: match);
@@ -121,18 +124,22 @@ class _CentreLabel extends StatelessWidget {
 }
 
 class _PlayerBadge extends StatelessWidget {
-  const _PlayerBadge({required this.player, required this.active, this.deadline});
+  const _PlayerBadge({required this.player, required this.mySeat, required this.active, this.deadline});
 
   final MatchPlayer player;
+  final int mySeat;
   final bool active;
   final int? deadline;
 
-  Alignment get _alignment => switch (player.seat) {
-        0 => Alignment.bottomCenter,
-        1 => Alignment.centerRight,
-        2 => Alignment.topCenter,
-        _ => Alignment.centerLeft,
-      };
+  Alignment get _alignment {
+    final relativeSeat = (player.seat - mySeat + 4) % 4;
+    return switch (relativeSeat) {
+      0 => Alignment.bottomCenter,
+      1 => Alignment.centerRight,
+      2 => Alignment.topCenter,
+      _ => Alignment.centerLeft,
+    };
+  }
 
   @override
   Widget build(BuildContext context) {

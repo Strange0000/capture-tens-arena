@@ -154,7 +154,7 @@ class _GameScreenState extends State<GameScreen> {
                   child: Stack(
                     children: [
                       Positioned.fill(
-                        child: GameTable(match: match, onCardPlayed: app.playCard),
+                        child: GameTable(match: match, mySeat: app.mySeat, onCardPlayed: app.playCard),
                       ),
                       if (app.errorMessage != null)
                         Positioned(
