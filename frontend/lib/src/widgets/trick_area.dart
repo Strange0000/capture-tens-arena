@@ -4,17 +4,126 @@ import '../models/match_state.dart';
 import 'arena_card_widget.dart';
 
 /// Renders the 4 cards of the current trick in a cross layout.
-/// Winner gets a golden glow. No animation controllers = no jank.
-class TrickArea extends StatelessWidget {
+/// New cards fly in from the player's seat direction with a smooth animation.
+class TrickArea extends StatefulWidget {
   const TrickArea({super.key, required this.trick, required this.powerSuit});
 
   final CurrentTrick trick;
   final String? powerSuit;
 
   @override
+  State<TrickArea> createState() => _TrickAreaState();
+}
+
+class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
+  /// Track which seats have already been animated (by trick index + seat).
+  final Set<String> _animatedKeys = {};
+
+  /// Active animation controllers keyed by seat number.
+  final Map<int, AnimationController> _controllers = {};
+  final Map<int, Animation<Offset>> _slideAnimations = {};
+  final Map<int, Animation<double>> _fadeAnimations = {};
+  final Map<int, Animation<double>> _scaleAnimations = {};
+
+  @override
+  void didUpdateWidget(TrickArea oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // If trick index changed, reset all tracked animations
+    if (oldWidget.trick.index != widget.trick.index) {
+      _disposeControllers();
+      _animatedKeys.clear();
+    }
+
+    // Detect new plays and start animations for them
+    for (final play in widget.trick.plays) {
+      final key = '${widget.trick.index}-${play.seat}';
+      if (!_animatedKeys.contains(key)) {
+        _animatedKeys.add(key);
+        _startFlyIn(play.seat);
+      }
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Mark all existing plays as already animated (no animation on first build)
+    for (final play in widget.trick.plays) {
+      _animatedKeys.add('${widget.trick.index}-${play.seat}');
+    }
+  }
+
+  void _startFlyIn(int seat) {
+    // Dispose any previous controller for this seat
+    _controllers[seat]?.dispose();
+
+    final controller = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+
+    // Starting offset based on seat direction (relative to the card's final position)
+    final beginOffset = _offsetForSeat(seat);
+
+    _slideAnimations[seat] = Tween<Offset>(
+      begin: beginOffset,
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: controller,
+      curve: Curves.easeOutBack,
+    ));
+
+    _fadeAnimations[seat] = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: controller,
+      curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
+    ));
+
+    _scaleAnimations[seat] = Tween<double>(
+      begin: 0.6,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: controller,
+      curve: Curves.easeOutBack,
+    ));
+
+    _controllers[seat] = controller;
+    controller.forward();
+  }
+
+  /// Returns the starting offset for the fly-in animation based on seat position.
+  /// Each seat's card enters from the player's direction.
+  Offset _offsetForSeat(int seat) => switch (seat) {
+    0 => const Offset(0.0, 2.5),   // Bottom → flies upward
+    1 => const Offset(2.5, 0.0),   // Right  → flies leftward
+    2 => const Offset(0.0, -2.5),  // Top    → flies downward
+    3 => const Offset(-2.5, 0.0),  // Left   → flies rightward
+    _ => Offset.zero,
+  };
+
+  void _disposeControllers() {
+    for (final c in _controllers.values) {
+      c.dispose();
+    }
+    _controllers.clear();
+    _slideAnimations.clear();
+    _fadeAnimations.clear();
+    _scaleAnimations.clear();
+  }
+
+  @override
+  void dispose() {
+    _disposeControllers();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final Map<int, TrickPlay> bySeats = {
-      for (final play in trick.plays) play.seat: play,
+      for (final play in widget.trick.plays) play.seat: play,
     };
 
     return SizedBox(
@@ -26,29 +135,57 @@ class TrickArea extends StatelessWidget {
           // Seat 2 → top
           if (bySeats[2] != null)
             Positioned(top: 0, left: 0, right: 0,
-              child: Center(child: _PlayedCard(play: bySeats[2]!, powerSuit: powerSuit, isWinner: trick.winnerSeat == 2))),
+              child: Center(child: _buildAnimatedCard(2, bySeats[2]!))),
 
           // Seat 1 → right
           if (bySeats[1] != null)
             Positioned(right: 0, top: 0, bottom: 0,
-              child: Center(child: _PlayedCard(play: bySeats[1]!, powerSuit: powerSuit, isWinner: trick.winnerSeat == 1))),
+              child: Center(child: _buildAnimatedCard(1, bySeats[1]!))),
 
           // Seat 3 → left
           if (bySeats[3] != null)
             Positioned(left: 0, top: 0, bottom: 0,
-              child: Center(child: _PlayedCard(play: bySeats[3]!, powerSuit: powerSuit, isWinner: trick.winnerSeat == 3))),
+              child: Center(child: _buildAnimatedCard(3, bySeats[3]!))),
 
           // Seat 0 → bottom
           if (bySeats[0] != null)
             Positioned(bottom: 0, left: 0, right: 0,
-              child: Center(child: _PlayedCard(play: bySeats[0]!, powerSuit: powerSuit, isWinner: trick.winnerSeat == 0))),
+              child: Center(child: _buildAnimatedCard(0, bySeats[0]!))),
 
           // Empty centre hint
-          if (trick.plays.isEmpty)
+          if (widget.trick.plays.isEmpty)
             const Center(child: Text('Play a card', style: TextStyle(color: Colors.white24, fontSize: 13, fontWeight: FontWeight.w600))),
         ],
       ),
     );
+  }
+
+  Widget _buildAnimatedCard(int seat, TrickPlay play) {
+    final isWinner = widget.trick.winnerSeat == seat;
+    final card = _PlayedCard(play: play, powerSuit: widget.powerSuit, isWinner: isWinner);
+
+    // If there's an active animation for this seat, wrap in animated builders
+    if (_controllers.containsKey(seat) && _slideAnimations.containsKey(seat)) {
+      final controller = _controllers[seat]!;
+      return AnimatedBuilder(
+        animation: controller,
+        builder: (context, child) {
+          return SlideTransition(
+            position: _slideAnimations[seat]!,
+            child: FadeTransition(
+              opacity: _fadeAnimations[seat]!,
+              child: ScaleTransition(
+                scale: _scaleAnimations[seat]!,
+                child: child,
+              ),
+            ),
+          );
+        },
+        child: card,
+      );
+    }
+
+    return card;
   }
 }
 

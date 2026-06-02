@@ -67,6 +67,7 @@ export interface MatchState {
   startedAt?: number;
   updatedAt: number;
   turnDeadline?: number;
+  turnGeneration: number;
   replayEvents: ReplayEvent[];
 }
 

@@ -59,6 +59,7 @@ class AppState extends ChangeNotifier {
   LobbyStatus lobbyStatus = LobbyStatus.idle;
   String? roomCode;
   String? errorMessage;
+  String? _leftMatchId; // Track left match to ignore stale server updates
   
   // Rank info
   RankInfo? rankInfo;
@@ -177,7 +178,11 @@ class AppState extends ChangeNotifier {
   // ── Socket event handlers ─────────────────────────────────────────────────
 
   void _onMatchState(Map<String, dynamic> json) {
-    match = MatchState.fromJson(json);
+    final incoming = MatchState.fromJson(json);
+    // Ignore stale updates from a match we already left
+    if (_leftMatchId != null && incoming.id == _leftMatchId) return;
+    match = incoming;
+    _leftMatchId = null; // Clear since we're in a valid match now
     if (match!.phase == 'playing' || match!.phase == 'power-select') {
       lobbyStatus = LobbyStatus.inMatch;
     }
@@ -381,6 +386,7 @@ class AppState extends ChangeNotifier {
 
   /// Called when player returns to home after a completed match.
   void leaveMatch() {
+    _leftMatchId = match?.id; // Remember so we ignore stale server updates
     socket.leaveMatch();
     match = null;
     lastRankUpdate = null;

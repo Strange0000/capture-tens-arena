@@ -29,6 +29,7 @@ export function createMatch(players: PlayerSeat[], mode: MatchMode = "casual", s
     completedTricks: [],
     captures: emptyCaptures(),
     updatedAt: Date.now(),
+    turnGeneration: 0,
     replayEvents: [{ type: "match.created", at: Date.now(), payload: { players, seed } }]
   };
 }
@@ -77,6 +78,7 @@ export function playCard(state: MatchState, seat: number, cardId: string): MoveR
   const card = assertLegalMove(state, seat, cardId);
   state.hands[seat] = state.hands[seat].filter((item) => item.id !== cardId);
   state.currentTrick.plays.push({ seat, card, playedAt: Date.now() });
+  state.turnGeneration = (state.turnGeneration || 0) + 1;
   record(state, "card.played", { seat, card });
 
   let trickCompleted = false;

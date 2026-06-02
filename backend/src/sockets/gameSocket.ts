@@ -214,7 +214,7 @@ export function registerGameSockets(io: Server) {
         broadcastState(io, state.id);
         maybeBotTurn(io, state.id);
         if (!state.players[state.currentTurnSeat].isBot) {
-          scheduleTurnTimeout(io, state.id, state.currentTurnSeat, state.turnDeadline);
+          scheduleTurnTimeout(io, state.id, state.currentTurnSeat, state.turnDeadline, state.turnGeneration);
         }
       } catch (err: any) {
         socket.emit("error", { message: err.message });
@@ -245,14 +245,14 @@ export function registerGameSockets(io: Server) {
               broadcastState(io, matchId);
               maybeBotTurn(io, matchId);
               if (!fresh.players[fresh.currentTurnSeat].isBot) {
-                scheduleTurnTimeout(io, matchId, fresh.currentTurnSeat, fresh.turnDeadline);
+                scheduleTurnTimeout(io, matchId, fresh.currentTurnSeat, fresh.turnDeadline, fresh.turnGeneration);
               }
             }
           }, 2000);
         } else {
           maybeBotTurn(io, state.id);
           if (state.phase === "playing" && !state.players[state.currentTurnSeat].isBot) {
-            scheduleTurnTimeout(io, state.id, state.currentTurnSeat, state.turnDeadline!);
+            scheduleTurnTimeout(io, state.id, state.currentTurnSeat, state.turnDeadline!, state.turnGeneration);
           }
         }
       } catch (err: any) {
@@ -377,14 +377,14 @@ function maybeBotTurn(io: Server, matchId: string) {
           broadcastState(io, matchId);
           maybeBotTurn(io, matchId);
           if (!freshAfterTrick.players[freshAfterTrick.currentTurnSeat].isBot) {
-            scheduleTurnTimeout(io, matchId, freshAfterTrick.currentTurnSeat, freshAfterTrick.turnDeadline);
+            scheduleTurnTimeout(io, matchId, freshAfterTrick.currentTurnSeat, freshAfterTrick.turnDeadline, freshAfterTrick.turnGeneration);
           }
         }
       }, 2000);
     } else {
       maybeBotTurn(io, matchId);
       if (fresh.phase === "playing" && !fresh.players[fresh.currentTurnSeat].isBot) {
-        scheduleTurnTimeout(io, matchId, fresh.currentTurnSeat, fresh.turnDeadline!);
+        scheduleTurnTimeout(io, matchId, fresh.currentTurnSeat, fresh.turnDeadline!, fresh.turnGeneration);
       }
     }
   }, env.BOT_THINK_MS);
@@ -483,12 +483,13 @@ async function broadcastFriendStatus(io: Server, userId: string, status: "online
   }
 }
 
-function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, deadline: number) {
+function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, deadline: number, expectedGeneration: number) {
   const waitMs = Math.max(0, deadline - Date.now());
   
   setTimeout(() => {
     const state = matchStore.get(matchId);
     if (!state || state.phase !== "playing" || state.currentTurnSeat !== expectedSeat) return;
+    if (state.turnGeneration !== expectedGeneration) return; // Reject stale timeout
     
     // Disable auto-play timer for humans in offline (bot) matches
     if (state.mode === "offline") return;
@@ -522,14 +523,14 @@ function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, 
             broadcastState(io, matchId);
             maybeBotTurn(io, matchId);
             if (!fresh.players[fresh.currentTurnSeat].isBot) {
-               scheduleTurnTimeout(io, matchId, fresh.currentTurnSeat, fresh.turnDeadline);
+               scheduleTurnTimeout(io, matchId, fresh.currentTurnSeat, fresh.turnDeadline, fresh.turnGeneration);
             }
           }
         }, 2000);
       } else {
         maybeBotTurn(io, matchId);
          if (state.phase === "playing" && !state.players[state.currentTurnSeat].isBot) {
-            scheduleTurnTimeout(io, matchId, state.currentTurnSeat, state.turnDeadline!);
+            scheduleTurnTimeout(io, matchId, state.currentTurnSeat, state.turnDeadline!, state.turnGeneration);
          }
       }
     } catch (err) {
