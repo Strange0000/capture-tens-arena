@@ -329,8 +329,7 @@ class _LobbyScreenState extends State<LobbyScreen>
           ),
           ElevatedButton(
             onPressed: () {
-              final partyId = invite['partyId'] as String?;
-              if (partyId != null) app.socket.acceptPartyInvite(partyId);
+              app.acceptPartyInvite();
               Navigator.pop(context);
             },
             child: const Text('Accept'),

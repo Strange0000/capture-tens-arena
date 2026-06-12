@@ -34,13 +34,13 @@ export function legalCardsForSeat(state: MatchState, seat: number): Card[] {
   if (leadSuit && hasSuit(hand, leadSuit)) {
     candidates = hand.filter((card) => card.suit === leadSuit);
 
-    // "Must play higher" rule — unless teammate is currently winning
-    if (state.currentTrick && state.currentTrick.plays.length > 0) {
-      const teammateIsWinning = isTeammateWinning(state.currentTrick, seat, state.powerSuit);
+    // "Must play higher" rule — only applies after the first trick, and only unless teammate is currently winning
+    if (state.currentTrick && state.currentTrick.plays.length > 0 && state.completedTricks.length > 0) {
+      const teammateIsWinning = isTeammateWinning(state.currentTrick, seat, state.powerSuit!);
 
       if (!teammateIsWinning) {
         // Find the current highest card value in the lead suit
-        const currentHighest = highestRankInSuit(state.currentTrick.plays, leadSuit);
+        const currentHighest = highestRankInSuit(state.currentTrick.plays, leadSuit!);
         if (currentHighest > 0) {
           const higherCards = candidates.filter((card) => rankValue[card.rank] > currentHighest);
           // Only force higher if player actually has a higher card

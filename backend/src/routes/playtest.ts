@@ -272,7 +272,10 @@ playtestRouter.get("/", (_req, res) => {
 
     document.getElementById('start').onclick = () => socket.emit('bot:offline', { difficulty: 'hard' });
     document.querySelectorAll('[data-suit]').forEach((button) => {
-      button.onclick = () => socket.emit('power:select', { matchId: match.id, suit: button.dataset.suit });
+      button.onclick = () => {
+        if (!match) return;
+        socket.emit('power:select', { matchId: match.id, suit: button.dataset.suit });
+      };
     });
     boot().catch((error) => log(error.message));
   </script>

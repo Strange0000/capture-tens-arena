@@ -183,7 +183,9 @@ class AppState extends ChangeNotifier {
     if (_leftMatchId != null && incoming.id == _leftMatchId) return;
     match = incoming;
     _leftMatchId = null; // Clear since we're in a valid match now
-    if (match!.phase == 'playing' || match!.phase == 'power-select') {
+    // Set inMatch for any active phase so reconnecting players are navigated correctly
+    const activePhases = {'deal-five', 'power-select', 'deal-rest', 'playing', 'trick-resolving', 'complete'};
+    if (activePhases.contains(match!.phase)) {
       lobbyStatus = LobbyStatus.inMatch;
     }
     notifyListeners();

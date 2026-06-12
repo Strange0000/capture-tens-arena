@@ -32,7 +32,7 @@ class _GameScreenState extends State<GameScreen> {
     }
 
     // Detect trick winner
-    if (match.completedTricksCount > _lastTrickCount && _lastTrickCount > 0) {
+    if (match.completedTricksCount > _lastTrickCount) {
       final winner = match.lastTrickWinner;
       if (winner != null && _trickWinnerMessage == null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {

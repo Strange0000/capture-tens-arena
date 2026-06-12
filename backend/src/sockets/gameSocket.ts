@@ -227,13 +227,12 @@ export function registerGameSockets(io: Server) {
         const seat = seatForUser(state.players, userId);
         const result = playCard(state, seat, cardId);
         
-        if (!result.trickCompleted) {
-          state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
-        }
+        // Always refresh deadline after any card play so clients show an accurate timer
+        state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
         
         matchStore.set(state);
         broadcastState(io, state.id);
-        persistIfComplete(io, state);
+        void persistIfComplete(io, state);
         
         if (result.trickCompleted && !result.matchCompleted) {
           setTimeout(() => {
@@ -332,8 +331,9 @@ function reconnectMatch(io: Server, socket: AuthedSocket) {
   if (!state) return;
   const player = state.players.find((item) => item.userId === socket.user!.id);
   if (player) player.connected = true;
+  matchStore.set(state); // persist the updated connection status
   socket.join(`match:${state.id}`);
-  socket.emit("match:state", publicStateForSeat(state, player?.seat));
+  broadcastState(io, state.id); // notify all players of the reconnection
   io.to(`match:${state.id}:spectators`).emit("match:spectatorState", publicStateForSeat(state));
 }
 
@@ -365,7 +365,7 @@ function maybeBotTurn(io: Server, matchId: string) {
     const result = playCard(fresh, fresh.currentTurnSeat, card.id);
     matchStore.set(fresh);
     broadcastState(io, matchId);
-    persistIfComplete(io, fresh);
+    void persistIfComplete(io, fresh);
 
     if (result.trickCompleted && !result.matchCompleted) {
       setTimeout(() => {
@@ -505,13 +505,12 @@ function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, 
     try {
       const result = playCard(state, expectedSeat, cardToPlay.id);
       
-      if (!result.trickCompleted) {
-        state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
-      }
+      // Always refresh deadline after any auto-played card
+      state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
       
       matchStore.set(state);
       broadcastState(io, matchId);
-      persistIfComplete(io, state);
+      void persistIfComplete(io, state);
       
       if (result.trickCompleted && !result.matchCompleted) {
         setTimeout(() => {

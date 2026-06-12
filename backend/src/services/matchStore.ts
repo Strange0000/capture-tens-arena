@@ -6,7 +6,9 @@ export class MatchStore {
 
   set(state: MatchState) {
     this.matches.set(state.id, state);
-    for (const player of state.players) this.userToMatch.set(player.userId, state.id);
+    for (const player of state.players) {
+      if (!player.isBot) this.userToMatch.set(player.userId, state.id);
+    }
   }
 
   get(id: string) {

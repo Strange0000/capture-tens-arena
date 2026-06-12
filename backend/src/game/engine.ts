@@ -15,7 +15,7 @@ export function createMatch(players: PlayerSeat[], mode: MatchMode = "casual", s
 
   const deck = shuffleDeck(createDeck(), seed);
     const humanSeats = players.filter(p => !p.isBot).map(p => p.seat);
-    const firstPlayerSeat = humanSeats.length > 0 ? humanSeats[seed % humanSeats.length] : (seed % 4);
+    const firstPlayerSeat = humanSeats.length > 0 ? humanSeats[(seed >>> 0) % humanSeats.length] : ((seed >>> 0) % 4);
     return {
       id: nanoid(12),
       mode,
