@@ -57,6 +57,25 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
 
+    // Auto-redirect to login if not logged in
+    if (!app.isLoggedIn) {
+      if (app.isAuthChecking) {
+        return const Scaffold(
+          backgroundColor: Color(0xFF070B13),
+          body: Center(child: CircularProgressIndicator()),
+        );
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted && ModalRoute.of(context)?.isCurrent == true) {
+          Navigator.pushNamedAndRemoveUntil(context, '/', (r) => false);
+        }
+      });
+      return const Scaffold(
+        backgroundColor: Color(0xFF070B13),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     // Navigate to game when match found
     if (app.match != null && app.lobbyStatus == LobbyStatus.inMatch) {
       WidgetsBinding.instance.addPostFrameCallback((_) {

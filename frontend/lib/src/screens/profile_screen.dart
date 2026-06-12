@@ -10,6 +10,26 @@ class ProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+
+    // Auto-redirect to login if not logged in
+    if (!app.isLoggedIn) {
+      if (app.isAuthChecking) {
+        return const Scaffold(
+          backgroundColor: Color(0xFF070B13),
+          body: Center(child: CircularProgressIndicator()),
+        );
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted && ModalRoute.of(context)?.isCurrent == true) {
+          Navigator.pushNamedAndRemoveUntil(context, '/', (r) => false);
+        }
+      });
+      return const Scaffold(
+        backgroundColor: Color(0xFF070B13),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final match = app.match;
     final captures = match?.captures;
     final rank = app.rankInfo ?? RankInfo.fromMmr(0);

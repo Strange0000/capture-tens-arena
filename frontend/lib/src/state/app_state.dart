@@ -15,40 +15,50 @@ class AppState extends ChangeNotifier {
   final SocketService socket = SocketService();
 
   AppState() {
-    // Priority: 1) window.BACKEND_URL from backend_config.js
-    //           2) --dart-define=BACKEND_URL
-    //           3) ?backend= query parameter
-    //           4) localhost fallback
-    String url = 'https://capture-tens-arena.onrender.com';
+    String? url;
 
-    // Read from JavaScript global (set by backend_config.js)
+    // 1. Query parameter has highest priority
     try {
-      if (js.context.hasProperty('BACKEND_URL')) {
-        final jsUrl = js.context['BACKEND_URL'] as String?;
-        if (jsUrl != null && jsUrl.isNotEmpty) {
-          url = jsUrl;
-        }
+      final queryBackend = Uri.base.queryParameters['backend'];
+      if (queryBackend != null && queryBackend.isNotEmpty) {
+        url = queryBackend;
       }
     } catch (_) {}
 
-    // Fallback to dart-define
-    if (url == 'https://capture-tens-arena.onrender.com') {
-      const envUrl = String.fromEnvironment('BACKEND_URL');
-      if (envUrl.isNotEmpty) url = envUrl;
+    // 2. Read from JavaScript global (set by backend_config.js)
+    if (url == null) {
+      try {
+        if (js.context.hasProperty('BACKEND_URL')) {
+          final jsUrl = js.context['BACKEND_URL'] as String?;
+          if (jsUrl != null && jsUrl.isNotEmpty) {
+            // Ignore localhost configuration if we are running on a production HTTPS deployment
+            final isLocalhostConfig = jsUrl.contains('localhost') || jsUrl.contains('127.0.0.1');
+            final isLocalBrowser = Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1';
+            if (!isLocalhostConfig || isLocalBrowser) {
+              url = jsUrl;
+            }
+          }
+        }
+      } catch (_) {}
     }
 
-    // Fallback to query parameter
-    if (url == 'https://capture-tens-arena.onrender.com' &&
-        Uri.base.queryParameters['backend'] != null) {
-      url = Uri.base.queryParameters['backend']!;
+    // 3. Fallback to dart-define
+    if (url == null) {
+      const envUrl = String.fromEnvironment('BACKEND_URL');
+      if (envUrl.isNotEmpty) {
+        url = envUrl;
+      }
     }
+
+    // 4. Fallback to default production URL
+    url ??= 'https://capture-tens-arena.onrender.com';
 
     backendUrl = url;
     // ignore: avoid_print
     print('[AppState] Backend URL: $backendUrl');
     auth = AuthService(baseUrl: backendUrl);
     
-    // Check for cached session on init (but don't auto-connect)
+    // Check for cached session on init and restore it
     _checkCachedSession();
   }
 
@@ -74,6 +84,7 @@ class AppState extends ChangeNotifier {
   // Cached session info (for "Continue as" flow)
   String? cachedUsername;
   String? cachedUserId;
+  bool isAuthChecking = true;
   bool get hasCachedSession => cachedUsername != null;
 
   bool get isLoggedIn => token != null;
@@ -81,10 +92,28 @@ class AppState extends ChangeNotifier {
   // ── Cached session check ───────────────────────────────────────────────────
 
   Future<void> _checkCachedSession() async {
-    final session = await auth.getCachedSession();
-    if (session != null) {
-      cachedUsername = session.username;
-      cachedUserId = session.userId;
+    try {
+      final session = await auth.getCachedSession();
+      if (session != null) {
+        try {
+          await auth.fetchMe(session.token);
+          cachedUsername = session.username;
+          cachedUserId = session.userId;
+          
+          // Auto-restore session since it is valid
+          token = session.token;
+          userId = session.userId;
+          username = session.username;
+          _connectSocket();
+          _fetchInitialData();
+        } catch (_) {
+          await auth.clearSession();
+          cachedUsername = null;
+          cachedUserId = null;
+        }
+      }
+    } finally {
+      isAuthChecking = false;
       notifyListeners();
     }
   }
@@ -94,6 +123,10 @@ class AppState extends ChangeNotifier {
   Future<void> continueAsExisting() async {
     final session = await auth.getCachedSession();
     if (session == null) throw Exception('No cached session');
+    
+    // Validate the token with the backend first
+    await auth.fetchMe(session.token);
+    
     token = session.token;
     userId = session.userId;
     username = session.username;
@@ -243,7 +276,11 @@ class AppState extends ChangeNotifier {
 
   void _onError(String msg) {
     errorMessage = msg;
-    notifyListeners();
+    if (msg == 'Invalid auth token' || msg == 'Missing auth token') {
+      logout();
+    } else {
+      notifyListeners();
+    }
   }
 
   void clearError() {

@@ -47,7 +47,14 @@ class AuthService {
   Future<GuestSession> guestLogin() async {
     // Return cached token if still valid (simple reuse strategy)
     final cachedSession = await getCachedSession();
-    if (cachedSession != null) return cachedSession;
+    if (cachedSession != null) {
+      try {
+        await fetchMe(cachedSession.token);
+        return cachedSession;
+      } catch (_) {
+        await clearSession();
+      }
+    }
 
     final response = await http.post(
       Uri.parse('$baseUrl/auth/guest'),
