@@ -66,8 +66,8 @@ export function registerGameSockets(io: Server) {
           
           if (party.length === 2) {
             seats.push({ seat: 0, userId: party[0].userId, username: party[0].username, connected: true, isBot: false });
-            seats.push({ seat: 1, userId: party[1].userId, username: party[1].username, connected: true, isBot: false });
-            seats.push({ seat: 2, userId: "bot-1", username: "Vector", connected: true, isBot: true, botDifficulty: "hard" });
+            seats.push({ seat: 1, userId: "bot-1", username: "Vector", connected: true, isBot: true, botDifficulty: "hard" });
+            seats.push({ seat: 2, userId: party[1].userId, username: party[1].username, connected: true, isBot: false });
             seats.push({ seat: 3, userId: "bot-2", username: "Nova", connected: true, isBot: true, botDifficulty: "hard" });
           } else {
             seats.push({ seat: 0, userId, username: socket.user!.username, connected: true, isBot: false });
@@ -77,7 +77,7 @@ export function registerGameSockets(io: Server) {
           }
           
           startMatch(io, seats, "ranked");
-        }, 3000);
+        }, 15000);
       }
     });
 
@@ -181,6 +181,7 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("match:leave", async () => {
+      matchmaking.removeFromQueue(userId);
       const state = matchStore.findByUser(userId);
       if (state) {
         if (state.mode === "ranked" && state.phase !== "complete") {
