@@ -37,7 +37,10 @@ class SocketService {
 
     _socket!
       ..on('connect', (_) => print('[Socket] Connected to $baseUrl'))
-      ..on('connect_error', (err) => print('[Socket] Connection error: $err'))
+      ..on('connect_error', (err) {
+        print('[Socket] Connection error: $err');
+        onError(err.toString());
+      })
       ..on('disconnect', (reason) => print('[Socket] Disconnected: $reason'))
       ..on('match:state', (data) => onMatchState(_asMap(data)))
       ..on('match:created', (data) => onMatchCreated(_asMap(data)))

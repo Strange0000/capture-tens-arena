@@ -276,7 +276,7 @@ class AppState extends ChangeNotifier {
 
   void _onError(String msg) {
     errorMessage = msg;
-    if (msg == 'Invalid auth token' || msg == 'Missing auth token') {
+    if (msg.contains('Invalid auth token') || msg.contains('Missing auth token')) {
       logout();
     } else {
       notifyListeners();

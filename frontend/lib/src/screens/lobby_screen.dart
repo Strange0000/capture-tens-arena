@@ -52,7 +52,7 @@ class _LobbyScreenState extends State<LobbyScreen>
         );
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted && ModalRoute.of(context)?.isCurrent == true) {
+        if (context.mounted) {
           Navigator.pushNamedAndRemoveUntil(context, '/', (r) => false);
         }
       });
