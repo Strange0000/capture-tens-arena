@@ -118,10 +118,8 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
           // Content
           SafeArea(
             child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 600),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -236,60 +234,13 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
                       onPressed: () {
                         app.leaveMatch();
                         Navigator.pop(context);
-                      const SizedBox(height: 16),
+                      },
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      label: const Text('Cancel Search', style: TextStyle(fontWeight: FontWeight.w800)),
+                    ),
 
-                      // MMR badge
-                      if (app.rankInfo != null)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-                          decoration: BoxDecoration(
-                            color: app.rankInfo!.color.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: app.rankInfo!.color.withOpacity(0.4)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Image.asset(app.rankInfo!.icon, height: 20, width: 20),
-                              const SizedBox(width: 8),
-                              Text(
-                                '${app.rankInfo!.displayName}  ·  ${app.rankInfo!.mmr} MMR',
-                                style: TextStyle(
-                                  color: app.rankInfo!.color,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                      const Spacer(flex: 2),
-
-                      // Dot animation
-                      _DotLoader(),
-
-                      const SizedBox(height: 32),
-
-                      // Cancel button
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.redAccent, width: 1.2),
-                          foregroundColor: Colors.redAccent,
-                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        ),
-                        onPressed: () {
-                          app.leaveMatch();
-                          Navigator.pop(context);
-                        },
-                        icon: const Icon(Icons.close_rounded, size: 18),
-                        label: const Text('Cancel Search', style: TextStyle(fontWeight: FontWeight.w800)),
-                      ),
-
-                      const SizedBox(height: 40),
-                    ],
-                  ),
+                    const SizedBox(height: 40),
+                  ],
                 ),
               ),
             ),

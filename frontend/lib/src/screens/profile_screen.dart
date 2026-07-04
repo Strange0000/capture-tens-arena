@@ -63,12 +63,9 @@ class ProfileScreen extends StatelessWidget {
 
           // Scrollable content
           SafeArea(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 600),
-                child: ListView(
-                  padding: const EdgeInsets.only(bottom: 40),
-                  children: [
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: 40),
+              children: [
                 // ── Profile Banner + Avatar ───────────────────────────────
                 Stack(
                   clipBehavior: Clip.none,
@@ -296,11 +293,10 @@ class ProfileScreen extends StatelessWidget {
                     label: const Text('Sign Out'),
                   ),
                 ),
-                const SizedBox(height: 32),
               ],
             ),
           ),
-        ),
+        ],
       ),
     );
   }
