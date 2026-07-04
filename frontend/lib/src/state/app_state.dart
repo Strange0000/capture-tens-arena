@@ -211,6 +211,7 @@ class AppState extends ChangeNotifier {
   // ── Socket event handlers ─────────────────────────────────────────────────
 
   void _onMatchState(Map<String, dynamic> json) {
+    print('[AppState] match:state received, phase=${json['phase']}, id=${json['id']}');
     final incoming = MatchState.fromJson(json);
     // Ignore stale updates from a match we already left
     if (_leftMatchId != null && incoming.id == _leftMatchId) return;
@@ -225,6 +226,7 @@ class AppState extends ChangeNotifier {
   }
 
   void _onMatchCreated(Map<String, dynamic> json) {
+    print('[AppState] match:created received: $json');
     lobbyStatus = LobbyStatus.inMatch;
     notifyListeners();
   }
@@ -386,12 +388,14 @@ class AppState extends ChangeNotifier {
   // ── Game actions ─────────────────────────────────────────────────────────
 
   void queueRanked() {
+    print('[AppState] queueRanked called, socket connected=${socket.connected}');
     socket.queueRanked(mmr: rankInfo?.mmr ?? 0);
     lobbyStatus = LobbyStatus.queuing;
     notifyListeners();
   }
 
   void startOffline(String difficulty) {
+    print('[AppState] startOffline($difficulty) called, socket connected=${socket.connected}');
     socket.startOffline(difficulty);
     lobbyStatus = LobbyStatus.inMatch;
     notifyListeners();

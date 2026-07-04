@@ -5,6 +5,7 @@ typedef VoidJsonCallback = void Function(Map<String, dynamic> json);
 
 class SocketService {
   io.Socket? _socket;
+  final List<_PendingEmit> _pendingEmits = [];
 
   bool get connected => _socket?.connected ?? false;
 
@@ -23,6 +24,7 @@ class SocketService {
     required void Function(String msg) onError,
   }) {
     _socket?.dispose();
+    _pendingEmits.clear();
     _socket = io.io(
       baseUrl,
       io.OptionBuilder()
@@ -36,7 +38,17 @@ class SocketService {
     );
 
     _socket!
-      ..on('connect', (_) => print('[Socket] Connected to $baseUrl'))
+      ..on('connect', (_) {
+        print('[Socket] Connected to $baseUrl');
+        // Replay any events that were emitted before connection was ready
+        if (_pendingEmits.isNotEmpty) {
+          print('[Socket] Replaying ${_pendingEmits.length} pending events');
+          for (final pending in _pendingEmits) {
+            _socket!.emit(pending.event, pending.data);
+          }
+          _pendingEmits.clear();
+        }
+      })
       ..on('connect_error', (err) {
         print('[Socket] Connection error: $err');
         onError(err.toString());
@@ -60,6 +72,7 @@ class SocketService {
   void disconnect() {
     _socket?.dispose();
     _socket = null;
+    _pendingEmits.clear();
   }
 
   // ── Game actions ──────────────────────────────────────────────────────────
@@ -95,7 +108,17 @@ class SocketService {
   // ── Internals ─────────────────────────────────────────────────────────────
 
   void _emit(String event, Map<String, dynamic> data) {
-    _socket?.emit(event, data);
+    if (_socket == null) {
+      print('[Socket] WARNING: No socket, cannot emit $event');
+      return;
+    }
+    if (!_socket!.connected) {
+      print('[Socket] Socket not yet connected, buffering event: $event');
+      _pendingEmits.add(_PendingEmit(event, data));
+      return;
+    }
+    print('[Socket] Emitting: $event');
+    _socket!.emit(event, data);
   }
 
   static Map<String, dynamic> _asMap(dynamic data) {
@@ -103,4 +126,10 @@ class SocketService {
     if (data is Map) return Map<String, dynamic>.from(data);
     return {};
   }
+}
+
+class _PendingEmit {
+  final String event;
+  final Map<String, dynamic> data;
+  _PendingEmit(this.event, this.data);
 }

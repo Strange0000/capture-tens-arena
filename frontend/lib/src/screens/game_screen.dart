@@ -21,6 +21,29 @@ class _GameScreenState extends State<GameScreen> {
   String? _trickWinnerMessage;
   String? _lastPowerSuit;
   int _lastTrickCount = 0;
+  bool _waitTimedOut = false;
+  int _waitSeconds = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _startWaitTimer();
+  }
+
+  void _startWaitTimer() {
+    Future.delayed(const Duration(seconds: 1), () {
+      if (!mounted) return;
+      final app = context.read<AppState>();
+      if (app.match != null) return; // Match arrived, stop counting
+      setState(() {
+        _waitSeconds++;
+        if (_waitSeconds >= 10) {
+          _waitTimedOut = true;
+        }
+      });
+      if (!_waitTimedOut) _startWaitTimer();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +71,70 @@ class _GameScreenState extends State<GameScreen> {
     final match = app.match;
 
     if (match == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        backgroundColor: const Color(0xFF070B13),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!_waitTimedOut) ...[
+                const CircularProgressIndicator(color: Color(0xFF48E5C2)),
+                const SizedBox(height: 20),
+                Text(
+                  'Setting up match...',
+                  style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Socket: ${app.socket.connected ? "connected" : "connecting..."}',
+                  style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 12),
+                ),
+              ] else ...[
+                Icon(Icons.wifi_off, color: Colors.white.withOpacity(0.5), size: 48),
+                const SizedBox(height: 16),
+                const Text(
+                  'Connection timed out',
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Could not start the match. The server may be waking up.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 14),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF48E5C2),
+                    foregroundColor: const Color(0xFF070B13),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _waitTimedOut = false;
+                      _waitSeconds = 0;
+                    });
+                    // Re-emit the bot match request
+                    app.startOffline('hard');
+                    _startWaitTimer();
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () {
+                    app.leaveMatch();
+                    Navigator.pushNamedAndRemoveUntil(context, '/lobby', (r) => false);
+                  },
+                  child: const Text('Back to Lobby', style: TextStyle(color: Colors.white54)),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
     }
 
     // Detect trick winner
