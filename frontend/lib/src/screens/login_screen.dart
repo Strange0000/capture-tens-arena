@@ -124,9 +124,12 @@ class _LoginScreenState extends State<LoginScreen>
             child: SafeArea(
               child: FadeTransition(
                 opacity: CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 36),
-                  child: Column(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 600),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 36),
+                      child: Column(
                     children: [
                       const Spacer(flex: 3),
 
@@ -177,10 +180,16 @@ class _LoginScreenState extends State<LoginScreen>
                       const Spacer(),
 
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 20),
-                        child: Text(
-                          'v1.0  ·  Strategy • Teamwork • Tens',
-                          style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.15), letterSpacing: 1),
+                      Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 600),
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 20),
+                            child: Text(
+                              'v1.0  ·  Strategy • Teamwork • Tens',
+                              style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.15), letterSpacing: 1),
+                            ),
+                          ),
                         ),
                       ),
                     ],

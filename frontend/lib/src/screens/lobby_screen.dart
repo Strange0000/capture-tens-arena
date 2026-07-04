@@ -127,9 +127,12 @@ class _LobbyScreenState extends State<LobbyScreen>
               slivers: [
                 SliverFillRemaining(
                   hasScrollBody: false,
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 600),
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                   // ── Header ────────────────────────────────────────────
@@ -281,17 +284,171 @@ class _LobbyScreenState extends State<LobbyScreen>
                         const SizedBox(width: 24),
                         TextButton.icon(
                           onPressed: () => _showTiersSheet(context),
-                          icon: const Icon(Icons.leaderboard, size: 20),
-                          label: const Text('Rank Tiers'),
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // ── Header ────────────────────────────────────────────
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Image.asset(
+                                      'assets/images/lobby_hero_logo.png',
+                                      height: 64,
+                                      fit: BoxFit.contain,
+                                    ),
+                                  ),
+                                ),
+                                // Rules button
+                                IconButton.filledTonal(
+                                  tooltip: 'How to Play',
+                                  onPressed: () => _showRulesSheet(context),
+                                  icon: const Icon(Icons.menu_book_rounded),
+                                ),
+                                IconButton.filledTonal(
+                                  tooltip: 'Friends',
+                                  onPressed: () => _showFriendsSheet(context),
+                                  icon: const Icon(Icons.people_alt),
+                                ),
+                                const SizedBox(width: 4),
+                                // Profile button
+                                IconButton.filledTonal(
+                                  tooltip: 'Profile',
+                                  onPressed: () =>
+                                      Navigator.pushNamed(context, '/profile'),
+                                  icon: const Icon(Icons.person),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+
+                            // ── Rank panel ────────────────────────────────────────
+                            _RankPanel(username: app.username, rankInfo: app.rankInfo),
+                            const SizedBox(height: 16),
+
+                            if (app.party != null) ...[
+                              _PartyBanner(party: app.party!, onLeave: app.leaveParty),
+                              const SizedBox(height: 16),
+                            ],
+
+                            const Spacer(),
+
+                            // ── Queue / Room status ───────────────────────────────
+                            if (app.lobbyStatus == LobbyStatus.queuing) ...[
+                              _QueueBanner(onCancel: app.leaveMatch),
+                              const SizedBox(height: 12),
+                            ],
+
+                            if (app.lobbyStatus == LobbyStatus.inRoom &&
+                                app.roomCode != null) ...[
+                              _RoomBanner(code: app.roomCode!),
+                              const SizedBox(height: 12),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF30B89C),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                onPressed: () {
+                                  app.startRoomWithBots();
+                                  Navigator.pushNamed(context, '/matchmaking');
+                                },
+                                icon: const Icon(Icons.smart_toy, size: 20),
+                                label: const Text('Start with Bots', style: TextStyle(fontWeight: FontWeight.bold)),
+                              ),
+                              const SizedBox(height: 12),
+                            ],
+
+                            // ── Main actions ──────────────────────────────────────
+                            if (app.lobbyStatus == LobbyStatus.idle) ...[
+                              // Ranked Match
+                              _ActionCard(
+                                icon: Icons.military_tech,
+                                iconColor: const Color(0xFFFFC857),
+                                title: 'Ranked Match',
+                                subtitle: 'Climb the leaderboard',
+                                onTap: () {
+                                  app.queueRanked();
+                                  Navigator.pushNamed(context, '/matchmaking');
+                                },
+                              ),
+                              const SizedBox(height: 10),
+
+                              // Bot Match
+                              _ActionCard(
+                                icon: Icons.smart_toy,
+                                iconColor: const Color(0xFF48E5C2),
+                                title: 'Bot Match',
+                                subtitle: 'Practice against AI',
+                                onTap: () {
+                                  app.startOffline('hard');
+                                  if (context.mounted) {
+                                    Navigator.pushNamed(context, '/game');
+                                  }
+                                },
+                              ),
+                              const SizedBox(height: 10),
+
+                              // Private Room
+                              _ActionCard(
+                                icon: _showRoomPanel
+                                    ? Icons.expand_less
+                                    : Icons.group_add,
+                                iconColor: Colors.white70,
+                                title: 'Private Room',
+                                subtitle: 'Play with friends',
+                                onTap: () =>
+                                    setState(() => _showRoomPanel = !_showRoomPanel),
+                              ),
+
+                              AnimatedSize(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOutCubic,
+                                child: _showRoomPanel
+                                    ? _PrivateRoomPanel(
+                                        controller: _roomCodeController,
+                                        onCreate: () => app.createRoom(),
+                                        onJoin: () {
+                                          final code =
+                                              _roomCodeController.text.trim();
+                                          if (code.isEmpty) return;
+                                          app.joinRoom(code);
+                                        },
+                                      )
+                                    : const SizedBox.shrink(),
+                              ),
+
+                              const SizedBox(height: 10),
+
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  TextButton.icon(
+                                    onPressed: () =>
+                                        Navigator.pushNamed(context, '/replay'),
+                                    icon: const Icon(Icons.history, size: 20),
+                                    label: const Text('Replays'),
+                                  ),
+                                  const SizedBox(width: 24),
+                                  TextButton.icon(
+                                    onPressed: () => _showTiersSheet(context),
+                                    icon: const Icon(Icons.leaderboard, size: 20),
+                                    label: const Text('Rank Tiers'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
                         ),
-                      ],
+                      ),
                     ),
-                  ],
-                ],
-              ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     ),
   ),          // closes SafeArea(

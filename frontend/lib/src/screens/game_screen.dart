@@ -256,9 +256,15 @@ class _GameScreenState extends State<GameScreen> {
                           ),
                   ),
 
-                SizedBox(
-                  height: 110,
-                  child: _showDealAnimation ? const SizedBox.shrink() : _HandArea(app: app),
+                Builder(
+                  builder: (context) {
+                    final sw = MediaQuery.of(context).size.width;
+                    final cw = (sw / 8).clamp(50.0, 90.0);
+                    return SizedBox(
+                      height: (cw * 1.428) + 20,
+                      child: _showDealAnimation ? const SizedBox.shrink() : _HandArea(app: app, cardWidth: cw),
+                    );
+                  }
                 ),
               ],
             ),
@@ -437,8 +443,9 @@ class _QuickRule extends StatelessWidget {
 /// Completely static hand — NO animation controllers, NO stagger.
 /// Cards just appear instantly. Zero jank.
 class _HandArea extends StatelessWidget {
-  const _HandArea({required this.app});
+  const _HandArea({required this.app, required this.cardWidth});
   final AppState app;
+  final double cardWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -446,41 +453,74 @@ class _HandArea extends StatelessWidget {
     final isMyTurn = match.players.any(
       (p) => p.userId == app.userId && p.seat == match.currentTurnSeat,
     );
+    final hand = match.hand;
+    final N = hand.length;
 
-    return ListView.builder(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      itemCount: match.hand.length,
-      itemBuilder: (context, index) {
-        final card = match.hand[index];
-        final cardWidget = ArenaCardWidget(
-          card: card,
-          powerSuit: match.powerSuit,
-          onPlay: isMyTurn ? () => app.playCard(card.id) : null,
-          dimmed: !isMyTurn,
-        );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final aw = constraints.maxWidth - 16;
+        double widthFactor = 1.0;
+        if (N > 1) {
+          final maxOverlap = (aw - cardWidth) / (N - 1);
+          final overlapWidth = maxOverlap.clamp(20.0, cardWidth + 4.0);
+          widthFactor = overlapWidth / cardWidth;
+        }
 
-        if (!isMyTurn) return cardWidget;
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Center(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(N, (index) {
+                  final card = hand[index];
+                  final cardWidget = ArenaCardWidget(
+                    card: card,
+                    powerSuit: match.powerSuit,
+                    onPlay: isMyTurn ? () => app.playCard(card.id) : null,
+                    dimmed: !isMyTurn,
+                    width: cardWidth,
+                  );
 
-        return Draggable<String>(
-          data: card.id,
-          feedback: Material(
-            color: Colors.transparent,
-            child: Transform.scale(
-              scale: 1.1,
-              child: ArenaCardWidget(
-                card: card,
-                powerSuit: match.powerSuit,
-                onPlay: null,
-                dimmed: false,
+                  Widget wrappedCard = cardWidget;
+                  if (isMyTurn) {
+                    wrappedCard = Draggable<String>(
+                      data: card.id,
+                      feedback: Material(
+                        color: Colors.transparent,
+                        child: Transform.scale(
+                          scale: 1.1,
+                          child: ArenaCardWidget(
+                            card: card,
+                            powerSuit: match.powerSuit,
+                            onPlay: null,
+                            dimmed: false,
+                            width: cardWidth,
+                          ),
+                        ),
+                      ),
+                      childWhenDragging: Opacity(
+                        opacity: 0.2,
+                        child: cardWidget,
+                      ),
+                      child: cardWidget,
+                    );
+                  }
+
+                  if (index < N - 1) {
+                    return Align(
+                      widthFactor: widthFactor,
+                      alignment: Alignment.centerLeft,
+                      child: wrappedCard,
+                    );
+                  }
+                  return wrappedCard;
+                }),
               ),
             ),
           ),
-          childWhenDragging: Opacity(
-            opacity: 0.2,
-            child: cardWidget,
-          ),
-          child: cardWidget,
         );
       },
     );

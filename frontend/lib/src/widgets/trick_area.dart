@@ -132,31 +132,35 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
       byRelativeSeats[relativeSeat] = play;
     }
 
+    final double sw = MediaQuery.of(context).size.width;
+    final double size = (sw * 0.55).clamp(180.0, 260.0);
+    final double cardWidth = (size * 0.25).clamp(45.0, 65.0);
+
     return SizedBox(
-      width: 230,
-      height: 230,
+      width: size,
+      height: size,
       child: Stack(
         alignment: Alignment.center,
         children: [
           // Relative Seat 2 → top
           if (byRelativeSeats[2] != null)
             Positioned(top: 0, left: 0, right: 0,
-              child: Center(child: _buildAnimatedCard(byRelativeSeats[2]!.seat, byRelativeSeats[2]!))),
+              child: Center(child: _buildAnimatedCard(byRelativeSeats[2]!.seat, byRelativeSeats[2]!, cardWidth))),
 
           // Relative Seat 1 → right
           if (byRelativeSeats[1] != null)
             Positioned(right: 0, top: 0, bottom: 0,
-              child: Center(child: _buildAnimatedCard(byRelativeSeats[1]!.seat, byRelativeSeats[1]!))),
+              child: Center(child: _buildAnimatedCard(byRelativeSeats[1]!.seat, byRelativeSeats[1]!, cardWidth))),
 
           // Relative Seat 3 → left
           if (byRelativeSeats[3] != null)
             Positioned(left: 0, top: 0, bottom: 0,
-              child: Center(child: _buildAnimatedCard(byRelativeSeats[3]!.seat, byRelativeSeats[3]!))),
+              child: Center(child: _buildAnimatedCard(byRelativeSeats[3]!.seat, byRelativeSeats[3]!, cardWidth))),
 
           // Relative Seat 0 → bottom
           if (byRelativeSeats[0] != null)
             Positioned(bottom: 0, left: 0, right: 0,
-              child: Center(child: _buildAnimatedCard(byRelativeSeats[0]!.seat, byRelativeSeats[0]!))),
+              child: Center(child: _buildAnimatedCard(byRelativeSeats[0]!.seat, byRelativeSeats[0]!, cardWidth))),
 
           // Empty centre hint
           if (widget.trick.plays.isEmpty)
@@ -166,9 +170,9 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildAnimatedCard(int seat, TrickPlay play) {
+  Widget _buildAnimatedCard(int seat, TrickPlay play, double cardWidth) {
     final isWinner = widget.trick.winnerSeat == seat;
-    final card = _PlayedCard(play: play, powerSuit: widget.powerSuit, isWinner: isWinner);
+    final card = _PlayedCard(play: play, powerSuit: widget.powerSuit, isWinner: isWinner, cardWidth: cardWidth);
 
     // If there's an active animation for this seat, wrap in animated builders
     if (_controllers.containsKey(seat) && _slideAnimations.containsKey(seat)) {
@@ -196,11 +200,12 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
 }
 
 class _PlayedCard extends StatelessWidget {
-  const _PlayedCard({required this.play, required this.powerSuit, required this.isWinner});
+  const _PlayedCard({required this.play, required this.powerSuit, required this.isWinner, required this.cardWidth});
 
   final TrickPlay play;
   final String? powerSuit;
   final bool isWinner;
+  final double cardWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -215,7 +220,7 @@ class _PlayedCard extends StatelessWidget {
         card: play.card,
         powerSuit: powerSuit,
         onPlay: () {},
-        small: true,
+        width: cardWidth,
       ),
     );
   }

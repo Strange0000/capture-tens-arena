@@ -34,33 +34,38 @@ class ReplayScreen extends StatelessWidget {
           ),
 
           SafeArea(
-            child: entries.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(24),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white.withOpacity(0.05),
-                            border: Border.all(color: Colors.white10),
-                          ),
-                          child: const Icon(Icons.history_toggle_off, size: 52, color: Color(0xFF48E5C2)),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 600),
+                child: entries.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(24),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white.withOpacity(0.05),
+                                border: Border.all(color: Colors.white10),
+                              ),
+                              child: const Icon(Icons.history_toggle_off, size: 52, color: Color(0xFF48E5C2)),
+                            ),
+                            const SizedBox(height: 20),
+                            const Text('No replays yet', style: TextStyle(color: Colors.white70, fontSize: 18, fontWeight: FontWeight.w800)),
+                            const SizedBox(height: 6),
+                            const Text('Finish a match to see it here', style: TextStyle(color: Colors.white30, fontSize: 13)),
+                          ],
                         ),
-                        const SizedBox(height: 20),
-                        const Text('No replays yet', style: TextStyle(color: Colors.white70, fontSize: 18, fontWeight: FontWeight.w800)),
-                        const SizedBox(height: 6),
-                        const Text('Finish a match to see it here', style: TextStyle(color: Colors.white30, fontSize: 13)),
-                      ],
-                    ),
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
-                    itemCount: entries.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) => _ReplayTile(entry: entries[index]),
-                  ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+                        itemCount: entries.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (context, index) => _ReplayTile(entry: entries[index]),
+                      ),
+              ),
+            ),
           ),
         ],
       ),

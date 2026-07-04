@@ -14,6 +14,7 @@ class ArenaCardWidget extends StatefulWidget {
     this.dimmed = false,
     this.small = false,
     this.faceDown = false,
+    this.width,
   });
 
   final ArenaCard card;
@@ -22,6 +23,7 @@ class ArenaCardWidget extends StatefulWidget {
   final bool dimmed;
   final bool small;
   final bool faceDown;
+  final double? width;
 
   @override
   State<ArenaCardWidget> createState() => _ArenaCardWidgetState();
@@ -32,8 +34,9 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final double w = widget.small ? 50 : 70;
-    final double h = widget.small ? 72 : 100;
+    final double w = widget.width ?? (widget.small ? 50.0 : 70.0);
+    final double h = w * 1.428;
+    final double scale = w / 70.0;
 
     if (widget.faceDown) return _CardBack(width: w, height: h);
 
@@ -56,9 +59,9 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
           child: Container(
             width: w,
             height: h,
-            margin: EdgeInsets.symmetric(horizontal: widget.small ? 1 : 3),
+            margin: EdgeInsets.symmetric(horizontal: 3 * scale),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(widget.small ? 6 : 8),
+              borderRadius: BorderRadius.circular(8 * scale),
               gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -90,7 +93,7 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
               ],
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(widget.small ? 5 : 7),
+              borderRadius: BorderRadius.circular(7 * scale),
               child: Stack(
                 children: [
                   // Subtle inner texture
@@ -108,8 +111,8 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
 
                   // Top-left pip
                   Positioned(
-                    top: widget.small ? 3 : 5,
-                    left: widget.small ? 4 : 6,
+                    top: 5 * scale,
+                    left: 6 * scale,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
@@ -117,25 +120,25 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
                           widget.card.rank,
                           style: TextStyle(
                             color: suitColor,
-                            fontSize: widget.small ? 12 : 16,
+                            fontSize: 16 * scale,
                             fontWeight: FontWeight.w900,
                             height: 1.1,
                           ),
                         ),
-                        suitImage(widget.card.suit, widget.small ? 9 : 12),
+                        suitImage(widget.card.suit, 12 * scale),
                       ],
                     ),
                   ),
 
                   // Center suit — large
                   Center(
-                    child: suitImage(widget.card.suit, widget.small ? 24 : 34),
+                    child: suitImage(widget.card.suit, 34 * scale),
                   ),
 
                   // Bottom-right pip (rotated)
                   Positioned(
-                    bottom: widget.small ? 3 : 5,
-                    right: widget.small ? 4 : 6,
+                    bottom: 5 * scale,
+                    right: 6 * scale,
                     child: Transform.rotate(
                       angle: pi,
                       child: Column(
@@ -145,12 +148,12 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
                             widget.card.rank,
                             style: TextStyle(
                               color: suitColor,
-                              fontSize: widget.small ? 12 : 16,
+                              fontSize: 16 * scale,
                               fontWeight: FontWeight.w900,
                               height: 1.1,
                             ),
                           ),
-                          suitImage(widget.card.suit, widget.small ? 9 : 12),
+                          suitImage(widget.card.suit, 12 * scale),
                         ],
                       ),
                     ),
@@ -159,10 +162,10 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
                   // Power suit indicator — golden corner dot
                   if (isPower)
                     Positioned(
-                      top: 2, right: 2,
+                      top: 2 * scale, right: 2 * scale,
                       child: Container(
-                        width: widget.small ? 6 : 8,
-                        height: widget.small ? 6 : 8,
+                        width: 8 * scale,
+                        height: 8 * scale,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: const Color(0xFFD4A017),
