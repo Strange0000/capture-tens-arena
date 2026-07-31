@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { OAuth2Client } from "google-auth-library";
 import { z } from "zod";
 import { env } from "../config/env.js";
 import { createGuest, loginWithGoogle } from "../services/authService.js";
@@ -32,7 +33,6 @@ authRouter.post("/google", async (req, res, next) => {
       displayName = body.username;
     } else {
       // In production, verify with Google
-      const { OAuth2Client } = await import("google-auth-library");
       const client = new OAuth2Client(env.GOOGLE_CLIENT_ID);
       const ticket = await client.verifyIdToken({
         idToken: body.idToken,
