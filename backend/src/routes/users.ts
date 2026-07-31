@@ -6,6 +6,8 @@ import { FriendModel } from "../models/Friend.js";
 import { UserModel } from "../models/User.js";
 import { env } from "../config/env.js";
 import { rankForMmr, TIERS } from "../services/rankingService.js";
+import { AchievementModel } from "../models/Achievement.js";
+import { ACHIEVEMENTS } from "../game/achievements.js";
 
 export const usersRouter = Router();
 
@@ -62,6 +64,24 @@ usersRouter.get("/tiers", (_req, res) => {
   res.json({ tiers: TIERS });
 });
 
+usersRouter.get("/achievements", requireAuth, async (req, res, next) => {
+  if (env.OFFLINE_DEV_MODE) {
+    return res.json({ achievements: ACHIEVEMENTS.map(a => ({ ...a, unlocked: false, unlockedAt: null })) });
+  }
+  try {
+    const unlocked = await AchievementModel.find({ userId: req.user!.id });
+    const unlockedCodes = new Set(unlocked.map(a => a.code));
+    const result = ACHIEVEMENTS.map(a => ({
+      ...a,
+      unlocked: unlockedCodes.has(a.code),
+      unlockedAt: unlocked.find(u => u.code === a.code)?.unlockedAt ?? null,
+    }));
+    res.json({ achievements: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
 usersRouter.get("/leaderboard", async (_req, res, next) => {
   if (env.OFFLINE_DEV_MODE) {
     return res.json({ season: currentSeason(), leaders: [] });
@@ -89,7 +109,7 @@ usersRouter.get("/search", requireAuth, async (req, res, next) => {
     if (!q || q.length < 2) return res.json({ users: [] });
     
     const users = await UserModel.find({
-      username: { $regex: new RegExp(q, "i") },
+      username: { $regex: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i") },
       _id: { $ne: req.user!.id }
     }).select("username avatarUrl status").limit(10);
     
@@ -145,7 +165,8 @@ usersRouter.post("/friends/request", requireAuth, async (req, res, next) => {
     const { username } = req.body;
     if (!username) return res.status(400).json({ error: "Username is required" });
     
-    const targetUser = await UserModel.findOne({ username: { $regex: new RegExp(`^${username}$`, "i") } });
+    const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const targetUser = await UserModel.findOne({ username: { $regex: new RegExp(`^${escaped}$`, "i") } });
     if (!targetUser) return res.status(404).json({ error: "User not found" });
     if (targetUser.id === req.user!.id) return res.status(400).json({ error: "Cannot add yourself" });
 

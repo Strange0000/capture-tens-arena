@@ -33,6 +33,7 @@ class ProfileScreen extends StatelessWidget {
     final match = app.match;
     final captures = match?.captures;
     final rank = app.rankInfo ?? RankInfo.fromMmr(0);
+    final stats = app.statistics ?? {};
     final tierColor = rank.color;
 
     return Scaffold(
@@ -218,27 +219,31 @@ class ProfileScreen extends StatelessWidget {
 
                 const SizedBox(height: 24),
 
-                // ── Suit Tens captured ────────────────────────────────────
+                // ── Career Statistics ────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _SectionHeader('Suit Captures'),
+                  child: _SectionHeader('Career Stats'),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.04),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: Colors.white10),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    child: Column(
                       children: [
-                        _SuitCapture(symbol: '♥', label: 'Hearts', color: const Color(0xFFE53935)),
-                        _SuitCapture(symbol: '♦', label: 'Diamonds', color: const Color(0xFFE53935)),
-                        _SuitCapture(symbol: '♣', label: 'Clubs', color: Colors.white70),
-                        _SuitCapture(symbol: '♠', label: 'Spades', color: Colors.white70),
+                        _StatRow('Total Matches', '${stats['matches'] ?? 0}'),
+                        const Divider(color: Colors.white10, height: 24),
+                        _StatRow('Tens Captured', '${stats['tensCaptured'] ?? 0}'),
+                        const Divider(color: Colors.white10, height: 24),
+                        _StatRow('Aces Captured', '${stats['acesCaptured'] ?? 0}'),
+                        const Divider(color: Colors.white10, height: 24),
+                        _StatRow('Current Win Streak', '${stats['currentWinStreak'] ?? 0}', accent: true),
+                        const Divider(color: Colors.white10, height: 24),
+                        _StatRow('Best Win Streak', '${stats['bestWinStreak'] ?? 0}', accent: true),
                       ],
                     ),
                   ),

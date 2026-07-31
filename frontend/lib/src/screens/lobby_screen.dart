@@ -147,14 +147,24 @@ class _LobbyScreenState extends State<LobbyScreen>
                       ),
                       // Rules button
                       IconButton.filledTonal(
-                        tooltip: 'How to Play',
-                        onPressed: () => _showRulesSheet(context),
-                        icon: const Icon(Icons.menu_book_rounded),
+                        tooltip: 'Tutorial',
+                        onPressed: () => Navigator.pushNamed(context, '/tutorial'),
+                        icon: const Icon(Icons.school),
                       ),
                       IconButton.filledTonal(
                         tooltip: 'Friends',
                         onPressed: () => _showFriendsSheet(context),
                         icon: const Icon(Icons.people_alt),
+                      ),
+                      IconButton.filledTonal(
+                        tooltip: 'Achievements',
+                        onPressed: () => Navigator.pushNamed(context, '/achievements'),
+                        icon: const Icon(Icons.emoji_events),
+                      ),
+                      IconButton.filledTonal(
+                        tooltip: 'Settings',
+                        onPressed: () => Navigator.pushNamed(context, '/settings'),
+                        icon: const Icon(Icons.settings),
                       ),
                       const SizedBox(width: 4),
                       // Profile button

@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import '../services/audio_service.dart';
 import '../widgets/arena_card_widget.dart';
 import '../widgets/captures_bar.dart';
 import '../widgets/deal_animation.dart';
+import '../widgets/emote_picker.dart';
 import '../widgets/game_table.dart';
 import '../widgets/match_result_overlay.dart';
 import '../widgets/power_suit_picker.dart';
@@ -23,6 +25,7 @@ class _GameScreenState extends State<GameScreen> {
   int _lastTrickCount = 0;
   bool _waitTimedOut = false;
   int _waitSeconds = 0;
+  String? _lastMatchDifficulty;
 
   @override
   void initState() {
@@ -116,7 +119,7 @@ class _GameScreenState extends State<GameScreen> {
                       _waitSeconds = 0;
                     });
                     // Re-emit the bot match request
-                    app.startOffline('hard');
+                    app.startOffline(_lastMatchDifficulty ?? 'hard');
                     _startWaitTimer();
                   },
                   icon: const Icon(Icons.refresh),
@@ -144,6 +147,8 @@ class _GameScreenState extends State<GameScreen> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           setState(() => _trickWinnerMessage = '$winner won the trick!');
+          AudioService.instance.playTrickWin();
+          AudioService.instance.hapticMedium();
           Future.delayed(const Duration(milliseconds: 1800), () {
             if (mounted) setState(() => _trickWinnerMessage = null);
           });
@@ -262,6 +267,30 @@ class _GameScreenState extends State<GameScreen> {
                       Positioned.fill(
                         child: GameTable(match: match, mySeat: app.mySeat, onCardPlayed: app.playCard),
                       ),
+                      // Emote picker
+                      Positioned(
+                        bottom: 8, right: 8,
+                        child: EmotePicker(onEmote: (code) => app.sendEmote(code)),
+                      ),
+                      // Floating emote display
+                      if (app.latestEmote != null)
+                        Positioned(
+                          top: 60, left: 0, right: 0,
+                          child: Center(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF101826).withOpacity(0.9),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.3)),
+                              ),
+                              child: Text(
+                                '${app.latestEmote!['username']}: ${_emoteEmoji(app.latestEmote!['emote'] as String? ?? '')}',
+                                style: const TextStyle(color: Colors.white, fontSize: 16),
+                              ),
+                            ),
+                          ),
+                        ),
                       if (app.errorMessage != null)
                         Positioned(
                           top: 8, left: 40, right: 40,
@@ -380,7 +409,7 @@ class _GameScreenState extends State<GameScreen> {
                       _lastTrickCount = 0;
                     });
                     if (mode == 'offline') {
-                      app.startOffline('hard');
+                      app.startOffline(_lastMatchDifficulty ?? 'hard');
                     } else if (mode == 'ranked') {
                       app.queueRanked();
                       if (context.mounted) Navigator.pushReplacementNamed(context, '/matchmaking');
@@ -503,7 +532,7 @@ class _GameScreenState extends State<GameScreen> {
     );
     if (confirmed == true && context.mounted) {
       app.leaveMatch();
-      app.startOffline('hard');
+      app.startOffline(_lastMatchDifficulty ?? 'hard');
     }
   }
 }
@@ -565,7 +594,11 @@ class _HandArea extends StatelessWidget {
                   final cardWidget = ArenaCardWidget(
                     card: card,
                     powerSuit: match.powerSuit,
-                    onPlay: isMyTurn ? () => app.playCard(card.id) : null,
+                    onPlay: isMyTurn ? () {
+                      AudioService.instance.playCardPlace();
+                      AudioService.instance.hapticLight();
+                      app.playCard(card.id);
+                    } : null,
                     dimmed: !isMyTurn,
                     width: cardWidth,
                   );
@@ -611,4 +644,16 @@ class _HandArea extends StatelessWidget {
       },
     );
   }
+}
+
+String _emoteEmoji(String code) {
+  const map = {
+    'nice': '👏',
+    'gg': '🤝',
+    'oops': '😬',
+    'wow': '😲',
+    'hurry': '⏰',
+    'angry': '😤',
+  };
+  return map[code] ?? code;
 }

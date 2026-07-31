@@ -1,9 +1,8 @@
-import 'dart:js' as js;
-
 import 'package:flutter/foundation.dart';
 
 import '../models/match_state.dart';
 import '../models/rank_info.dart';
+import '../services/audio_service.dart';
 import '../services/auth_service.dart';
 import '../services/socket_service.dart';
 
@@ -17,7 +16,7 @@ class AppState extends ChangeNotifier {
   AppState() {
     String? url;
 
-    // 1. Query parameter has highest priority
+    // 1. Query parameter has highest priority (web only, safe on all platforms)
     try {
       final queryBackend = Uri.base.queryParameters['backend'];
       if (queryBackend != null && queryBackend.isNotEmpty) {
@@ -25,24 +24,7 @@ class AppState extends ChangeNotifier {
       }
     } catch (_) {}
 
-    // 2. Read from JavaScript global (set by backend_config.js)
-    if (url == null) {
-      try {
-        if (js.context.hasProperty('BACKEND_URL')) {
-          final jsUrl = js.context['BACKEND_URL'] as String?;
-          if (jsUrl != null && jsUrl.isNotEmpty) {
-            // Ignore localhost configuration if we are running on a production HTTPS deployment
-            final isLocalhostConfig = jsUrl.contains('localhost') || jsUrl.contains('127.0.0.1');
-            final isLocalBrowser = Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1';
-            if (!isLocalhostConfig || isLocalBrowser) {
-              url = jsUrl;
-            }
-          }
-        }
-      } catch (_) {}
-    }
-
-    // 3. Fallback to dart-define
+    // 2. Compile-time dart-define
     if (url == null) {
       const envUrl = String.fromEnvironment('BACKEND_URL');
       if (envUrl.isNotEmpty) {
@@ -50,12 +32,10 @@ class AppState extends ChangeNotifier {
       }
     }
 
-    // 4. Fallback to default production URL
+    // 3. Fallback to default production URL
     url ??= 'https://capture-tens-arena.onrender.com';
 
     backendUrl = url;
-    // ignore: avoid_print
-    print('[AppState] Backend URL: $backendUrl');
     auth = AuthService(baseUrl: backendUrl);
     
     // Check for cached session on init and restore it
@@ -71,9 +51,10 @@ class AppState extends ChangeNotifier {
   String? errorMessage;
   String? _leftMatchId; // Track left match to ignore stale server updates
   
-  // Rank info
+  // Rank info & Statistics
   RankInfo? rankInfo;
   Map<String, dynamic>? lastRankUpdate; // from rank:updated socket event
+  Map<String, dynamic>? statistics;
 
   // Friends & Party
   List<Map<String, dynamic>> friends = [];
@@ -86,6 +67,12 @@ class AppState extends ChangeNotifier {
   String? cachedUserId;
   bool isAuthChecking = true;
   bool get hasCachedSession => cachedUsername != null;
+
+  // Emotes
+  Map<String, dynamic>? latestEmote; // {seat, username, emote}
+  
+  // Achievement toasts
+  List<Map<String, dynamic>> pendingAchievements = [];
 
   bool get isLoggedIn => token != null;
 
@@ -148,7 +135,6 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> bootGuest() async {
-    if (token != null) return; // already booted
     final session = await auth.guestLogin();
     token = session.token;
     userId = session.userId;
@@ -159,7 +145,6 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> loginWithGoogle() async {
-    if (token != null) return;
     final session = await auth.googleLogin();
     token = session.token;
     userId = session.userId;
@@ -192,6 +177,7 @@ class AppState extends ChangeNotifier {
   }
 
   void _connectSocket() {
+    AudioService.instance.init();
     socket.connect(
       token: token!,
       baseUrl: backendUrl,
@@ -204,6 +190,9 @@ class AppState extends ChangeNotifier {
       onPartyInvited: _onPartyInvited,
       onRankUpdated: _onRankUpdated,
       onFriendStatus: _onFriendStatus,
+      onEmoteReceived: _onEmoteReceived,
+      onAchievementUnlocked: _onAchievementUnlocked,
+      onPlayerBotReplaced: _onPlayerBotReplaced,
       onError: _onError,
     );
   }
@@ -211,7 +200,7 @@ class AppState extends ChangeNotifier {
   // ── Socket event handlers ─────────────────────────────────────────────────
 
   void _onMatchState(Map<String, dynamic> json) {
-    print('[AppState] match:state received, phase=${json['phase']}, id=${json['id']}');
+    // debug: print('[AppState] match:state received, phase=${json['phase']}, id=${json['id']}');
     final incoming = MatchState.fromJson(json);
     // Ignore stale updates from a match we already left
     if (_leftMatchId != null && incoming.id == _leftMatchId) return;
@@ -226,7 +215,7 @@ class AppState extends ChangeNotifier {
   }
 
   void _onMatchCreated(Map<String, dynamic> json) {
-    print('[AppState] match:created received: $json');
+    // debug: print('[AppState] match:created received: $json');
     lobbyStatus = LobbyStatus.inMatch;
     notifyListeners();
   }
@@ -285,6 +274,50 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  void _onEmoteReceived(Map<String, dynamic> json) {
+    latestEmote = json;
+    AudioService.instance.playEmote();
+    AudioService.instance.hapticLight();
+    notifyListeners();
+    // Auto-clear after 2.5 seconds
+    Future.delayed(const Duration(milliseconds: 2500), () {
+      if (latestEmote == json) {
+        latestEmote = null;
+        notifyListeners();
+      }
+    });
+  }
+
+  void _onAchievementUnlocked(Map<String, dynamic> json) {
+    final achievements = json['achievements'] as List<dynamic>? ?? [];
+    for (final a in achievements) {
+      if (a is Map<String, dynamic>) {
+        pendingAchievements.add(a);
+      }
+    }
+    AudioService.instance.playAchievement();
+    AudioService.instance.hapticHeavy();
+    notifyListeners();
+  }
+
+  void _onPlayerBotReplaced(Map<String, dynamic> json) {
+    // A disconnected player was replaced by a bot
+    notifyListeners();
+  }
+
+  void dismissAchievement() {
+    if (pendingAchievements.isNotEmpty) {
+      pendingAchievements.removeAt(0);
+      notifyListeners();
+    }
+  }
+
+  void sendEmote(String emote) {
+    if (match != null) {
+      socket.sendEmote(match!.id, emote);
+    }
+  }
+
   void clearError() {
     errorMessage = null;
     notifyListeners();
@@ -307,9 +340,11 @@ class AppState extends ChangeNotifier {
       } else {
         rankInfo = RankInfo.fromMmr(0);
       }
+      statistics = data['statistics'] as Map<String, dynamic>?;
       notifyListeners();
     } catch (_) {
       rankInfo = RankInfo.fromMmr(0);
+      statistics = null;
     }
   }
 
@@ -332,7 +367,7 @@ class AppState extends ChangeNotifier {
       await auth.sendFriendRequest(token!, targetUsername);
       await fetchFriends();
     } catch (e) {
-      errorMessage = e.toString();
+      errorMessage = e.toString().replaceFirst('Exception: ', '');
       notifyListeners();
     }
   }
@@ -343,7 +378,7 @@ class AppState extends ChangeNotifier {
       await auth.acceptFriendRequest(token!, friendId);
       await fetchFriends();
     } catch (e) {
-      errorMessage = e.toString();
+      errorMessage = e.toString().replaceFirst('Exception: ', '');
       notifyListeners();
     }
   }
@@ -354,7 +389,7 @@ class AppState extends ChangeNotifier {
       await auth.removeFriend(token!, friendId);
       await fetchFriends();
     } catch (e) {
-      errorMessage = e.toString();
+      errorMessage = e.toString().replaceFirst('Exception: ', '');
       notifyListeners();
     }
   }
@@ -388,14 +423,14 @@ class AppState extends ChangeNotifier {
   // ── Game actions ─────────────────────────────────────────────────────────
 
   void queueRanked() {
-    print('[AppState] queueRanked called, socket connected=${socket.connected}');
+    // debug: print('[AppState] queueRanked called, socket connected=${socket.connected}');
     socket.queueRanked(mmr: rankInfo?.mmr ?? 0);
     lobbyStatus = LobbyStatus.queuing;
     notifyListeners();
   }
 
   void startOffline(String difficulty) {
-    print('[AppState] startOffline($difficulty) called, socket connected=${socket.connected}');
+    // debug: print('[AppState] startOffline($difficulty) called, socket connected=${socket.connected}');
     socket.startOffline(difficulty);
     lobbyStatus = LobbyStatus.inMatch;
     notifyListeners();

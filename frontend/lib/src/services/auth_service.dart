@@ -23,10 +23,9 @@ class AuthService {
 
   final String baseUrl;
 
-  Map<String, String> get _defaultHeaders => {
-    'Bypass-Tunnel-Reminder': 'true',
-    'ngrok-skip-browser-warning': 'true',
-  };
+  static const Duration _timeout = Duration(seconds: 15);
+
+  Map<String, String> get _defaultHeaders => {};
 
   Map<String, String> _authHeaders(String token) => {
     'Authorization': 'Bearer $token',
@@ -59,7 +58,7 @@ class AuthService {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/guest'),
       headers: _defaultHeaders,
-    );
+    ).timeout(_timeout);
     if (response.statusCode >= 400) {
       throw Exception('Guest login failed: ${response.statusCode}');
     }
@@ -80,12 +79,16 @@ class AuthService {
 
   Future<GuestSession> googleLogin() async {
     final googleSignIn = GoogleSignIn(
-      clientId: '925721095742-omjs30pn4s3lcag3r8pr5grl514voisn.apps.googleusercontent.com',
+      clientId: const String.fromEnvironment('GOOGLE_CLIENT_ID', defaultValue: ''),
       scopes: ['email'],
     );
     final account = await googleSignIn.signIn();
     if (account == null) throw Exception('Google Sign-In aborted');
-    
+
+    final auth = await account.authentication;
+    final idToken = auth.idToken;
+    if (idToken == null) throw Exception('Failed to get Google ID token');
+
     final response = await http.post(
       Uri.parse('$baseUrl/auth/google'),
       headers: {
@@ -93,12 +96,10 @@ class AuthService {
         ..._defaultHeaders,
       },
       body: jsonEncode({
-        'googleId': account.id,
-        'email': account.email,
+        'idToken': idToken,
         'username': account.displayName ?? account.email.split('@').first,
-        'avatarUrl': account.photoUrl,
       }),
-    );
+    ).timeout(_timeout);
     if (response.statusCode >= 400) {
       throw Exception('Google login failed: ${response.statusCode} - ${response.body}');
     }
@@ -121,7 +122,7 @@ class AuthService {
     final response = await http.get(
       Uri.parse('$baseUrl/users/me'),
       headers: _authHeaders(token),
-    );
+    ).timeout(_timeout);
     if (response.statusCode >= 400) throw Exception('Failed to fetch profile');
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
@@ -130,7 +131,7 @@ class AuthService {
     final response = await http.get(
       Uri.parse('$baseUrl/users/friends'),
       headers: _authHeaders(token),
-    );
+    ).timeout(_timeout);
     if (response.statusCode >= 400) throw Exception('Failed to fetch friends');
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     return List<Map<String, dynamic>>.from(data['friends']);
@@ -144,7 +145,7 @@ class AuthService {
         ..._authHeaders(token),
       },
       body: jsonEncode({'username': username}),
-    );
+    ).timeout(_timeout);
     if (response.statusCode >= 400) {
       final msg = jsonDecode(response.body)['error'] ?? 'Failed to send request';
       throw Exception(msg);
@@ -159,7 +160,7 @@ class AuthService {
         ..._authHeaders(token),
       },
       body: jsonEncode({'friendId': friendId}),
-    );
+    ).timeout(_timeout);
     if (response.statusCode >= 400) {
       final msg = jsonDecode(response.body)['error'] ?? 'Failed to accept request';
       throw Exception(msg);
@@ -170,7 +171,7 @@ class AuthService {
     final response = await http.delete(
       Uri.parse('$baseUrl/users/friends/$friendId'),
       headers: _authHeaders(token),
-    );
+    ).timeout(_timeout);
     if (response.statusCode >= 400) {
       final msg = jsonDecode(response.body)['error'] ?? 'Failed to remove friend';
       throw Exception(msg);
@@ -181,7 +182,7 @@ class AuthService {
     final response = await http.get(
       Uri.parse('$baseUrl/users/search').replace(queryParameters: {'q': query}),
       headers: _authHeaders(token),
-    );
+    ).timeout(_timeout);
     if (response.statusCode >= 400) throw Exception('Search failed');
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     return List<Map<String, dynamic>>.from(data['users']);
@@ -192,5 +193,15 @@ class AuthService {
     await prefs.remove('jwt');
     await prefs.remove('userId');
     await prefs.remove('username');
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAchievements(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/users/achievements'),
+      headers: _authHeaders(token),
+    ).timeout(_timeout);
+    if (response.statusCode >= 400) throw Exception('Failed to fetch achievements');
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return List<Map<String, dynamic>>.from(data['achievements']);
   }
 }

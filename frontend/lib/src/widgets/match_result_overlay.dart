@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/match_state.dart';
 import '../models/rank_info.dart';
+import '../services/audio_service.dart';
 
 /// Full-screen overlay shown when phase == 'complete'.
 /// Shows win/lose, score summary, rank change, and confetti for the winner.
@@ -64,6 +65,11 @@ class _MatchResultOverlayState extends State<MatchResultOverlay>
       Future.delayed(const Duration(milliseconds: 200), () {
         if (mounted) _confetti.play();
       });
+      AudioService.instance.playMatchWin();
+      AudioService.instance.hapticHeavy();
+    } else {
+      AudioService.instance.playMatchLose();
+      AudioService.instance.hapticMedium();
     }
     _anim.forward();
     Future.delayed(const Duration(milliseconds: 400), () {

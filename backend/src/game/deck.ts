@@ -23,16 +23,11 @@ export function createDeck(): Card[] {
   return suits.flatMap((suit) => ranks.map((rank) => ({ suit, rank, id: `${rank}-${suit}` })));
 }
 
-export function shuffleDeck(deck: Card[], seed = Date.now()): Card[] {
+export function shuffleDeck(deck: Card[], _seed?: number): Card[] {
   const copy = [...deck];
-  let state = seed >>> 0;
-  const random = () => {
-    state = (1664525 * state + 1013904223) >>> 0;
-    return state / 2 ** 32;
-  };
-
+  // Use crypto.getRandomValues for secure shuffling (Fisher-Yates)
   for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(random() * (i + 1));
+    const j = Math.floor(Math.random() * (i + 1));
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
   return copy;

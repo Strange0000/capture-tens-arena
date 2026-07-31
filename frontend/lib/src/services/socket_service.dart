@@ -21,6 +21,9 @@ class SocketService {
     required VoidJsonCallback onPartyInvited,
     required VoidJsonCallback onRankUpdated,
     required VoidJsonCallback onFriendStatus,
+    required VoidJsonCallback onEmoteReceived,
+    required VoidJsonCallback onAchievementUnlocked,
+    required VoidJsonCallback onPlayerBotReplaced,
     required void Function(String msg) onError,
   }) {
     _socket?.dispose();
@@ -28,10 +31,7 @@ class SocketService {
     _socket = io.io(
       baseUrl,
       io.OptionBuilder()
-          .setExtraHeaders({
-            'Bypass-Tunnel-Reminder': 'true',
-            'ngrok-skip-browser-warning': 'true',
-          })
+          .setExtraHeaders({})
           .setAuth({'token': token})
           .enableReconnection()
           .build(),
@@ -39,10 +39,10 @@ class SocketService {
 
     _socket!
       ..on('connect', (_) {
-        print('[Socket] Connected to $baseUrl');
+        // debug: print('[Socket] Connected to $baseUrl');
         // Replay any events that were emitted before connection was ready
         if (_pendingEmits.isNotEmpty) {
-          print('[Socket] Replaying ${_pendingEmits.length} pending events');
+          // debug: print('[Socket] Replaying ${_pendingEmits.length} pending events');
           for (final pending in _pendingEmits) {
             _socket!.emit(pending.event, pending.data);
           }
@@ -50,10 +50,10 @@ class SocketService {
         }
       })
       ..on('connect_error', (err) {
-        print('[Socket] Connection error: $err');
+        // debug: print('[Socket] Connection error: $err');
         onError(err.toString());
       })
-      ..on('disconnect', (reason) => print('[Socket] Disconnected: $reason'))
+      ..on('disconnect', (reason) => {/* debug: print('[Socket] Disconnected: $reason') */})
       ..on('match:state', (data) => onMatchState(_asMap(data)))
       ..on('match:created', (data) => onMatchCreated(_asMap(data)))
       ..on('queue:joined', (data) => onQueueJoined(_asMap(data)))
@@ -63,6 +63,9 @@ class SocketService {
       ..on('party:invited', (data) => onPartyInvited(_asMap(data)))
       ..on('rank:updated', (data) => onRankUpdated(_asMap(data)))
       ..on('friend:status', (data) => onFriendStatus(_asMap(data)))
+      ..on('emote:received', (data) => onEmoteReceived(_asMap(data)))
+      ..on('achievements:unlocked', (data) => onAchievementUnlocked(_asMap(data)))
+      ..on('match:playerBotReplaced', (data) => onPlayerBotReplaced(_asMap(data)))
       ..on('error', (data) {
         final msg = data is Map ? (data['message'] ?? 'Socket error') : data.toString();
         onError(msg as String);
@@ -105,19 +108,22 @@ class SocketService {
 
   void requestFriendStatuses() => _emit('friends:status', {});
 
+  void sendEmote(String matchId, String emote) =>
+      _emit('emote:send', {'matchId': matchId, 'emote': emote});
+
   // ── Internals ─────────────────────────────────────────────────────────────
 
   void _emit(String event, Map<String, dynamic> data) {
     if (_socket == null) {
-      print('[Socket] WARNING: No socket, cannot emit $event');
+      // debug: print('[Socket] WARNING: No socket, cannot emit $event');
       return;
     }
     if (!_socket!.connected) {
-      print('[Socket] Socket not yet connected, buffering event: $event');
+      // debug: print('[Socket] Socket not yet connected, buffering event: $event');
       _pendingEmits.add(_PendingEmit(event, data));
       return;
     }
-    print('[Socket] Emitting: $event');
+    // debug: print('[Socket] Emitting: $event');
     _socket!.emit(event, data);
   }
 

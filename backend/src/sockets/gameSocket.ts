@@ -15,9 +15,13 @@ import { matchmaking } from "../services/matchmakingService.js";
 import { matchStore } from "../services/matchStore.js";
 import { applyRankedResult } from "../services/rankingService.js";
 import { authenticateSocket, AuthedSocket } from "./authSocket.js";
+import { StatisticsModel } from "../models/Statistics.js";
+import { checkAndAwardAchievements, ACHIEVEMENTS } from "../game/achievements.js";
 
 // Track online users for friend status
 const onlineUsers = new Set<string>();
+const queueTimeouts = new Map<string, NodeJS.Timeout>();
+const disconnectGraceTimers = new Map<string, NodeJS.Timeout>();
 
 function currentSeason() {
   const now = new Date();
@@ -37,14 +41,14 @@ export function registerGameSockets(io: Server) {
     reconnectMatch(io, socket);
     broadcastFriendStatus(io, userId, "online");
 
-    socket.on("queue:ranked", ({ mmr = 0 }: { mmr?: number }) => {
+    socket.on("queue:ranked", () => {
       let party = matchmaking.getPartyForUser(userId);
       if (!party) {
         party = [{
           userId,
           username: socket.user!.username,
           socketId: socket.id,
-          mmr
+          mmr: 0
         }];
       }
       
@@ -57,7 +61,10 @@ export function registerGameSockets(io: Server) {
         startMatch(io, matchmaking.toSeats(group), "ranked");
       } else {
         // Fallback: If still in queue after 15 seconds, fill with bots!
-        setTimeout(() => {
+        // Cancel any previously scheduled timeout for this user
+        const existingTimeout = queueTimeouts.get(userId);
+        if (existingTimeout) clearTimeout(existingTimeout);
+        const timeout = setTimeout(() => {
           console.log(`[RankedQueue] Timeout fired for user ${userId}. InQueue: ${matchmaking.isUserInRankedQueue(userId)}`);
           if (!matchmaking.isUserInRankedQueue(userId)) return;
           
@@ -78,6 +85,7 @@ export function registerGameSockets(io: Server) {
           
           startMatch(io, seats, "ranked");
         }, 15000);
+        queueTimeouts.set(userId, timeout);
       }
     });
 
@@ -283,6 +291,29 @@ export function registerGameSockets(io: Server) {
       }
     });
 
+    // ── Emotes ────────────────────────────────────────────────────────
+    const lastEmoteTime = new Map<string, number>();
+    socket.on("emote:send", ({ matchId, emote }: { matchId: string; emote: string }) => {
+      const now = Date.now();
+      const last = lastEmoteTime.get(userId) ?? 0;
+      if (now - last < 3000) return; // Rate limit: 1 emote per 3 seconds
+      lastEmoteTime.set(userId, now);
+      
+      const validEmotes = ["nice", "gg", "oops", "wow", "hurry", "angry"];
+      if (!validEmotes.includes(emote)) return;
+      
+      const emoteState = matchStore.get(matchId);
+      if (!emoteState) return;
+      const emotePlayer = emoteState.players.find(p => p.userId === userId);
+      if (!emotePlayer) return;
+      
+      io.to(`match:${matchId}`).emit("emote:received", {
+        seat: emotePlayer.seat,
+        username: emotePlayer.username,
+        emote,
+      });
+    });
+
     socket.on("disconnect", () => {
       onlineUsers.delete(userId);
       matchmaking.removeFromQueue(userId);
@@ -301,8 +332,32 @@ export function registerGameSockets(io: Server) {
       const state = matchStore.findByUser(userId);
       if (!state) return;
       const player = state.players.find((item) => item.userId === userId);
-      if (player) player.connected = false;
+      if (!player) return;
+      
+      // Mark as disconnected but start grace period before converting to bot
+      player.connected = false;
+      matchStore.set(state);
       broadcastState(io, state.id);
+      
+      const graceTimer = setTimeout(() => {
+        disconnectGraceTimers.delete(userId);
+        const freshState = matchStore.get(state.id);
+        if (!freshState || freshState.phase === "complete") return;
+        const freshPlayer = freshState.players.find(p => p.userId === userId);
+        if (!freshPlayer || freshPlayer.connected) return;
+        
+        freshPlayer.isBot = true;
+        freshPlayer.botDifficulty = "medium";
+        matchStore.set(freshState);
+        io.to(`match:${freshState.id}`).emit("match:playerBotReplaced", { userId, username: freshPlayer.username });
+        broadcastState(io, freshState.id);
+        
+        if (freshState.phase === "playing" && freshState.currentTurnSeat === freshPlayer.seat) {
+          maybeBotTurn(io, freshState.id);
+        }
+      }, env.DISCONNECT_GRACE_MS);
+      
+      disconnectGraceTimers.set(userId, graceTimer);
     });
   });
 }
@@ -328,13 +383,20 @@ function broadcastState(io: Server, matchId: string) {
 }
 
 function reconnectMatch(io: Server, socket: AuthedSocket) {
+  // Cancel any pending disconnect grace timer
+  const graceTimer = disconnectGraceTimers.get(socket.user!.id);
+  if (graceTimer) {
+    clearTimeout(graceTimer);
+    disconnectGraceTimers.delete(socket.user!.id);
+  }
+
   const state = matchStore.findByUser(socket.user!.id);
   if (!state) return;
   const player = state.players.find((item) => item.userId === socket.user!.id);
   if (player) player.connected = true;
-  matchStore.set(state); // persist the updated connection status
+  matchStore.set(state);
   socket.join(`match:${state.id}`);
-  broadcastState(io, state.id); // notify all players of the reconnection
+  broadcastState(io, state.id);
   io.to(`match:${state.id}:spectators`).emit("match:spectatorState", publicStateForSeat(state));
 }
 
@@ -345,7 +407,12 @@ function maybeBotPowerSelect(io: Server, matchId: string) {
   setTimeout(() => {
     const fresh = matchStore.get(matchId);
     if (!fresh || fresh.phase !== "power-select") return;
-    selectPowerSuit(fresh, fresh.firstPlayerSeat, "spades");
+    // Pick the suit the bot has the most cards of
+    const botHand = fresh.hands[fresh.firstPlayerSeat] || [];
+    const suitCounts: Record<string, number> = {};
+    for (const c of botHand) { suitCounts[c.suit] = (suitCounts[c.suit] || 0) + 1; }
+    const bestSuit = (Object.entries(suitCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "spades") as Suit;
+    selectPowerSuit(fresh, fresh.firstPlayerSeat, bestSuit);
     dealRemainingCards(fresh);
     broadcastState(io, matchId);
     maybeBotTurn(io, matchId);
@@ -395,6 +462,8 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
   if (state.phase !== "complete") return;
   if (state.mode === "offline") return;
   
+  const rankResults: Record<string, any> = {};
+
   // Apply ranked MMR updates BEFORE cleanup
   if (state.mode === "ranked") {
     const season = currentSeason();
@@ -403,8 +472,6 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
     // Calculate average MMR of each team for opponent average
     const teamAPlayers = humanPlayers.filter(p => teamForSeat(p.seat) === "A");
     const teamBPlayers = humanPlayers.filter(p => teamForSeat(p.seat) === "B");
-    
-    const rankResults: Record<string, any> = {};
     
     for (const player of humanPlayers) {
       const myTeam = teamForSeat(player.seat);
@@ -433,6 +500,63 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
     }
   }
 
+  // ── Update Statistics & Check Achievements ────────────────────────
+  const matchDurationMs = state.startedAt ? Date.now() - state.startedAt : undefined;
+  for (const player of state.players.filter(p => !p.isBot)) {
+    const myTeam = teamForSeat(player.seat);
+    const won = state.winnerTeam === myTeam;
+    const teamCaptures = state.captures[myTeam];
+    const tensCapturedThisMatch = teamCaptures?.tens?.length ?? 0;
+    const acesCapturedThisMatch = teamCaptures?.aces ?? 0;
+
+    if (!env.OFFLINE_DEV_MODE) {
+      try {
+        const stats = await StatisticsModel.findOneAndUpdate(
+          { userId: player.userId },
+          {
+            $inc: {
+              matches: 1,
+              wins: won ? 1 : 0,
+              tensCaptured: tensCapturedThisMatch,
+              acesCaptured: acesCapturedThisMatch,
+            },
+            $setOnInsert: { currentWinStreak: 0, bestWinStreak: 0 },
+          },
+          { upsert: true, new: true }
+        );
+
+        const newStreak = won ? (stats.currentWinStreak + 1) : 0;
+        const bestStreak = Math.max(stats.bestWinStreak, newStreak);
+        await StatisticsModel.updateOne(
+          { userId: player.userId },
+          { $set: { currentWinStreak: newStreak, bestWinStreak: bestStreak } }
+        );
+
+        const rankTier = rankResults[player.userId]?.rank?.tier;
+        const newAchievements = await checkAndAwardAchievements(
+          player.userId, state, won,
+          {
+            matches: stats.matches,
+            wins: stats.wins,
+            tensCaptured: stats.tensCaptured,
+            acesCaptured: stats.acesCaptured,
+            currentWinStreak: newStreak,
+            bestWinStreak: bestStreak,
+          },
+          rankTier,
+          matchDurationMs
+        );
+
+        if (newAchievements.length > 0) {
+          const defs = newAchievements.map(code => ACHIEVEMENTS.find(a => a.code === code)).filter(Boolean);
+          io.to(`user:${player.userId}`).emit("achievements:unlocked", { achievements: defs });
+        }
+      } catch (err) {
+        console.error(`Failed to update statistics for ${player.userId}:`, err);
+      }
+    }
+  }
+
   setTimeout(() => {
     matchStore.delete(state.id);
   }, 10000);
@@ -450,7 +574,7 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
     events: state.replayEvents,
     powerSuit: state.powerSuit,
     winnerTeam: state.winnerTeam,
-    durationMs: state.startedAt ? Date.now() - state.startedAt : undefined
+    durationMs: matchDurationMs
   });
 }
 

@@ -219,7 +219,8 @@ class _PlayedCard extends StatelessWidget {
       child: ArenaCardWidget(
         card: play.card,
         powerSuit: powerSuit,
-        onPlay: () {},
+        onPlay: null,
+        dimmed: true,
         width: cardWidth,
       ),
     );

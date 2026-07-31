@@ -79,7 +79,11 @@ export function rankForMmr(mmr: number): RankDetail {
 }
 
 export function calculateMmr(current: number, opponent: number, won: boolean) {
-  return Math.max(0, current + (won ? 25 : -15));
+  const K = 32;
+  const expected = 1 / (1 + Math.pow(10, (opponent - current) / 400));
+  const score = won ? 1 : 0;
+  const delta = Math.round(K * (score - expected));
+  return Math.max(0, current + delta);
 }
 
 const offlineMmrStore = new Map<string, number>();

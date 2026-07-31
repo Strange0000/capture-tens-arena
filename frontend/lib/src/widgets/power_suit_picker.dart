@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 
+import '../services/audio_service.dart';
 import 'arena_card_widget.dart';
 
 /// Premium glassmorphism power suit picker.
@@ -119,7 +120,11 @@ class _SuitButtonState extends State<_SuitButton> {
       child: GestureDetector(
         onTapDown: (_) => setState(() => _pressed = true),
         onTapUp: (_) => setState(() => _pressed = false),
-        onTap: () => widget.onSelect(widget.suit),
+        onTap: () {
+          AudioService.instance.playPowerSuit();
+          AudioService.instance.hapticMedium();
+          widget.onSelect(widget.suit);
+        },
         onTapCancel: () => setState(() => _pressed = false),
         child: AnimatedScale(
           scale: _pressed ? 1.12 : _hovered ? 1.05 : 1.0,

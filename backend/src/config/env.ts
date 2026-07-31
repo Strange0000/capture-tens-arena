@@ -15,7 +15,12 @@ const envSchema = z.object({
   TURN_TIMEOUT_MS: z.coerce.number().default(45000),
   DISCONNECT_GRACE_MS: z.coerce.number().default(60000),
   BOT_THINK_MS: z.coerce.number().default(1500),
-  OFFLINE_DEV_MODE: z.string().transform((val) => val.toLowerCase() === "true").default("true")
+  OFFLINE_DEV_MODE: z.string().transform((val) => val.toLowerCase() === "true").default("false")
 });
 
 export const env = envSchema.parse(process.env);
+
+if (env.NODE_ENV === "production" && env.JWT_SECRET === "development-secret-change-me") {
+  console.error("FATAL: JWT_SECRET must be set in production!");
+  process.exit(1);
+}
