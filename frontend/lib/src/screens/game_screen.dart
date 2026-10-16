@@ -50,7 +50,8 @@ class _GameScreenState extends State<GameScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final app = context.read<AppState>();
-      if (app.match == null && app.lobbyStatus != LobbyStatus.queuing) {
+      // Only auto-start a bot match if truly idle (not queuing or waiting in a custom room)
+      if (app.match == null && app.lobbyStatus == LobbyStatus.idle) {
         print('[GameScreen] No match found on mount, starting bot match...');
         app.startOffline(_lastMatchDifficulty ?? 'hard');
       }

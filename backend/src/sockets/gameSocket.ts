@@ -421,8 +421,13 @@ function maybeBotPowerSelect(io: Server, matchId: string) {
     const bestSuit = (Object.entries(suitCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "spades") as Suit;
     selectPowerSuit(fresh, fresh.firstPlayerSeat, bestSuit);
     dealRemainingCards(fresh);
+    fresh.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+    matchStore.set(fresh);
     broadcastState(io, matchId);
     maybeBotTurn(io, matchId);
+    if (fresh.phase === "playing" && !fresh.players[fresh.currentTurnSeat].isBot) {
+      scheduleTurnTimeout(io, matchId, fresh.currentTurnSeat, fresh.turnDeadline, fresh.turnGeneration);
+    }
   }, env.BOT_THINK_MS);
 }
 
@@ -436,7 +441,15 @@ function maybeBotTurn(io: Server, matchId: string) {
     if (!fresh || fresh.phase !== "playing") return;
     const bot = fresh.players[fresh.currentTurnSeat];
     if (!bot?.isBot) return;
-    const card = chooseBotCard(fresh, fresh.currentTurnSeat, bot.botDifficulty ?? "medium");
+    let card;
+    try {
+      card = chooseBotCard(fresh, fresh.currentTurnSeat, bot.botDifficulty ?? "medium");
+    } catch (err) {
+      console.error(`[BOT] chooseBotCard failed for seat ${fresh.currentTurnSeat}, falling back:`, err);
+      const legal = legalCardsForSeat(fresh, fresh.currentTurnSeat);
+      if (!legal || legal.length === 0) return;
+      card = legal[0];
+    }
     const result = playCard(fresh, fresh.currentTurnSeat, card.id);
     matchStore.set(fresh);
     broadcastState(io, matchId);

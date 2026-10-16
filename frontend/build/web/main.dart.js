@@ -44601,7 +44601,7 @@ return b instanceof A.LD&&this.a===b.a},
 gD(a){return B.i.gD(this.a)}}
 A.aHa.prototype={
 $1(a){var s=t.H7
-s=new A.kx(new A.aoR(A.b([],t.CZ)),B.lo,A.b([],s),A.y(t.N,t.y),A.b([],s),$.aG())
+s=new A.kx(new A.aoR(A.b([],t.CZ)),B.i9,A.b([],s),A.y(t.N,t.y),A.b([],s),$.aG())
 s.a8E()
 return s},
 $S:538}
@@ -45042,7 +45042,7 @@ A.axs.prototype={
 $1(a){var s,r=this.a.c
 if(r==null)return
 s=A.iq(r,!1,t.g)
-if(s.r==null&&s.w!==B.i9){A.fb("[GameScreen] No match found on mount, starting bot match...")
+if(s.r==null&&s.w===B.i9){A.fb("[GameScreen] No match found on mount, starting bot match...")
 s.uB("hard")}},
 $S:3}
 A.awR.prototype={
@@ -45418,7 +45418,7 @@ this.a.amR(s,this.c)},
 $S:3}
 A.aze.prototype={
 $2(a,b){var s,r=null,q=this.b,p=this.a,o=t.p,n=A.b([new A.Yo(q,new A.az2(p,a),new A.az3(a),new A.az4(p,a),new A.az5(a),new A.az6(a),new A.az7(a),r),B.bc],o)
-if(q.w===B.i9)B.b.M(n,A.b([new A.a_2(q.gavK(),r),B.bb],o))
+if(q.w===B.lo)B.b.M(n,A.b([new A.a_2(q.gavK(),r),B.bb],o))
 if(q.w===B.lp&&q.x!=null){s=q.x
 s.toString
 B.b.M(n,A.b([new A.a00(s,new A.az8(q,a),r),B.bb],o))}if(b.b>=900)n.push(p.aae(a,q))
@@ -46080,7 +46080,7 @@ r=(s==null?b:s.b)==="private"}else r=!0
 if(a.d==null){if(a.db)return B.da
 $.a6.RG$.push(new A.azM(a0))
 return B.da}if(a.r!=null)$.a6.RG$.push(new A.azN(a0))
-if(a.w===B.lo&&a.r==null)$.a6.RG$.push(new A.azO(a0))
+if(a.w===B.i9&&a.r==null)$.a6.RG$.push(new A.azO(a0))
 s=A.e_(0,A.iY("assets/images/matchmaking_bg.png",B.dl,b,b))
 q=A.e_(0,A.hs(b,new A.ad(b,b,b,b,b,new A.e3(B.cy,B.bM,B.ai,A.b([A.l(B.d.Y(127.5),B.K.i()>>>16&255,B.K.i()>>>8&255,B.K.i()&255),A.l(217,B.K.i()>>>16&255,B.K.i()>>>8&255,B.K.i()&255)],t.W),b,b),B.q),B.bn))
 p=c.d
@@ -47427,7 +47427,7 @@ if(B.Um.q(0,r.c))s.w=B.lq
 s.S()},
 ajf(a){this.w=B.lq
 this.S()},
-ajs(a){this.w=B.i9
+ajs(a){this.w=B.lo
 this.S()},
 ajw(a){this.x=A.bu(J.aA(a,"code"))
 this.w=B.lp
@@ -47598,7 +47598,7 @@ A.fb("[AppState] queueRanked called, socket connected="+q.gJR(0))
 s=r.Q
 s=s==null?null:s.f
 q.iR("queue:ranked",A.a0(["mmr",s==null?0:s],t.N,t.z))
-r.w=B.i9
+r.w=B.lo
 r.S()},
 uB(a){var s=this.c
 A.fb("[AppState] startOffline("+a+") called, socket connected="+s.gJR(0))
@@ -47615,7 +47615,7 @@ pC(){var s=this,r=s.r
 s.z=r==null?null:r.a
 s.c.iR("match:leave",A.y(t.N,t.z))
 s.as=s.r=null
-s.w=B.lo
+s.w=B.i9
 s.x=null
 s.S()},
 ga_G(){var s=this,r=s.r
@@ -104917,8 +104917,8 @@ B.Er=new A.bk(0,B.L,B.Hj,B.wx,1)
 B.OE=A.b(s([B.Eq,B.Er]),t.V)
 B.OF=A.b(s(["pointerdown","pointermove","pointerleave","pointerup","pointercancel","touchstart","touchend","touchmove","touchcancel","mousedown","mousemove","mouseleave","mouseup","wheel"]),t.s)
 B.OH=new A.rs(null)
-B.lo=new A.w0(0,"idle")
-B.i9=new A.w0(1,"queuing")
+B.i9=new A.w0(0,"idle")
+B.lo=new A.w0(1,"queuing")
 B.lp=new A.w0(2,"inRoom")
 B.lq=new A.w0(3,"inMatch")
 B.u=new A.CH(0,"ignored")
