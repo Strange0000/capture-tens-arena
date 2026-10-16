@@ -78,16 +78,21 @@ class AuthService {
   }
 
   Future<GuestSession> googleLogin() async {
+    const envClientId = String.fromEnvironment('GOOGLE_CLIENT_ID', defaultValue: '');
+    const defaultClientId = '925721095742-omjs30pn4s3lcag3r8pr5grl514voisn.apps.googleusercontent.com';
+    final clientId = envClientId.isNotEmpty ? envClientId : defaultClientId;
+
     final googleSignIn = GoogleSignIn(
-      clientId: const String.fromEnvironment('GOOGLE_CLIENT_ID', defaultValue: ''),
-      scopes: ['email'],
+      clientId: clientId,
+      serverClientId: clientId,
+      scopes: ['email', 'profile', 'openid'],
     );
     final account = await googleSignIn.signIn();
     if (account == null) throw Exception('Google Sign-In aborted');
 
     final auth = await account.authentication;
-    final idToken = auth.idToken;
-    if (idToken == null) throw Exception('Failed to get Google ID token');
+    final googleAuthToken = auth.idToken ?? auth.accessToken;
+    if (googleAuthToken == null) throw Exception('Failed to get Google authentication token');
 
     final response = await http.post(
       Uri.parse('$baseUrl/auth/google'),
@@ -96,7 +101,7 @@ class AuthService {
         ..._defaultHeaders,
       },
       body: jsonEncode({
-        'idToken': idToken,
+        'idToken': googleAuthToken,
         'username': account.displayName ?? account.email.split('@').first,
       }),
     ).timeout(_timeout);

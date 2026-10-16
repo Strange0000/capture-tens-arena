@@ -26,6 +26,10 @@ export function createApp() {
   );
   app.use(cors({ origin: env.CLIENT_ORIGIN === "*" ? true : env.CLIENT_ORIGIN, credentials: true }));
   app.use(express.json({ limit: "128kb" }));
+  app.use((req, _res, next) => {
+    console.log(`[HTTP] ${req.method} ${req.url}`);
+    next();
+  });
   app.use(apiRateLimit);
 
   app.get("/health", (_req, res) => res.json({ ok: true }));

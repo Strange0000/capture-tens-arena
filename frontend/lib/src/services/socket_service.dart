@@ -31,18 +31,20 @@ class SocketService {
     _socket = io.io(
       baseUrl,
       io.OptionBuilder()
+          .setTransports(['websocket', 'polling'])
           .setExtraHeaders({})
           .setAuth({'token': token})
+          .enableAutoConnect()
           .enableReconnection()
           .build(),
     );
 
     _socket!
       ..on('connect', (_) {
-        // debug: print('[Socket] Connected to $baseUrl');
+        print('[Socket] Connected to $baseUrl');
         // Replay any events that were emitted before connection was ready
         if (_pendingEmits.isNotEmpty) {
-          // debug: print('[Socket] Replaying ${_pendingEmits.length} pending events');
+          print('[Socket] Replaying ${_pendingEmits.length} pending events');
           for (final pending in _pendingEmits) {
             _socket!.emit(pending.event, pending.data);
           }
@@ -50,12 +52,18 @@ class SocketService {
         }
       })
       ..on('connect_error', (err) {
-        // debug: print('[Socket] Connection error: $err');
+        print('[Socket] Connection error to $baseUrl: $err');
         onError(err.toString());
       })
-      ..on('disconnect', (reason) => {/* debug: print('[Socket] Disconnected: $reason') */})
-      ..on('match:state', (data) => onMatchState(_asMap(data)))
-      ..on('match:created', (data) => onMatchCreated(_asMap(data)))
+      ..on('disconnect', (reason) => print('[Socket] Disconnected: $reason'))
+      ..on('match:state', (data) {
+        print('[Socket] Received match:state');
+        onMatchState(_asMap(data));
+      })
+      ..on('match:created', (data) {
+        print('[Socket] Received match:created');
+        onMatchCreated(_asMap(data));
+      })
       ..on('queue:joined', (data) => onQueueJoined(_asMap(data)))
       ..on('room:created', (data) => onRoomCreated(_asMap(data)))
       ..on('room:joined', (data) => onRoomJoined(_asMap(data)))
@@ -68,8 +76,12 @@ class SocketService {
       ..on('match:playerBotReplaced', (data) => onPlayerBotReplaced(_asMap(data)))
       ..on('error', (data) {
         final msg = data is Map ? (data['message'] ?? 'Socket error') : data.toString();
+        print('[Socket] Socket error: $msg');
         onError(msg as String);
       });
+
+    print('[Socket] Initiating connect to $baseUrl');
+    _socket!.connect();
   }
 
   void disconnect() {
@@ -115,15 +127,15 @@ class SocketService {
 
   void _emit(String event, Map<String, dynamic> data) {
     if (_socket == null) {
-      // debug: print('[Socket] WARNING: No socket, cannot emit $event');
+      print('[Socket] WARNING: No socket, cannot emit $event');
       return;
     }
     if (!_socket!.connected) {
-      // debug: print('[Socket] Socket not yet connected, buffering event: $event');
+      print('[Socket] Socket not yet connected, buffering event: $event');
       _pendingEmits.add(_PendingEmit(event, data));
       return;
     }
-    // debug: print('[Socket] Emitting: $event');
+    print('[Socket] Emitting: $event $data');
     _socket!.emit(event, data);
   }
 

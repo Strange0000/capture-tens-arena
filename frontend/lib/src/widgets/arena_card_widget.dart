@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../models/arena_card.dart';
+import '../services/audio_service.dart';
 
 /// Premium playing card with realistic look — proper corner pips,
 /// center suit, clean shadows, and smooth press animation.
@@ -12,6 +13,7 @@ class ArenaCardWidget extends StatefulWidget {
     required this.powerSuit,
     required this.onPlay,
     this.dimmed = false,
+    this.isLegal = true,
     this.small = false,
     this.faceDown = false,
     this.width,
@@ -21,6 +23,7 @@ class ArenaCardWidget extends StatefulWidget {
   final String? powerSuit;
   final VoidCallback? onPlay;
   final bool dimmed;
+  final bool isLegal;
   final bool small;
   final bool faceDown;
   final double? width;
@@ -31,6 +34,7 @@ class ArenaCardWidget extends StatefulWidget {
 
 class _ArenaCardWidgetState extends State<ArenaCardWidget> {
   bool _pressed = false;
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
@@ -44,105 +48,129 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
     final isTen = widget.card.rank == '10';
     final isRed = widget.card.suit == 'hearts' || widget.card.suit == 'diamonds';
     final suitColor = isRed ? const Color(0xFFCC1111) : const Color(0xFF111122);
-    final suitSymbol = _suitSymbol(widget.card.suit);
+
+    final isPlayable = widget.onPlay != null && widget.isLegal && !widget.dimmed;
+    final effectivelyDimmed = widget.dimmed || (widget.onPlay != null && !widget.isLegal);
+    final isHovered = _hovered && isPlayable;
 
     return Opacity(
-      opacity: widget.dimmed ? 0.35 : 1.0,
-      child: GestureDetector(
-        onTapDown: widget.dimmed ? null : (_) => setState(() => _pressed = true),
-        onTapUp: widget.dimmed ? null : (_) => setState(() => _pressed = false),
-        onTap: widget.dimmed ? null : widget.onPlay,
-        onTapCancel: () => setState(() => _pressed = false),
-        child: AnimatedScale(
-          scale: _pressed ? 0.93 : 1.0,
-          duration: const Duration(milliseconds: 90),
-          child: Container(
-            width: w,
-            height: h,
-            margin: EdgeInsets.symmetric(horizontal: 3 * scale),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8 * scale),
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFFFFFFFF), Color(0xFFF7F7F7), Color(0xFFEFEFEF)],
-              ),
-              border: Border.all(
-                color: isPower
-                    ? const Color(0xFFD4A017)
-                    : isTen
-                        ? const Color(0xFF30B89C)
-                        : const Color(0xFFCCCCCC),
-                width: (isPower || isTen) ? 2 : 0.8,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: isPower
-                      ? const Color(0xFFD4A017).withOpacity(0.4)
-                      : isTen
-                          ? const Color(0xFF30B89C).withOpacity(0.3)
-                          : Colors.black.withOpacity(0.12),
-                  blurRadius: isPower ? 12 : 5,
-                  offset: const Offset(0, 2),
+      opacity: effectivelyDimmed ? 0.38 : 1.0,
+      child: MouseRegion(
+        onEnter: effectivelyDimmed
+            ? null
+            : (_) {
+                AudioService.instance.playCardClick();
+                setState(() => _hovered = true);
+              },
+        onExit: (_) => setState(() => _hovered = false),
+        cursor: effectivelyDimmed
+            ? SystemMouseCursors.basic
+            : (widget.onPlay != null ? SystemMouseCursors.click : SystemMouseCursors.basic),
+        child: GestureDetector(
+          onTapDown: effectivelyDimmed ? null : (_) => setState(() => _pressed = true),
+          onTapUp: effectivelyDimmed ? null : (_) => setState(() => _pressed = false),
+          onTap: effectivelyDimmed ? null : widget.onPlay,
+          onTapCancel: () => setState(() => _pressed = false),
+          child: AnimatedScale(
+            scale: _pressed ? 0.93 : 1.0,
+            duration: const Duration(milliseconds: 90),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              transform: isHovered
+                  ? (Matrix4.identity()
+                    ..setEntry(3, 2, 0.003)
+                    ..translate(0.0, -12.0, 30.0))
+                  : Matrix4.identity(),
+              transformAlignment: Alignment.center,
+              width: w,
+              height: h,
+              margin: EdgeInsets.symmetric(horizontal: 3 * scale),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8 * scale),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFFFFFFF), Color(0xFFF7F7F7), Color(0xFFEFEFEF)],
                 ),
-                if (!widget.small)
+                border: Border.all(
+                  color: isPower
+                      ? const Color(0xFFFFD166)
+                      : isTen
+                          ? const Color(0xFF48E5C2)
+                          : (isPlayable
+                              ? const Color(0xFF64B5F6)
+                              : const Color(0xFFCCCCCC)),
+                  width: (isPower || isTen)
+                      ? 2.0
+                      : (isPlayable ? 1.4 : 0.8),
+                ),
+                boxShadow: [
+                  // 3D edge/thickness effect
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
-                    blurRadius: 1, offset: const Offset(0, 1),
+                    color: Colors.grey[300] ?? const Color(0xFFE0E0E0),
+                    offset: Offset(0, 2.5 * scale),
+                    blurRadius: 0,
                   ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(7 * scale),
-              child: Stack(
-                children: [
-                  // Subtle inner texture
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Colors.white.withOpacity(0.0), Colors.black.withOpacity(0.02)],
+                  if (isPlayable)
+                    BoxShadow(
+                      color: isPower
+                          ? const Color(0xFFFFD166).withOpacity(isHovered ? 0.6 : 0.25)
+                          : isTen
+                              ? const Color(0xFF48E5C2).withOpacity(isHovered ? 0.6 : 0.25)
+                              : const Color(0xFF64B5F6).withOpacity(isHovered ? 0.45 : 0.15),
+                      blurRadius: isHovered ? 18 : 8,
+                      spreadRadius: isHovered ? 2 : 0,
+                    ),
+                  if (isHovered) ...[
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.4),
+                      blurRadius: 20,
+                      offset: const Offset(0, 12),
+                    ),
+                  ] else ...[
+                    BoxShadow(
+                      color: isPower
+                          ? const Color(0xFFFFD166).withOpacity(0.3)
+                          : isTen
+                              ? const Color(0xFF48E5C2).withOpacity(0.25)
+                              : Colors.black.withOpacity(0.12),
+                      blurRadius: isPower ? 10 : 5,
+                      offset: const Offset(0, 2),
+                    ),
+                    if (!widget.small)
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 1,
+                        offset: const Offset(0, 1),
+                      ),
+                  ],
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(7 * scale),
+                child: Stack(
+                  children: [
+                    // Subtle inner texture
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Colors.white.withOpacity(0.0), Colors.black.withOpacity(0.02)],
+                          ),
                         ),
                       ),
                     ),
-                  ),
 
-                  // Top-left pip
-                  Positioned(
-                    top: 5 * scale,
-                    left: 6 * scale,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Text(
-                          widget.card.rank,
-                          style: TextStyle(
-                            color: suitColor,
-                            fontSize: 16 * scale,
-                            fontWeight: FontWeight.w900,
-                            height: 1.1,
-                          ),
-                        ),
-                        suitImage(widget.card.suit, 12 * scale),
-                      ],
-                    ),
-                  ),
-
-                  // Center suit — large
-                  Center(
-                    child: suitImage(widget.card.suit, 34 * scale),
-                  ),
-
-                  // Bottom-right pip (rotated)
-                  Positioned(
-                    bottom: 5 * scale,
-                    right: 6 * scale,
-                    child: Transform.rotate(
-                      angle: pi,
+                    // Top-left pip
+                    Positioned(
+                      top: 4 * scale,
+                      left: 5 * scale,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
                             widget.card.rank,
@@ -150,30 +178,100 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
                               color: suitColor,
                               fontSize: 16 * scale,
                               fontWeight: FontWeight.w900,
-                              height: 1.1,
+                              height: 1.0,
                             ),
                           ),
-                          suitImage(widget.card.suit, 12 * scale),
+                          Text(
+                            _suitSymbol(widget.card.suit),
+                            style: TextStyle(
+                              color: suitColor,
+                              fontSize: 12 * scale,
+                              height: 1.0,
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                  ),
 
-                  // Power suit indicator — golden corner dot
-                  if (isPower)
-                    Positioned(
-                      top: 2 * scale, right: 2 * scale,
-                      child: Container(
-                        width: 8 * scale,
-                        height: 8 * scale,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(0xFFD4A017),
-                          boxShadow: [BoxShadow(color: const Color(0xFFD4A017).withOpacity(0.5), blurRadius: 4)],
+                    // Center suit — large crisp symbol
+                    Center(
+                      child: Text(
+                        _suitSymbol(widget.card.suit),
+                        style: TextStyle(
+                          color: suitColor.withOpacity(0.92),
+                          fontSize: 32 * scale,
+                          fontWeight: FontWeight.bold,
+                          height: 1.0,
                         ),
                       ),
                     ),
-                ],
+
+                    // Bottom-right pip (rotated)
+                    Positioned(
+                      bottom: 4 * scale,
+                      right: 5 * scale,
+                      child: Transform.rotate(
+                        angle: pi,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              widget.card.rank,
+                              style: TextStyle(
+                                color: suitColor,
+                                fontSize: 16 * scale,
+                                fontWeight: FontWeight.w900,
+                                height: 1.0,
+                              ),
+                            ),
+                            Text(
+                              _suitSymbol(widget.card.suit),
+                              style: TextStyle(
+                                color: suitColor,
+                                fontSize: 12 * scale,
+                                height: 1.0,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Power suit indicator — golden corner dot
+                    if (isPower)
+                      Positioned(
+                        top: 2 * scale, right: 2 * scale,
+                        child: Container(
+                          width: 8 * scale,
+                          height: 8 * scale,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(0xFFD4A017),
+                            boxShadow: [BoxShadow(color: const Color(0xFFD4A017).withOpacity(0.5), blurRadius: 4)],
+                          ),
+                        ),
+                      ),
+
+                    // Glossy light reflection overlay
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Colors.white.withOpacity(0.15),
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

@@ -33,6 +33,8 @@ class CurrentTrick {
             .toList(),
         winnerSeat: json['winnerSeat'] as int?,
       );
+
+  String? get leadSuit => plays.isNotEmpty ? plays.first.card.suit : null;
 }
 
 class TeamCaptures {

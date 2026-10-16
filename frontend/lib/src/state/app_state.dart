@@ -32,7 +32,16 @@ class AppState extends ChangeNotifier {
       }
     }
 
-    // 3. Fallback to default production URL
+    // 3. If running locally on web, connect to local backend
+    if (url == null) {
+      try {
+        if (Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1') {
+          url = 'http://localhost:8080';
+        }
+      } catch (_) {}
+    }
+
+    // 4. Fallback to default production URL
     url ??= 'https://capture-tens-arena.onrender.com';
 
     backendUrl = url;
@@ -423,14 +432,14 @@ class AppState extends ChangeNotifier {
   // ── Game actions ─────────────────────────────────────────────────────────
 
   void queueRanked() {
-    // debug: print('[AppState] queueRanked called, socket connected=${socket.connected}');
+    print('[AppState] queueRanked called, socket connected=${socket.connected}');
     socket.queueRanked(mmr: rankInfo?.mmr ?? 0);
     lobbyStatus = LobbyStatus.queuing;
     notifyListeners();
   }
 
   void startOffline(String difficulty) {
-    // debug: print('[AppState] startOffline($difficulty) called, socket connected=${socket.connected}');
+    print('[AppState] startOffline($difficulty) called, socket connected=${socket.connected}');
     socket.startOffline(difficulty);
     lobbyStatus = LobbyStatus.inMatch;
     notifyListeners();

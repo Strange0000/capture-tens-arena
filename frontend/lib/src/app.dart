@@ -12,6 +12,7 @@ import 'screens/replay_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/achievements_screen.dart';
 import 'screens/tutorial_screen.dart';
+import 'services/audio_service.dart';
 import 'theme.dart';
 
 class CaptureTensApp extends StatelessWidget {
@@ -24,11 +25,13 @@ class CaptureTensApp extends StatelessWidget {
       title: 'Capture Tens Arena',
       theme: buildArenaTheme(),
       builder: (context, child) {
-        return Stack(
-          children: [
-            if (child != null) child,
-            const _AchievementToaster(),
-          ],
+        return _GlobalClickFeedback(
+          child: Stack(
+            children: [
+              if (child != null) child,
+              const _AchievementToaster(),
+            ],
+          ),
         );
       },
       initialRoute: '/',
@@ -225,6 +228,34 @@ class _AchievementToasterState extends State<_AchievementToaster> with SingleTic
           ),
         ),
       ),
+    );
+  }
+}
+
+class _GlobalClickFeedback extends StatefulWidget {
+  const _GlobalClickFeedback({required this.child});
+  final Widget child;
+
+  @override
+  State<_GlobalClickFeedback> createState() => _GlobalClickFeedbackState();
+}
+
+class _GlobalClickFeedbackState extends State<_GlobalClickFeedback> {
+  int _lastClick = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (now - _lastClick > 120) {
+          _lastClick = now;
+          AudioService.instance.playButtonTap();
+          AudioService.instance.hapticSelection();
+        }
+      },
+      child: widget.child,
     );
   }
 }

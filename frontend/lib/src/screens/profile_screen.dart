@@ -359,25 +359,6 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _SuitCapture extends StatelessWidget {
-  const _SuitCapture({required this.symbol, required this.label, required this.color});
-  final String symbol;
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(symbol, style: TextStyle(fontSize: 34, color: color)),
-        const SizedBox(height: 6),
-        const Text('0', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Colors.white)),
-        const SizedBox(height: 2),
-        Text(label, style: const TextStyle(fontSize: 10, color: Colors.white38)),
-      ],
-    );
-  }
-}
 
 class _StatRow extends StatelessWidget {
   const _StatRow(this.label, this.value, {this.accent = false});

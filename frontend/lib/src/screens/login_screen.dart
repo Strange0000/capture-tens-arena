@@ -18,6 +18,8 @@ class _LoginScreenState extends State<LoginScreen>
   late final AnimationController _pulseCtrl;
   bool _loading = false;
   bool _buttonsVisible = false;
+  double _mouseX = 0.0;
+  double _mouseY = 0.0;
 
   @override
   void initState() {
@@ -88,134 +90,238 @@ class _LoginScreenState extends State<LoginScreen>
     final screenHeight = MediaQuery.of(context).size.height;
 
     return Scaffold(
-      body: Stack(
-        children: [
-          // Premium background image
-          Positioned.fill(
-            child: Image.asset('assets/images/login_bg.png', fit: BoxFit.cover),
-          ),
-          // Dark glass overlay
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    const Color(0xFF070B13).withOpacity(0.55),
-                    const Color(0xFF070B13).withOpacity(0.80),
-                    const Color(0xFF070B13).withOpacity(0.92),
-                  ],
+      body: MouseRegion(
+        onHover: (event) {
+          final size = MediaQuery.of(context).size;
+          if (size.width > 0 && size.height > 0) {
+            setState(() {
+              _mouseX = ((event.position.dx / size.width) * 2 - 1).clamp(-1.0, 1.0);
+              _mouseY = ((event.position.dy / size.height) * 2 - 1).clamp(-1.0, 1.0);
+            });
+          }
+        },
+        onExit: (_) {
+          setState(() {
+            _mouseX = 0.0;
+            _mouseY = 0.0;
+          });
+        },
+        child: Stack(
+          children: [
+            // Premium background image
+            Positioned(
+              top: -25,
+              left: -25,
+              right: -25,
+              bottom: -25,
+              child: RepaintBoundary(
+                child: TweenAnimationBuilder<Offset>(
+                  tween: Tween<Offset>(
+                    begin: Offset.zero,
+                    end: Offset(_mouseX * -15, _mouseY * -15),
+                  ),
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, offset, child) => Transform.translate(
+                    offset: offset,
+                    child: child,
+                  ),
+                  child: Image.asset('assets/images/login_bg.png', fit: BoxFit.cover),
                 ),
               ),
             ),
-          ),
-
-          // Ambient glow spots
-          Positioned(top: -120, right: -80, child: _GlowOrb(color: const Color(0xFF48E5C2), size: 350, opacity: 0.05)),
-          Positioned(bottom: -100, left: -60, child: _GlowOrb(color: const Color(0xFFFFC857), size: 300, opacity: 0.04)),
-          Positioned(top: screenHeight * 0.3, left: -140, child: _GlowOrb(color: const Color(0xFF7C4DFF), size: 280, opacity: 0.03)),
-
-          // Floating suit symbols
-          ..._buildFloatingSuits(),
-
-          // Main content
-          Positioned.fill(
-            child: SafeArea(
-              child: FadeTransition(
-                opacity: CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 36),
-                  child: Column(
-                    children: [
-                      const Spacer(flex: 3),
-
-                      // Premium logo
-                      _buildLogo(),
-                      const SizedBox(height: 32),
-
-                      // Title
-                      ShaderMask(
-                        shaderCallback: (bounds) => const LinearGradient(
-                          colors: [Colors.white, Color(0xFFB0BEC5)],
-                        ).createShader(bounds),
-                        child: const Text('Capture Tens', style: TextStyle(
-                          fontSize: 40, fontWeight: FontWeight.w900, color: Colors.white, height: 1, letterSpacing: -1,
-                        )),
-                      ),
-                      ShaderMask(
-                        shaderCallback: (bounds) => const LinearGradient(
-                          colors: [Color(0xFF48E5C2), Color(0xFF30B89C)],
-                        ).createShader(bounds),
-                        child: const Text('Arena', style: TextStyle(
-                          fontSize: 40, fontWeight: FontWeight.w900, color: Colors.white, height: 1.2, letterSpacing: -1,
-                        )),
-                      ),
-                      const SizedBox(height: 10),
-                      const Text('The ultimate trick-taking card game', style: TextStyle(
-                        fontSize: 13, color: Colors.white30, fontWeight: FontWeight.w500, letterSpacing: 0.5,
-                      )),
-
-                      const Spacer(flex: 2),
-
-                      // Card suits strip with dividers
-                      _buildSuitStrip(),
-                      const SizedBox(height: 36),
-
-                      // Buttons
-                      AnimatedOpacity(
-                        opacity: _buttonsVisible ? 1.0 : 0.0,
-                        duration: const Duration(milliseconds: 700),
-                        child: AnimatedSlide(
-                          offset: _buttonsVisible ? Offset.zero : const Offset(0, 0.2),
-                          duration: const Duration(milliseconds: 700),
-                          curve: Curves.easeOutCubic,
-                          child: _buildButtons(hasCached, app),
-                        ),
-                      ),
-
-                      const Spacer(),
-
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 20),
-                        child: Text(
-                          'v1.0  ·  Strategy • Teamwork • Tens',
-                          style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.15), letterSpacing: 1),
-                        ),
-                      ),
+            // Dark glass overlay
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      const Color(0xFF070B13).withOpacity(0.55),
+                      const Color(0xFF070B13).withOpacity(0.80),
+                      const Color(0xFF070B13).withOpacity(0.92),
                     ],
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+
+            // Ambient glow spots
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: TweenAnimationBuilder<Offset>(
+                  tween: Tween<Offset>(
+                    begin: Offset.zero,
+                    end: Offset(_mouseX * -25, _mouseY * -25),
+                  ),
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, offset, child) => Transform.translate(
+                    offset: offset,
+                    child: child,
+                  ),
+                  child: Stack(
+                    children: [
+                      Positioned(top: -120, right: -80, child: _GlowOrb(color: const Color(0xFF48E5C2), size: 350, opacity: 0.05)),
+                      Positioned(bottom: -100, left: -60, child: _GlowOrb(color: const Color(0xFFFFC857), size: 300, opacity: 0.04)),
+                      Positioned(top: screenHeight * 0.3, left: -140, child: _GlowOrb(color: const Color(0xFF7C4DFF), size: 280, opacity: 0.03)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // Floating suit symbols
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: TweenAnimationBuilder<Offset>(
+                  tween: Tween<Offset>(
+                    begin: Offset.zero,
+                    end: Offset(_mouseX * -8, _mouseY * -8),
+                  ),
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, offset, child) => Transform.translate(
+                    offset: offset,
+                    child: child,
+                  ),
+                  child: Stack(
+                    children: _buildFloatingSuits(),
+                  ),
+                ),
+              ),
+            ),
+
+            // Main content
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: TweenAnimationBuilder<Offset>(
+                  tween: Tween<Offset>(
+                    begin: Offset.zero,
+                    end: Offset(_mouseX * 5, _mouseY * 5),
+                  ),
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, offset, child) => Transform.translate(
+                    offset: offset,
+                    child: child,
+                  ),
+                  child: SafeArea(
+                    child: FadeTransition(
+                      opacity: CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 36),
+                        child: Column(
+                          children: [
+                            const Spacer(flex: 3),
+
+                            // Premium logo
+                            _buildLogo(),
+                            const SizedBox(height: 32),
+
+                            // Title
+                            ShaderMask(
+                              shaderCallback: (bounds) => const LinearGradient(
+                                colors: [Colors.white, Color(0xFFB0BEC5)],
+                              ).createShader(bounds),
+                              child: const Text('Capture Tens', style: TextStyle(
+                                fontSize: 40, fontWeight: FontWeight.w900, color: Colors.white, height: 1, letterSpacing: -1,
+                              )),
+                            ),
+                            ShaderMask(
+                              shaderCallback: (bounds) => const LinearGradient(
+                                colors: [Color(0xFF48E5C2), Color(0xFF30B89C)],
+                              ).createShader(bounds),
+                              child: const Text('Arena', style: TextStyle(
+                                fontSize: 40, fontWeight: FontWeight.w900, color: Colors.white, height: 1.2, letterSpacing: -1,
+                              )),
+                            ),
+                            const SizedBox(height: 10),
+                            const Text('The ultimate trick-taking card game', style: TextStyle(
+                              fontSize: 13, color: Colors.white30, fontWeight: FontWeight.w500, letterSpacing: 0.5,
+                            )),
+
+                            const Spacer(flex: 2),
+
+                            // Card suits strip with dividers
+                            _buildSuitStrip(),
+                            const SizedBox(height: 36),
+
+                            // Buttons
+                            AnimatedOpacity(
+                              opacity: _buttonsVisible ? 1.0 : 0.0,
+                              duration: const Duration(milliseconds: 700),
+                              child: AnimatedSlide(
+                                offset: _buttonsVisible ? Offset.zero : const Offset(0, 0.2),
+                                duration: const Duration(milliseconds: 700),
+                                curve: Curves.easeOutCubic,
+                                child: _buildButtons(hasCached, app),
+                              ),
+                            ),
+
+                            const Spacer(),
+
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 20),
+                              child: Text(
+                                'v1.0  ·  Strategy • Teamwork • Tens',
+                                style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.15), letterSpacing: 1),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildLogo() {
-    return AnimatedBuilder(
-      animation: _pulseCtrl,
-      builder: (context, child) {
-        final t = Curves.easeInOut.transform(_pulseCtrl.value);
-        return Container(
-          width: 160,
-          height: 160,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF48E5C2).withOpacity(0.15 + t * 0.2),
-                blurRadius: 30 + t * 20,
-                spreadRadius: t * 6,
+    return TweenAnimationBuilder<Offset>(
+      tween: Tween<Offset>(
+        begin: Offset.zero,
+        end: Offset(_mouseX, _mouseY),
+      ),
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      builder: (context, mouseOffset, child) {
+        return AnimatedBuilder(
+          animation: _pulseCtrl,
+          builder: (context, child) {
+            final t = Curves.easeInOut.transform(_pulseCtrl.value);
+            return Transform(
+              alignment: Alignment.center,
+              transform: Matrix4.identity()
+                ..setEntry(3, 2, 0.001)
+                ..rotateY(mouseOffset.dx * 0.1)
+                ..rotateX(-mouseOffset.dy * 0.1),
+              child: Container(
+                width: 160,
+                height: 160,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF48E5C2).withOpacity(0.15 + t * 0.2),
+                      blurRadius: 30 + t * 20,
+                      spreadRadius: t * 6,
+                    ),
+                  ],
+                ),
+                child: Image.asset(
+                  'assets/images/lobby_hero_logo.png',
+                  fit: BoxFit.contain,
+                ),
               ),
-            ],
-          ),
-          child: Image.asset(
-            'assets/images/lobby_hero_logo.png',
-            fit: BoxFit.contain,
-          ),
+            );
+          },
         );
       },
     );
@@ -320,18 +426,25 @@ class _PremiumButtonState extends State<_PremiumButton> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) { setState(() => _pressed = false); if (!widget.loading) widget.onTap(); },
-      onTapCancel: () => setState(() => _pressed = false),
-      child: AnimatedScale(
-        scale: _pressed ? 0.97 : 1.0,
-        duration: const Duration(milliseconds: 80),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          width: double.infinity,
-          height: widget.primary ? 58 : 50,
-          decoration: BoxDecoration(
+    return RepaintBoundary(
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) { setState(() => _pressed = false); if (!widget.loading) widget.onTap(); },
+        onTapCancel: () => setState(() => _pressed = false),
+        child: AnimatedScale(
+          scale: _pressed ? 0.97 : 1.0,
+          duration: const Duration(milliseconds: 80),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            transform: _pressed
+                ? (Matrix4.identity()
+                  ..setEntry(3, 2, 0.002)
+                  ..rotateX(0.02))
+                : Matrix4.identity(),
+            transformAlignment: Alignment.center,
+            width: double.infinity,
+            height: widget.primary ? 58 : 50,
+            decoration: BoxDecoration(
             gradient: widget.primary
                 ? const LinearGradient(colors: [Color(0xFF48E5C2), Color(0xFF30B89C)])
                 : null,
@@ -366,6 +479,7 @@ class _PremiumButtonState extends State<_PremiumButton> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

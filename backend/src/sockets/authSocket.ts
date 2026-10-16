@@ -9,11 +9,26 @@ export interface AuthedSocket extends Socket {
 
 export function authenticateSocket(socket: AuthedSocket, next: (error?: Error) => void) {
   const token = socket.handshake.auth?.token || socket.handshake.headers.authorization?.toString().replace("Bearer ", "");
-  if (!token) return next(new Error("Missing auth token"));
+  if (!token) {
+    if (env.OFFLINE_DEV_MODE) {
+      socket.user = { id: `dev-${socket.id.slice(-6)}`, username: "Player", roles: ["user"] };
+      return next();
+    }
+    return next(new Error("Missing auth token"));
+  }
   try {
     socket.user = jwt.verify(token, env.JWT_SECRET) as AuthUser;
     next();
   } catch {
+    if (env.OFFLINE_DEV_MODE) {
+      const decoded = jwt.decode(token) as AuthUser | null;
+      if (decoded && decoded.id) {
+        socket.user = decoded;
+        return next();
+      }
+      socket.user = { id: `dev-${socket.id.slice(-6)}`, username: "Player", roles: ["user"] };
+      return next();
+    }
     next(new Error("Invalid auth token"));
   }
 }

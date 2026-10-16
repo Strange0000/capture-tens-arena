@@ -2,7 +2,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../services/audio_service.dart';
-import 'arena_card_widget.dart';
 
 /// Premium glassmorphism power suit picker.
 class PowerSuitPicker extends StatefulWidget {
@@ -147,7 +146,21 @@ class _SuitButtonState extends State<_SuitButton> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                suitImage(widget.suit, 34),
+                Text(
+                  _suitSymbol(widget.suit),
+                  style: TextStyle(
+                    fontSize: 32,
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                    height: 1.0,
+                    shadows: [
+                      Shadow(
+                        color: color.withOpacity(active ? 0.9 : 0.4),
+                        blurRadius: active ? 16 : 8,
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 6),
                 Text(
                   name,
@@ -164,4 +177,14 @@ class _SuitButtonState extends State<_SuitButton> {
       ),
     );
   }
+}
+
+String _suitSymbol(String suit) {
+  return switch (suit.toLowerCase()) {
+    'hearts' => '♥',
+    'diamonds' => '♦',
+    'clubs' => '♣',
+    'spades' => '♠',
+    _ => '?',
+  };
 }

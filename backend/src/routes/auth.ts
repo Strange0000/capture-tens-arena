@@ -33,17 +33,40 @@ authRouter.post("/google", async (req, res, next) => {
       displayName = body.username;
     } else {
       // In production, verify with Google
-      const client = new OAuth2Client(env.GOOGLE_CLIENT_ID);
-      const ticket = await client.verifyIdToken({
-        idToken: body.idToken,
-        audience: env.GOOGLE_CLIENT_ID,
-      });
-      const payload = ticket.getPayload();
-      if (!payload || !payload.sub) throw new Error("Invalid Google token");
-      googleId = payload.sub;
-      email = payload.email;
-      avatarUrl = payload.picture;
-      displayName = payload.name;
+      let googleId: string;
+      let email: string | undefined;
+      let avatarUrl: string | undefined;
+      let displayName: string | undefined;
+
+      try {
+        const client = new OAuth2Client(env.GOOGLE_CLIENT_ID);
+        const ticket = await client.verifyIdToken({
+          idToken: body.idToken,
+          audience: env.GOOGLE_CLIENT_ID,
+        });
+        const payload = ticket.getPayload();
+        if (!payload || !payload.sub) throw new Error("Invalid Google token");
+        googleId = payload.sub;
+        email = payload.email;
+        avatarUrl = payload.picture;
+        displayName = payload.name;
+      } catch (verifyErr) {
+        // Fallback: If body.idToken is an OAuth2 access token from GIS, verify with userinfo API
+        try {
+          const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+            headers: { Authorization: `Bearer ${body.idToken}` },
+          });
+          if (!res.ok) throw verifyErr;
+          const payload = (await res.json()) as any;
+          if (!payload || !payload.sub) throw verifyErr;
+          googleId = payload.sub;
+          email = payload.email;
+          avatarUrl = payload.picture;
+          displayName = payload.name;
+        } catch (_) {
+          throw verifyErr;
+        }
+      }
     }
 
     res.json(await loginWithGoogle({

@@ -56,6 +56,7 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final isCustom = app.roomCode != null || app.match?.mode == 'private';
 
     // Auto-redirect to login if not logged in
     if (!app.isLoggedIn) {
@@ -77,7 +78,7 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
     }
 
     // Navigate to game when match found
-    if (app.match != null && app.lobbyStatus == LobbyStatus.inMatch) {
+    if (app.match != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (context.mounted) {
           Navigator.pushReplacementNamed(context, '/game');
@@ -135,9 +136,9 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
                     const SizedBox(height: 48),
 
                     // Searching text
-                    const Text(
-                      'FINDING OPPONENTS',
-                      style: TextStyle(
+                    Text(
+                      isCustom ? 'CUSTOM ROOM' : 'FINDING OPPONENTS',
+                      style: const TextStyle(
                         fontSize: 13,
                         letterSpacing: 4,
                         fontWeight: FontWeight.w800,
@@ -145,9 +146,9 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
                       ),
                     ),
                     const SizedBox(height: 12),
-                    const Text(
-                      'Ranked Match',
-                      style: TextStyle(
+                    Text(
+                      isCustom ? 'Room ${app.roomCode ?? ""}' : 'Ranked Match',
+                      style: const TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w900,
                         color: Colors.white,
@@ -155,7 +156,9 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Searching for players of similar rank…',
+                      isCustom
+                          ? 'Waiting for players to join…'
+                          : 'Searching for players of similar rank…',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 14),
                     ),
@@ -190,8 +193,8 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
 
                     const SizedBox(height: 16),
 
-                    // MMR badge
-                    if (app.rankInfo != null)
+                    // MMR badge (ONLY shown for Ranked Matches!)
+                    if (!isCustom && app.rankInfo != null)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
                         decoration: BoxDecoration(

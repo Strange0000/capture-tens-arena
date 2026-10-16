@@ -211,8 +211,8 @@ class _MatchResultOverlayState extends State<MatchResultOverlay>
                     ),
                   ],
 
-                  // Rank change display
-                  if (ru != null) ...[
+                  // Rank change display (strictly only for Ranked Matches)
+                  if (ru != null && widget.match.mode == 'ranked') ...[
                     const SizedBox(height: 16),
                     _RankChangeWidget(rankUpdate: ru),
                   ],

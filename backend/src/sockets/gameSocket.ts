@@ -36,12 +36,14 @@ export function registerGameSockets(io: Server) {
 
   io.on("connection", (socket: AuthedSocket) => {
     const userId = socket.user!.id;
+    console.log(`[SOCKET] User connected: ${userId} (${socket.user?.username})`);
     socket.join(`user:${userId}`);
     onlineUsers.add(userId);
     reconnectMatch(io, socket);
     broadcastFriendStatus(io, userId, "online");
 
     socket.on("queue:ranked", () => {
+      console.log(`[SOCKET] queue:ranked from user ${userId} (${socket.user!.username})`);
       let party = matchmaking.getPartyForUser(userId);
       if (!party) {
         party = [{
@@ -60,7 +62,7 @@ export function registerGameSockets(io: Server) {
       if (group) {
         startMatch(io, matchmaking.toSeats(group), "ranked");
       } else {
-        // Fallback: If still in queue after 15 seconds, fill with bots!
+        // Fallback: If still in queue after 5 seconds, fill with bots!
         // Cancel any previously scheduled timeout for this user
         const existingTimeout = queueTimeouts.get(userId);
         if (existingTimeout) clearTimeout(existingTimeout);
@@ -84,7 +86,7 @@ export function registerGameSockets(io: Server) {
           }
           
           startMatch(io, seats, "ranked");
-        }, 15000);
+        }, 5000);
         queueTimeouts.set(userId, timeout);
       }
     });
@@ -174,7 +176,9 @@ export function registerGameSockets(io: Server) {
       }
     });
 
-    socket.on("bot:offline", ({ difficulty = "medium" }: { difficulty?: "easy" | "medium" | "hard" }) => {
+    socket.on("bot:offline", (data?: any) => {
+      const difficulty: "easy" | "medium" | "hard" = (data && data.difficulty) ? data.difficulty : "medium";
+      console.log(`[SOCKET] bot:offline received for user ${userId}, difficulty: ${difficulty}`);
       // If user is already in a match, clean it up first
       const existing = matchStore.findByUser(userId);
       if (existing) matchStore.delete(existing.id);
@@ -366,8 +370,10 @@ function startMatch(io: Server, players: PlayerSeat[], mode: MatchMode) {
   const state = dealFirstFive(createMatch(players, mode));
   state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
   matchStore.set(state);
+  console.log(`[GAME] Starting match ${state.id} (${mode}) with players: ${players.map(p => `${p.username}(${p.userId})`).join(', ')}`);
   for (const player of players) {
     io.to(`user:${player.userId}`).socketsJoin(`match:${state.id}`);
+    io.to(`user:${player.userId}`).emit("match:created", { matchId: state.id, mode });
   }
   io.to(`match:${state.id}`).emit("match:created", { matchId: state.id, mode });
   broadcastState(io, state.id);
@@ -376,6 +382,7 @@ function startMatch(io: Server, players: PlayerSeat[], mode: MatchMode) {
 
 function broadcastState(io: Server, matchId: string) {
   const state = requireMatch(matchId);
+  console.log(`[GAME] Broadcasting state for match ${matchId}, phase: ${state.phase}`);
   for (const player of state.players) {
     io.to(`user:${player.userId}`).emit("match:state", publicStateForSeat(state, player.seat));
   }

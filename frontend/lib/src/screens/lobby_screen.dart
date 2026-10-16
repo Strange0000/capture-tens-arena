@@ -1,8 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/rank_info.dart';
+import '../services/audio_service.dart';
 import '../state/app_state.dart';
 
 class LobbyScreen extends StatefulWidget {
@@ -13,22 +15,36 @@ class LobbyScreen extends StatefulWidget {
 }
 
 class _LobbyScreenState extends State<LobbyScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final _roomCodeController = TextEditingController();
   final _friendUsernameController = TextEditingController();
   bool _showRoomPanel = false;
+
   late final AnimationController _entryCtrl;
   late final Animation<double> _entryAnim;
+
+  late final AnimationController _floatCtrl;
+  late final Animation<double> _floatAnim;
 
   @override
   void initState() {
     super.initState();
+    AudioService.instance.playLobbyBgm();
+
     _entryCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 900),
     );
     _entryAnim = CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic);
     _entryCtrl.forward();
+
+    _floatCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat(reverse: true);
+    _floatAnim = Tween<double>(begin: -4.0, end: 4.0).animate(
+      CurvedAnimation(parent: _floatCtrl, curve: Curves.easeInOut),
+    );
   }
 
   @override
@@ -36,6 +52,7 @@ class _LobbyScreenState extends State<LobbyScreen>
     _roomCodeController.dispose();
     _friendUsernameController.dispose();
     _entryCtrl.dispose();
+    _floatCtrl.dispose();
     super.dispose();
   }
 
@@ -95,222 +112,273 @@ class _LobbyScreenState extends State<LobbyScreen>
 
     return Stack(
       children: [
+        // Rich Atmospheric Background
         Positioned.fill(
           child: Image.asset('assets/images/lobby_bg.png', fit: BoxFit.cover),
         ),
         Positioned.fill(
           child: DecoratedBox(
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
+              gradient: RadialGradient(
+                center: const Alignment(0, -0.2),
+                radius: 1.2,
                 colors: [
-                  const Color(0xFF070B13).withOpacity(0.60),
-                  const Color(0xFF070B13).withOpacity(0.85),
+                  const Color(0xFF10182E).withOpacity(0.70),
+                  const Color(0xFF070B13).withOpacity(0.95),
                 ],
               ),
             ),
           ),
         ),
+
+        // Foreground content
         Positioned.fill(
           child: Scaffold(
             backgroundColor: Colors.transparent,
             body: SafeArea(
-            child: FadeTransition(
-          opacity: _entryAnim,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 0.04),
-              end: Offset.zero,
-            ).animate(_entryAnim),
-            child: CustomScrollView(
-              slivers: [
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                  // ── Header ────────────────────────────────────────────
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Image.asset(
-                            'assets/images/lobby_hero_logo.png',
-                            height: 64,
-                            fit: BoxFit.contain,
-                          ),
+              child: FadeTransition(
+                opacity: _entryAnim,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.03),
+                    end: Offset.zero,
+                  ).animate(_entryAnim),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isWide = constraints.maxWidth >= 900;
+                      return SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // ── Top Command Bar ──────────────────────────────
+                            _LobbyTopBar(
+                              app: app,
+                              onRules: () => _showRulesSheet(context),
+                              onTutorial: () => Navigator.pushNamed(context, '/tutorial'),
+                              onFriends: () => _showFriendsSheet(context),
+                              onAchievements: () => Navigator.pushNamed(context, '/achievements'),
+                              onSettings: () => Navigator.pushNamed(context, '/settings'),
+                              onProfile: () => Navigator.pushNamed(context, '/profile'),
+                            ),
+                            const SizedBox(height: 24),
+
+                            // ── Active Matchmaking / Room Banners ────────────
+                            if (app.lobbyStatus == LobbyStatus.queuing) ...[
+                              _QueueBanner(onCancel: app.leaveMatch),
+                              const SizedBox(height: 16),
+                            ],
+
+                            if (app.lobbyStatus == LobbyStatus.inRoom && app.roomCode != null) ...[
+                              _RoomBanner(
+                                code: app.roomCode!,
+                                onStartWithBots: () {
+                                  app.startRoomWithBots();
+                                  Navigator.pushNamed(context, '/game');
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+
+                            // ── Dynamic Responsive Body ──────────────────────
+                            if (isWide)
+                              _buildWideLayout(context, app)
+                            else
+                              _buildNarrowLayout(context, app),
+
+                            const SizedBox(height: 24),
+                          ],
                         ),
-                      ),
-                      // Rules button
-                      IconButton.filledTonal(
-                        tooltip: 'Tutorial',
-                        onPressed: () => Navigator.pushNamed(context, '/tutorial'),
-                        icon: const Icon(Icons.school),
-                      ),
-                      IconButton.filledTonal(
-                        tooltip: 'Friends',
-                        onPressed: () => _showFriendsSheet(context),
-                        icon: const Icon(Icons.people_alt),
-                      ),
-                      IconButton.filledTonal(
-                        tooltip: 'Achievements',
-                        onPressed: () => Navigator.pushNamed(context, '/achievements'),
-                        icon: const Icon(Icons.emoji_events),
-                      ),
-                      IconButton.filledTonal(
-                        tooltip: 'Settings',
-                        onPressed: () => Navigator.pushNamed(context, '/settings'),
-                        icon: const Icon(Icons.settings),
-                      ),
-                      const SizedBox(width: 4),
-                      // Profile button
-                      IconButton.filledTonal(
-                        tooltip: 'Profile',
-                        onPressed: () =>
-                            Navigator.pushNamed(context, '/profile'),
-                        icon: const Icon(Icons.person),
-                      ),
-                    ],
+                      );
+                    },
                   ),
-                  const SizedBox(height: 20),
-
-                  // ── Rank panel ────────────────────────────────────────
-                  _RankPanel(username: app.username, rankInfo: app.rankInfo),
-                  const SizedBox(height: 16),
-
-                  if (app.party != null) ...[
-                    _PartyBanner(party: app.party!, onLeave: app.leaveParty),
-                    const SizedBox(height: 16),
-                  ],
-
-
-
-                  const Spacer(),
-
-                  // ── Queue / Room status ───────────────────────────────
-                  if (app.lobbyStatus == LobbyStatus.queuing) ...[
-                    _QueueBanner(onCancel: app.leaveMatch),
-                    const SizedBox(height: 12),
-                  ],
-
-                  if (app.lobbyStatus == LobbyStatus.inRoom &&
-                      app.roomCode != null) ...[
-                    _RoomBanner(code: app.roomCode!),
-                    const SizedBox(height: 12),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF30B89C),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      onPressed: () {
-                        app.startRoomWithBots();
-                        Navigator.pushNamed(context, '/matchmaking');
-                      },
-                      icon: const Icon(Icons.smart_toy, size: 20),
-                      label: const Text('Start with Bots', style: TextStyle(fontWeight: FontWeight.bold)),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-
-                  // ── Main actions ──────────────────────────────────────
-                  if (app.lobbyStatus == LobbyStatus.idle) ...[
-                    // Ranked Match
-                    _ActionCard(
-                      icon: Icons.military_tech,
-                      iconColor: const Color(0xFFFFC857),
-                      title: 'Ranked Match',
-                      subtitle: 'Climb the leaderboard',
-                      onTap: () {
-                        app.queueRanked();
-                        Navigator.pushNamed(context, '/matchmaking');
-                      },
-                    ),
-                    const SizedBox(height: 10),
-
-                    // Bot Match
-                    _ActionCard(
-                      icon: Icons.smart_toy,
-                      iconColor: const Color(0xFF48E5C2),
-                      title: 'Bot Match',
-                      subtitle: 'Practice against AI',
-                      onTap: () {
-                        app.startOffline('hard');
-                        if (context.mounted) {
-                          Navigator.pushNamed(context, '/game');
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 10),
-
-                    // Private Room
-                    _ActionCard(
-                      icon: _showRoomPanel
-                          ? Icons.expand_less
-                          : Icons.group_add,
-                      iconColor: Colors.white70,
-                      title: 'Private Room',
-                      subtitle: 'Play with friends',
-                      onTap: () =>
-                          setState(() => _showRoomPanel = !_showRoomPanel),
-                    ),
-
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOutCubic,
-                      child: _showRoomPanel
-                          ? _PrivateRoomPanel(
-                              controller: _roomCodeController,
-                              onCreate: () => app.createRoom(),
-                              onJoin: () {
-                                final code =
-                                    _roomCodeController.text.trim();
-                                if (code.isEmpty) return;
-                                app.joinRoom(code);
-                              },
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        TextButton.icon(
-                          onPressed: () =>
-                              Navigator.pushNamed(context, '/replay'),
-                          icon: const Icon(Icons.history, size: 20),
-                          label: const Text('Replays'),
-                        ),
-                        const SizedBox(width: 24),
-                        TextButton.icon(
-                          onPressed: () => _showTiersSheet(context),
-                          icon: const Icon(Icons.leaderboard, size: 20),
-                          label: const Text('Rank Tiers'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
+                ),
               ),
             ),
           ),
-        ],
-      ),
-    ),
-  ),          // closes SafeArea(
-          ),  // closes Scaffold body:
-        ),    // closes Scaffold(
-      ),      // closes Positioned.fill(
-    ],        // closes Stack children: [
-    );        // closes Stack(
+        ),
+      ],
+    );
   }
+
+  // ── Wide Desktop / Tablet Layout ───────────────────────────────────────────
+  Widget _buildWideLayout(BuildContext context, AppState app) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Left Column: Player Rank Trophy & Party
+        SizedBox(
+          width: 320,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _RankShowcaseCard(
+                username: app.username,
+                rankInfo: app.rankInfo,
+                floatAnim: _floatAnim,
+                onViewTiers: () => _showTiersSheet(context),
+                onViewReplays: () => Navigator.pushNamed(context, '/replay'),
+              ),
+              if (app.party != null) ...[
+                const SizedBox(height: 16),
+                _PartyBanner(party: app.party!, onLeave: app.leaveParty),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: 24),
+
+        // Right Column: 3 Luxury Game Mode Portals
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildSectionHeader('SELECT ARENA', 'Choose your game mode to enter the table'),
+              const SizedBox(height: 16),
+              _buildGamePortals(context, app),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Narrow Mobile Layout ───────────────────────────────────────────────────
+  Widget _buildNarrowLayout(BuildContext context, AppState app) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _RankShowcaseCard(
+          username: app.username,
+          rankInfo: app.rankInfo,
+          floatAnim: _floatAnim,
+          onViewTiers: () => _showTiersSheet(context),
+          onViewReplays: () => Navigator.pushNamed(context, '/replay'),
+        ),
+        if (app.party != null) ...[
+          const SizedBox(height: 16),
+          _PartyBanner(party: app.party!, onLeave: app.leaveParty),
+        ],
+        const SizedBox(height: 24),
+        _buildSectionHeader('SELECT ARENA', 'Choose your game mode'),
+        const SizedBox(height: 16),
+        _buildGamePortals(context, app),
+      ],
+    );
+  }
+
+  Widget _buildSectionHeader(String title, String subtitle) {
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 22,
+          decoration: BoxDecoration(
+            color: const Color(0xFF48E5C2),
+            borderRadius: BorderRadius.circular(2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF48E5C2).withOpacity(0.6),
+                blurRadius: 10,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2.5,
+                color: Colors.white,
+              ),
+            ),
+            Text(
+              subtitle,
+              style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.4)),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGamePortals(BuildContext context, AppState app) {
+    return Column(
+      children: [
+        // ── Ranked Match Portal ─────────────────────────────────────────────
+        _GamePortalCard(
+          themeColor: const Color(0xFFFFC857),
+          badgeTag: 'COMPETITIVE 2v2',
+          title: 'Ranked Match',
+          subtitle: 'Climb competitive tiers and earn seasonal MMR points',
+          icon: Icons.military_tech_rounded,
+          perks: const ['⚡ +25 MMR / Win', '🏆 Tier Leaderboard', '👥 2v2 Teams'],
+          ctaText: 'PLAY RANKED',
+          onTap: () {
+            app.queueRanked();
+            Navigator.pushNamed(context, '/matchmaking');
+          },
+        ),
+        const SizedBox(height: 16),
+
+        // ── Bot Match Portal ────────────────────────────────────────────────
+        _GamePortalCard(
+          themeColor: const Color(0xFF48E5C2),
+          badgeTag: 'SOLO PRACTICE',
+          title: 'Bot Practice',
+          subtitle: 'Hone your strategy against advanced neural AI bots',
+          icon: Icons.smart_toy_rounded,
+          perks: const ['🤖 Hard AI', '⚡ Instant Match', '🎯 Risk Free'],
+          ctaText: 'PLAY PRACTICE',
+          onTap: () {
+            app.startOffline('hard');
+            Navigator.pushNamed(context, '/game');
+          },
+        ),
+        const SizedBox(height: 16),
+
+        // ── Private Custom Room Portal ──────────────────────────────────────
+        _GamePortalCard(
+          themeColor: const Color(0xFFB388FF),
+          badgeTag: 'CUSTOM ROOM',
+          title: 'Private Room',
+          subtitle: 'Create a private salon with custom codes for friends or bots',
+          icon: Icons.group_add_rounded,
+          perks: const ['🔒 Private Code', '👥 Custom Squads', '🤖 Fill with Bots'],
+          ctaText: _showRoomPanel ? 'HIDE ROOM PANEL' : 'HOST OR JOIN ROOM',
+          onTap: () {
+            setState(() => _showRoomPanel = !_showRoomPanel);
+          },
+        ),
+
+        // Custom room drawer
+        AnimatedSize(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOutCubic,
+          child: _showRoomPanel
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 14),
+                  child: _PrivateRoomPanel(
+                    controller: _roomCodeController,
+                    onCreate: () => app.createRoom(),
+                    onJoin: () {
+                      final code = _roomCodeController.text.trim();
+                      if (code.isEmpty) return;
+                      app.joinRoom(code);
+                    },
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
+    );
+  }
+
 
   void _showRulesSheet(BuildContext context) {
     showModalBottomSheet(
@@ -338,7 +406,7 @@ class _LobbyScreenState extends State<LobbyScreen>
 
   void _showPartyInviteDialog(BuildContext context, AppState app) {
     final invite = app.pendingPartyInvite!;
-    app.pendingPartyInvite = null; // clear it immediately so it doesn't loop
+    app.pendingPartyInvite = null;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -384,9 +452,11 @@ class _LobbyScreenState extends State<LobbyScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('Competitive Tiers', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+              const Text('Competitive Tiers',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
               const SizedBox(height: 8),
-              const Text('Win: +25 RP  |  Loss: -15 RP', style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w600)),
+              const Text('Win: +25 RP  |  Loss: -15 RP',
+                  style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w600)),
               const SizedBox(height: 16),
               Expanded(
                 child: ListView.separated(
@@ -398,7 +468,8 @@ class _LobbyScreenState extends State<LobbyScreen>
                       contentPadding: EdgeInsets.zero,
                       leading: Image.asset(tier.icon, height: 32, width: 32),
                       title: Text(tier.name, style: TextStyle(color: tier.color, fontWeight: FontWeight.bold)),
-                      trailing: Text('${tier.min} RP', style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w600)),
+                      trailing: Text('${tier.min} RP',
+                          style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w600)),
                     );
                   },
                 ),
@@ -417,6 +488,910 @@ class _LobbyScreenState extends State<LobbyScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Top Command Bar
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _LobbyTopBar extends StatelessWidget {
+  const _LobbyTopBar({
+    required this.app,
+    required this.onRules,
+    required this.onTutorial,
+    required this.onFriends,
+    required this.onAchievements,
+    required this.onSettings,
+    required this.onProfile,
+  });
+
+  final AppState app;
+  final VoidCallback onRules;
+  final VoidCallback onTutorial;
+  final VoidCallback onFriends;
+  final VoidCallback onAchievements;
+  final VoidCallback onSettings;
+  final VoidCallback onProfile;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        // Brand Logo & Live Season Badge
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/images/lobby_hero_logo.png',
+              height: 48,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(width: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF48E5C2).withOpacity(0.12),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.3)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF48E5C2),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'SEASON 1',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF48E5C2),
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+
+        const Spacer(),
+
+        // Right Action Capsule & Profile
+        GlassPanel(
+          borderRadius: 24,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          backgroundColor: Colors.white.withOpacity(0.04),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _TopIconButton(
+                tooltip: 'Game Rules',
+                icon: Icons.menu_book_rounded,
+                iconColor: const Color(0xFF64B5F6),
+                onTap: onRules,
+              ),
+              _TopIconButton(
+                tooltip: 'Interactive Tutorial',
+                icon: Icons.school_rounded,
+                onTap: onTutorial,
+              ),
+              _TopIconButton(
+                tooltip: 'Achievements',
+                icon: Icons.emoji_events_rounded,
+                iconColor: const Color(0xFFFFC857),
+                onTap: onAchievements,
+              ),
+              _TopIconButton(
+                tooltip: 'Friends',
+                icon: Icons.people_alt_rounded,
+                iconColor: const Color(0xFF48E5C2),
+                onTap: onFriends,
+              ),
+              _TopIconButton(
+                tooltip: 'Settings',
+                icon: Icons.settings_rounded,
+                onTap: onSettings,
+              ),
+              const SizedBox(width: 6),
+              // Profile Pill Button
+              InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: onProfile,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Colors.white.withOpacity(0.15)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircleAvatar(
+                        radius: 12,
+                        backgroundColor: const Color(0xFF48E5C2).withOpacity(0.2),
+                        child: const Icon(Icons.person, size: 14, color: Color(0xFF48E5C2)),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        app.username ?? 'Player',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TopIconButton extends StatelessWidget {
+  const _TopIconButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onTap,
+    this.iconColor,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onTap;
+  final Color? iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltip,
+      iconSize: 20,
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.all(8),
+      onPressed: onTap,
+      icon: Icon(icon, color: iconColor ?? Colors.white70),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Player Rank Showcase Hero Card (Left Column)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _RankShowcaseCard extends StatelessWidget {
+  const _RankShowcaseCard({
+    required this.username,
+    required this.rankInfo,
+    required this.floatAnim,
+    required this.onViewTiers,
+    required this.onViewReplays,
+  });
+
+  final String? username;
+  final RankInfo? rankInfo;
+  final Animation<double> floatAnim;
+  final VoidCallback onViewTiers;
+  final VoidCallback onViewReplays;
+
+  @override
+  Widget build(BuildContext context) {
+    final rank = rankInfo ?? RankInfo.fromMmr(0);
+    final tierColor = rank.color;
+
+    return GlassPanel(
+      borderRadius: 20,
+      padding: const EdgeInsets.all(20),
+      backgroundColor: const Color(0xFF10182E).withOpacity(0.65),
+      border: Border.all(color: tierColor.withOpacity(0.35), width: 1.2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Card Header with Season Pip
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'CAREER RATING',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white.withOpacity(0.4),
+                  letterSpacing: 2.0,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: tierColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  rank.seasonDisplay,
+                  style: TextStyle(
+                    color: tierColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 10,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+
+          // Floating 3D Rank Trophy Crest
+          Center(
+            child: AnimatedBuilder(
+              animation: floatAnim,
+              builder: (context, child) {
+                return Transform.translate(
+                  offset: Offset(0, floatAnim.value),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Radial aura glow
+                      Container(
+                        width: 110,
+                        height: 110,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: tierColor.withOpacity(0.35),
+                              blurRadius: 36,
+                              spreadRadius: 8,
+                            ),
+                          ],
+                        ),
+                      ),
+                      Image.asset(rank.icon, height: 90, width: 90),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Player Name & Tier Title
+          Center(
+            child: Text(
+              username ?? 'Guest Player',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Center(
+            child: Text(
+              '${rank.displayName}  ·  ${rank.mmr} MMR',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: tierColor,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // MMR Progress to Next Tier
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: rank.progressInTier.clamp(0.0, 1.0),
+              minHeight: 6,
+              backgroundColor: Colors.white.withOpacity(0.08),
+              valueColor: AlwaysStoppedAnimation<Color>(tierColor),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Next: ${rank.nextTierMmr} MMR',
+                style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11),
+              ),
+              Text(
+                'Peak: ${rank.peakMmr} MMR',
+                style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+
+          // Stats Badge Matrix
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.04),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withOpacity(0.07)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _StatCell(label: 'WINS', value: '${rank.wins}', color: const Color(0xFF48E5C2)),
+                Container(width: 1, height: 26, color: Colors.white10),
+                _StatCell(label: 'LOSSES', value: '${rank.losses}', color: Colors.redAccent),
+                Container(width: 1, height: 26, color: Colors.white10),
+                _StatCell(label: 'WIN RATE', value: rank.winRate, color: const Color(0xFFFFC857)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Quick Action Buttons
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onViewTiers,
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: Colors.white.withOpacity(0.15)),
+                    foregroundColor: Colors.white70,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.leaderboard_rounded, size: 16),
+                  label: const Text('Tier List', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onViewReplays,
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: Colors.white.withOpacity(0.15)),
+                    foregroundColor: Colors.white70,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.history_rounded, size: 16),
+                  label: const Text('Replays', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatCell extends StatelessWidget {
+  const _StatCell({required this.label, required this.value, required this.color});
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.w900,
+            fontSize: 15,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.35),
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.0,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Luxury 3D Game Portal Card
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _GamePortalCard extends StatefulWidget {
+  const _GamePortalCard({
+    required this.themeColor,
+    required this.badgeTag,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.perks,
+    required this.ctaText,
+    required this.onTap,
+  });
+
+  final Color themeColor;
+  final String badgeTag;
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final List<String> perks;
+  final String ctaText;
+  final VoidCallback onTap;
+
+  @override
+  State<_GamePortalCard> createState() => _GamePortalCardState();
+}
+
+class _GamePortalCardState extends State<_GamePortalCard> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) {
+        setState(() => _isHovered = true);
+        AudioService.instance.playCardClick();
+      },
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTap: () {
+          AudioService.instance.playButtonTap();
+          AudioService.instance.hapticSelection();
+          widget.onTap();
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          transform: _isHovered
+              ? (Matrix4.identity()
+                ..setEntry(3, 2, 0.001)
+                ..translate(0.0, -6.0, 0.0))
+              : Matrix4.identity(),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                widget.themeColor.withOpacity(_isHovered ? 0.20 : 0.10),
+                const Color(0xFF0F172A).withOpacity(0.85),
+              ],
+            ),
+            border: Border.all(
+              color: widget.themeColor.withOpacity(_isHovered ? 0.70 : 0.25),
+              width: _isHovered ? 1.5 : 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: widget.themeColor.withOpacity(_isHovered ? 0.25 : 0.05),
+                blurRadius: _isHovered ? 28 : 12,
+                spreadRadius: _isHovered ? 3 : 0,
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: [
+                    // Left: Large Glowing Portal Crest
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: widget.themeColor.withOpacity(0.14),
+                        border: Border.all(
+                          color: widget.themeColor.withOpacity(0.5),
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: widget.themeColor.withOpacity(0.3),
+                            blurRadius: 16,
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        widget.icon,
+                        color: widget.themeColor,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+
+                    // Middle: Mode Information & Perks
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Badge Tag
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: widget.themeColor.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              widget.badgeTag,
+                              style: TextStyle(
+                                color: widget.themeColor,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.5,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+
+                          // Title
+                          Text(
+                            widget.title,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+
+                          // Subtitle
+                          Text(
+                            widget.subtitle,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white.withOpacity(0.55),
+                              height: 1.3,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+
+                          // Perks Row
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: widget.perks.map((p) {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.06),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  p,
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.75),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(width: 16),
+
+                    // Right: Action CTA Button
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _isHovered ? widget.themeColor : widget.themeColor.withOpacity(0.18),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: widget.themeColor.withOpacity(0.6)),
+                        boxShadow: _isHovered
+                            ? [
+                                BoxShadow(
+                                  color: widget.themeColor.withOpacity(0.4),
+                                  blurRadius: 16,
+                                  spreadRadius: 1,
+                                ),
+                              ]
+                            : [],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            widget.ctaText,
+                            style: TextStyle(
+                              color: _isHovered ? const Color(0xFF070B13) : widget.themeColor,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.arrow_forward_rounded,
+                            size: 16,
+                            color: _isHovered ? const Color(0xFF070B13) : widget.themeColor,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Queue & Room Status Banners
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _QueueBanner extends StatelessWidget {
+  const _QueueBanner({required this.onCancel});
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassPanel(
+      backgroundColor: const Color(0xFF0A2B1D).withOpacity(0.6),
+      border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.5)),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              color: Color(0xFF48E5C2),
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'MATCHMAKING IN PROGRESS',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.5,
+                    color: Color(0xFF48E5C2),
+                  ),
+                ),
+                Text(
+                  'Searching for players of similar skill level…',
+                  style: TextStyle(fontSize: 12, color: Colors.white70),
+                ),
+              ],
+            ),
+          ),
+          OutlinedButton(
+            onPressed: onCancel,
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Colors.redAccent),
+              foregroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Cancel Queue'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RoomBanner extends StatelessWidget {
+  const _RoomBanner({required this.code, required this.onStartWithBots});
+  final String code;
+  final VoidCallback onStartWithBots;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassPanel(
+      padding: const EdgeInsets.all(18),
+      backgroundColor: const Color(0xFF26193E).withOpacity(0.65),
+      border: Border.all(color: const Color(0xFFB388FF).withOpacity(0.5)),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFB388FF).withOpacity(0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.meeting_room_rounded, color: Color(0xFFB388FF), size: 28),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'CUSTOM ROOM CODE',
+                  style: TextStyle(fontSize: 11, color: Colors.white54, letterSpacing: 1.5, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  code,
+                  style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 6,
+                    color: Color(0xFFB388FF),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF30B89C),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: onStartWithBots,
+            icon: const Icon(Icons.smart_toy, size: 18),
+            label: const Text('Start with Bots', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PrivateRoomPanel extends StatelessWidget {
+  const _PrivateRoomPanel({
+    required this.controller,
+    required this.onCreate,
+    required this.onJoin,
+  });
+
+  final TextEditingController controller;
+  final VoidCallback onCreate;
+  final VoidCallback onJoin;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassPanel(
+      backgroundColor: const Color(0xFF161F33).withOpacity(0.75),
+      border: Border.all(color: const Color(0xFFB388FF).withOpacity(0.3)),
+      padding: const EdgeInsets.all(20),
+      child: Row(
+        children: [
+          // Create Button
+          Expanded(
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF7C4DFF),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: onCreate,
+              icon: const Icon(Icons.add_circle_outline),
+              label: const Text('Create New Room', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Text('OR', style: TextStyle(color: Colors.white.withOpacity(0.3), fontWeight: FontWeight.bold)),
+          const SizedBox(width: 16),
+          // Code field
+          Expanded(
+            child: TextField(
+              controller: controller,
+              textCapitalization: TextCapitalization.characters,
+              maxLength: 6,
+              decoration: InputDecoration(
+                hintText: 'ROOM CODE',
+                counterText: '',
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.06),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+              style: const TextStyle(
+                letterSpacing: 4,
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Join Button
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white12,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: onJoin,
+            child: const Text('Join', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PartyBanner extends StatelessWidget {
+  const _PartyBanner({required this.party, required this.onLeave});
+  final List<dynamic> party;
+  final VoidCallback onLeave;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassPanel(
+      padding: const EdgeInsets.all(14),
+      backgroundColor: const Color(0xFF7C4DFF).withOpacity(0.15),
+      border: Border.all(color: const Color(0xFF7C4DFF).withOpacity(0.4)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.group, color: Color(0xFF7C4DFF), size: 18),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Your Party',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF7C4DFF),
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: onLeave,
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.redAccent,
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: const Text('Leave'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...party.map((p) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.circle, size: 8, color: Colors.greenAccent),
+                    const SizedBox(width: 8),
+                    Text(
+                      p['username'],
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              )),
+        ],
       ),
     );
   }
@@ -443,7 +1418,6 @@ class _RulesSheet extends StatelessWidget {
             controller: scrollController,
             children: [
               const SizedBox(height: 12),
-              // Drag handle
               Center(
                 child: Container(
                   width: 40,
@@ -455,12 +1429,9 @@ class _RulesSheet extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 20),
-
-              // Title
               const Row(
                 children: [
-                  Icon(Icons.menu_book_rounded,
-                      color: Color(0xFFFFC857), size: 28),
+                  Icon(Icons.menu_book_rounded, color: Color(0xFFFFC857), size: 28),
                   SizedBox(width: 10),
                   Text(
                     'How to Play',
@@ -482,7 +1453,6 @@ class _RulesSheet extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 24),
-
               _RuleSection(
                 icon: '🎯',
                 title: 'Objective',
@@ -490,53 +1460,25 @@ class _RulesSheet extends StatelessWidget {
                     'If tied, the team with the most total cards wins. '
                     'Still tied? Most aces breaks it.',
               ),
-
               _RuleSection(
                 icon: '⚡',
                 title: 'Power Suit (Trump)',
-                body: 'Before the game begins, the dealer\'s partner chooses a Power Suit. '
-                    'Cards of the power suit beat all other suits, regardless of rank. '
-                    'Think of it as the ultimate trump card!',
+                body: 'The first player selects the Power Suit based on their first 5 cards. '
+                    'Cards of the Power Suit beat all other suits.',
               ),
-
               _RuleSection(
-                icon: '🃏',
-                title: 'Playing a Trick',
-                body: '• The leader plays any card to start a trick\n'
-                    '• Other players must follow the lead suit if they can\n'
-                    '• If you can\'t follow suit, you may play any card\n'
-                    '• The highest card of the lead suit wins (unless trumped by power suit)',
+                icon: '🔄',
+                title: 'Gameplay',
+                body: 'Each player plays 1 card per trick clockwise. '
+                    'You MUST follow the lead suit if you can. '
+                    'If you have no cards of the lead suit, you may play any card (including Power Suit).',
               ),
-
               _RuleSection(
-                icon: '⬆️',
-                title: 'Must Play Higher',
-                body: 'If you follow the lead suit, you must play a higher card than the current highest '
-                    '— unless your teammate (partner) is already winning the trick. '
-                    'In that case, you can play low to save your strong cards!',
-              ),
-
-              _RuleSection(
-                icon: '🛡️',
-                title: '10s Protection',
-                body: 'You cannot discard an off-suit 10 unless you have 3 or fewer cards remaining. '
-                    'This protects your valuable 10s from being wasted early!',
-              ),
-
-              _RuleSection(
-                icon: '1️⃣',
-                title: 'First Trick Rule',
-                body: 'On the very first trick, you cannot play 10s or power suit cards '
-                    'unless your entire hand consists of those cards.',
-              ),
-
-              _RuleSection(
-                icon: '👑',
-                title: 'Card Hierarchy',
+                icon: '📊',
+                title: 'Card Ranking',
                 body: 'A > K > Q > J > 10 > 9 > 8 > 7 > 6 > 5 > 4 > 3 > 2\n\n'
                     'Power suit always beats non-power suit cards, regardless of rank.',
               ),
-
               _RuleSection(
                 icon: '🏆',
                 title: 'Winning',
@@ -545,10 +1487,7 @@ class _RulesSheet extends StatelessWidget {
                     '2. If tied on 10s → most total captured cards\n'
                     '3. If still tied → most aces',
               ),
-
               const SizedBox(height: 24),
-
-              // Close button
               Center(
                 child: TextButton.icon(
                   onPressed: () => Navigator.pop(context),
@@ -598,8 +1537,8 @@ class _RuleSection extends StatelessWidget {
                   title,
                   style: const TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFFFFC857),
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
                   ),
                 ),
               ],
@@ -610,7 +1549,7 @@ class _RuleSection extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 13,
                 color: Colors.white70,
-                height: 1.6,
+                height: 1.5,
               ),
             ),
           ],
@@ -621,372 +1560,8 @@ class _RuleSection extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Supporting widgets (ported from old home_screen.dart)
+// Friends Bottom Sheet
 // ═══════════════════════════════════════════════════════════════════════════════
-
-class _ActionCard extends StatelessWidget {
-  const _ActionCard({
-    required this.icon,
-    required this.iconColor,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final Color iconColor;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: GlassPanel(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: iconColor.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: iconColor, size: 24),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.white38,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right, color: Colors.white24, size: 22),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RankPanel extends StatelessWidget {
-  const _RankPanel({this.username, this.rankInfo});
-  final String? username;
-  final RankInfo? rankInfo;
-  @override
-  Widget build(BuildContext context) {
-    final rank = rankInfo ?? RankInfo.fromMmr(0);
-    final tierColor = rank.color;
-
-    return GlassPanel(
-      padding: const EdgeInsets.all(16),
-      backgroundColor: Colors.black.withOpacity(0.3),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [tierColor, tierColor.withOpacity(0.5)],
-                  ),
-                  boxShadow: [BoxShadow(color: tierColor.withOpacity(0.3), blurRadius: 12)],
-                ),
-                child: Center(
-                  child: Image.asset(rank.icon, height: 28, width: 28),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      username ?? 'Guest',
-                      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
-                    ),
-                    Text(
-                      '${rank.displayName}  ·  ${rank.mmr} MMR',
-                      style: TextStyle(color: tierColor.withOpacity(0.8), fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: tierColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  rank.seasonDisplay,
-                  style: TextStyle(color: tierColor, fontSize: 11, fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          // MMR progress bar
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: rank.progressInTier.clamp(0.0, 1.0),
-              minHeight: 4,
-              backgroundColor: Colors.white10,
-              valueColor: AlwaysStoppedAnimation<Color>(tierColor),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('W: ${rank.wins}  L: ${rank.losses}', style: const TextStyle(fontSize: 10, color: Colors.white38)),
-              Text('Peak: ${rank.peakMmr} MMR', style: const TextStyle(fontSize: 10, color: Colors.white38)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _QueueBanner extends StatelessWidget {
-  const _QueueBanner({required this.onCancel});
-  final VoidCallback onCancel;
-  @override
-  Widget build(BuildContext context) {
-    return GlassPanel(
-      backgroundColor: const Color(0xFF1B5E20).withOpacity(0.4),
-      border: Border.all(color: const Color(0xFF4CAF50).withOpacity(0.3)),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          const SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Color(0xFF48E5C2),
-            ),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Text(
-              'Searching for players…',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF48E5C2),
-              ),
-            ),
-          ),
-          TextButton(onPressed: onCancel, child: const Text('Cancel')),
-        ],
-      ),
-    );
-  }
-}
-
-class _RoomBanner extends StatelessWidget {
-  const _RoomBanner({required this.code});
-  final String code;
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFC857).withOpacity(0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: const Color(0xFFFFC857).withOpacity(0.3),
-        ),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.meeting_room, color: Color(0xFFFFC857), size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Share this code with friends',
-                  style: TextStyle(fontSize: 12, color: Colors.white54),
-                ),
-                Text(
-                  code,
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 6,
-                    color: Color(0xFFFFC857),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Color(0xFFFFC857),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PrivateRoomPanel extends StatelessWidget {
-  const _PrivateRoomPanel({
-    required this.controller,
-    required this.onCreate,
-    required this.onJoin,
-  });
-  final TextEditingController controller;
-  final VoidCallback onCreate;
-  final VoidCallback onJoin;
-  @override
-  Widget build(BuildContext context) {
-    return GlassPanel(
-      backgroundColor: const Color(0xFF101826).withOpacity(0.5),
-      border: Border.all(color: Colors.white12),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ElevatedButton.icon(
-            onPressed: onCreate,
-            icon: const Icon(Icons.add),
-            label: const Text('Create New Room'),
-          ),
-          const SizedBox(height: 12),
-          const Row(
-            children: [
-              Expanded(child: Divider(color: Colors.white12)),
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 10),
-                child: Text(
-                  'or join',
-                  style: TextStyle(color: Colors.white38, fontSize: 12),
-                ),
-              ),
-              Expanded(child: Divider(color: Colors.white12)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: controller,
-            textCapitalization: TextCapitalization.characters,
-            maxLength: 6,
-            decoration: const InputDecoration(
-              hintText: 'Enter room code',
-              counterText: '',
-              border: OutlineInputBorder(),
-              contentPadding:
-                  EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            ),
-            style: const TextStyle(
-              letterSpacing: 4,
-              fontWeight: FontWeight.w900,
-              fontSize: 18,
-            ),
-          ),
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: onJoin,
-            icon: const Icon(Icons.login),
-            label: const Text('Join Room'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PartyBanner extends StatelessWidget {
-  const _PartyBanner({required this.party, required this.onLeave});
-  final List<dynamic> party;
-  final VoidCallback onLeave;
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassPanel(
-      padding: const EdgeInsets.all(12),
-      backgroundColor: const Color(0xFF7C4DFF).withOpacity(0.15),
-      border: Border.all(color: const Color(0xFF7C4DFF).withOpacity(0.5)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.group, color: Color(0xFF7C4DFF), size: 18),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Your Party',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF7C4DFF),
-                  ),
-                ),
-              ),
-              TextButton(
-                onPressed: onLeave,
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.redAccent,
-                  visualDensity: VisualDensity.compact,
-                ),
-                child: const Text('Leave'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ...party.map((p) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  children: [
-                    const Icon(Icons.circle, size: 8, color: Colors.greenAccent),
-                    const SizedBox(width: 8),
-                    Text(
-                      p['username'],
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
-              )),
-        ],
-      ),
-    );
-  }
-}
 
 class _FriendsSheet extends StatelessWidget {
   const _FriendsSheet({required this.controller});
@@ -995,7 +1570,7 @@ class _FriendsSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
-    
+
     return DraggableScrollableSheet(
       initialChildSize: 0.8,
       maxChildSize: 0.9,
@@ -1023,7 +1598,6 @@ class _FriendsSheet extends StatelessWidget {
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.white),
               ),
               const SizedBox(height: 16),
-              
               // Add friend
               Row(
                 children: [
@@ -1051,7 +1625,6 @@ class _FriendsSheet extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 20),
-              
               // Friend list
               Expanded(
                 child: ListView.separated(
@@ -1063,7 +1636,7 @@ class _FriendsSheet extends StatelessWidget {
                     final user = f['user'];
                     final status = f['status'];
                     final isReq = f['isRequester'];
-                    
+
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: CircleAvatar(
@@ -1105,6 +1678,10 @@ class _FriendsSheet extends StatelessWidget {
     );
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Glass Container Component
+// ═══════════════════════════════════════════════════════════════════════════════
 
 class GlassPanel extends StatelessWidget {
   const GlassPanel({

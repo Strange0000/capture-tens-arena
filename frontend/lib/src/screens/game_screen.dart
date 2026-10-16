@@ -1,8 +1,12 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import '../state/app_state.dart';
+import '../models/arena_card.dart';
+import '../models/match_state.dart';
 import '../services/audio_service.dart';
+import '../state/app_state.dart';
 import '../widgets/arena_card_widget.dart';
 import '../widgets/captures_bar.dart';
 import '../widgets/deal_animation.dart';
@@ -27,17 +31,67 @@ class _GameScreenState extends State<GameScreen> {
   int _waitSeconds = 0;
   String? _lastMatchDifficulty;
 
+  // Preferences
+  bool _highlightLegal = true;
+  bool _autoSortHand = true;
+  bool _tableTilt3d = false;
+
+  // HUD Banner Alert (Top notification - never covers the cards!)
+  String? _bannerAlert;
+  IconData? _bannerIcon;
+  Color? _bannerColor;
+
   @override
   void initState() {
     super.initState();
+    AudioService.instance.playGameBgm();
+    _loadPreferences();
     _startWaitTimer();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final app = context.read<AppState>();
+      if (app.match == null && app.lobbyStatus != LobbyStatus.queuing) {
+        print('[GameScreen] No match found on mount, starting bot match...');
+        app.startOffline(_lastMatchDifficulty ?? 'hard');
+      }
+    });
+  }
+
+  Future<void> _loadPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _highlightLegal = prefs.getBool('pref_highlight_legal') ?? true;
+      _autoSortHand = prefs.getBool('pref_auto_sort_hand') ?? true;
+      _tableTilt3d = prefs.getBool('pref_table_tilt_3d') ?? false;
+    });
+  }
+
+  void _showBannerAlert(String message, IconData icon, Color color) {
+    if (!mounted) return;
+    setState(() {
+      _bannerAlert = message;
+      _bannerIcon = icon;
+      _bannerColor = color;
+    });
+    Future.delayed(const Duration(milliseconds: 3000), () {
+      if (mounted && _bannerAlert == message) {
+        setState(() => _bannerAlert = null);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    AudioService.instance.playLobbyBgm();
+    super.dispose();
   }
 
   void _startWaitTimer() {
     Future.delayed(const Duration(seconds: 1), () {
       if (!mounted) return;
       final app = context.read<AppState>();
-      if (app.match != null) return; // Match arrived, stop counting
+      if (app.match != null) return;
       setState(() {
         _waitSeconds++;
         if (_waitSeconds >= 10) {
@@ -84,12 +138,12 @@ class _GameScreenState extends State<GameScreen> {
                 const CircularProgressIndicator(color: Color(0xFF48E5C2)),
                 const SizedBox(height: 20),
                 Text(
-                  'Setting up match...',
+                  'Setting up arena...',
                   style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Socket: ${app.socket.connected ? "connected" : "connecting..."}',
+                  'Gateway: ${app.socket.connected ? "connected" : "connecting..."} (${app.backendUrl})',
                   style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 12),
                 ),
               ] else ...[
@@ -101,7 +155,7 @@ class _GameScreenState extends State<GameScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Could not start the match. The server may be waking up.',
+                  'Could not connect to the match server.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 14),
                 ),
@@ -118,7 +172,6 @@ class _GameScreenState extends State<GameScreen> {
                       _waitTimedOut = false;
                       _waitSeconds = 0;
                     });
-                    // Re-emit the bot match request
                     app.startOffline(_lastMatchDifficulty ?? 'hard');
                     _startWaitTimer();
                   },
@@ -146,10 +199,10 @@ class _GameScreenState extends State<GameScreen> {
       if (winner != null && _trickWinnerMessage == null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          setState(() => _trickWinnerMessage = '$winner won the trick!');
+          setState(() => _trickWinnerMessage = '$winner captured the trick!');
           AudioService.instance.playTrickWin();
           AudioService.instance.hapticMedium();
-          Future.delayed(const Duration(milliseconds: 1800), () {
+          Future.delayed(const Duration(milliseconds: 2200), () {
             if (mounted) setState(() => _trickWinnerMessage = null);
           });
         });
@@ -157,66 +210,25 @@ class _GameScreenState extends State<GameScreen> {
     }
     _lastTrickCount = match.completedTricksCount;
 
-    // Error snackbar
+    // Error notification (HUD banner, NOT bottom snackbar)
     if (app.errorMessage != null) {
       final msg = app.errorMessage!;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted) return;
         app.clearError();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(msg),
-            backgroundColor: Colors.redAccent,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        _showBannerAlert(msg, Icons.error_outline_rounded, Colors.redAccent);
       });
     }
 
-    // Detect power suit selection
+    // Detect power suit selection (HUD banner, NOT bottom snackbar)
     if (match.powerSuit != null && _lastPowerSuit == null) {
-      final selector = match.players.firstWhere((p) => p.seat == match.firstPlayerSeat).username;
+      final selector = match.players.firstWhere((p) => p.seat == match.firstPlayerSeat, orElse: () => match.players.first).username;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            elevation: 0,
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.transparent,
-            content: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF101826).withOpacity(0.85),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFF30B89C).withOpacity(0.5)),
-                boxShadow: [
-                  BoxShadow(color: const Color(0xFF30B89C).withOpacity(0.2), blurRadius: 20, spreadRadius: 2),
-                ],
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.flash_on, color: Color(0xFFFFC857)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      '$selector selected ${match.powerSuit!.toUpperCase()} as the Power Suit!',
-                      style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            duration: const Duration(seconds: 4),
-          ),
-        );
+        _showBannerAlert('$selector declared ${match.powerSuit!.toUpperCase()} as TRUMP!', Icons.flash_on_rounded, const Color(0xFFFFD166));
       });
     }
     _lastPowerSuit = match.powerSuit;
-
-    // Who leads this trick
-    final leader = match.currentTrick != null && match.currentTrick!.plays.isEmpty
-        ? match.players.where((p) => p.seat == match.currentTurnSeat).firstOrNull?.username
-        : null;
 
     return Container(
       decoration: const BoxDecoration(
@@ -230,263 +242,351 @@ class _GameScreenState extends State<GameScreen> {
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          title: Text(
-            match.phase == 'complete'
-                ? 'Match Over'
-                : match.phase == 'power-select'
-                    ? 'Choose Power Suit'
-                    : 'Trick ${match.completedTricksCount + 1} of 13',
-          ),
-          leadingWidth: 80,
-          leading: TextButton.icon(
+          leading: IconButton(
+            tooltip: 'Leave Match',
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 18),
             onPressed: () => _confirmQuit(context, app),
-            icon: const Icon(Icons.exit_to_app, color: Colors.redAccent, size: 18),
-            label: const Text('QUIT', style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+          ),
+          centerTitle: true,
+          title: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+            decoration: BoxDecoration(
+              color: (match.mode == 'ranked'
+                      ? const Color(0xFFFFD166)
+                      : match.mode == 'private'
+                          ? const Color(0xFFB388FF)
+                          : const Color(0xFF48E5C2))
+                  .withOpacity(0.12),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: (match.mode == 'ranked'
+                        ? const Color(0xFFFFD166)
+                        : match.mode == 'private'
+                            ? const Color(0xFFB388FF)
+                            : const Color(0xFF48E5C2))
+                    .withOpacity(0.35),
+                width: 1.0,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: match.mode == 'ranked'
+                        ? const Color(0xFFFFD166)
+                        : match.mode == 'private'
+                            ? const Color(0xFFB388FF)
+                            : const Color(0xFF48E5C2),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 7),
+                Text(
+                  match.mode == 'ranked'
+                      ? 'RANKED ARENA'
+                      : match.mode == 'private'
+                          ? 'CUSTOM SALON'
+                          : 'BOT COMBAT',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                    color: match.mode == 'ranked'
+                        ? const Color(0xFFFFD166)
+                        : match.mode == 'private'
+                            ? const Color(0xFFB388FF)
+                            : const Color(0xFF48E5C2),
+                  ),
+                ),
+              ],
+            ),
           ),
           actions: [
             if (match.players.any((p) => p.isBot) && match.mode != 'ranked')
-              TextButton.icon(
+              IconButton(
+                tooltip: 'Restart Match',
+                icon: const Icon(Icons.refresh_rounded, color: Color(0xFFFFD166), size: 20),
                 onPressed: () => _confirmRestart(context, app),
-                icon: const Icon(Icons.refresh, color: Color(0xFFFFC857), size: 18),
-                label: const Text('RESTART', style: TextStyle(color: Color(0xFFFFC857), fontSize: 12, fontWeight: FontWeight.bold)),
               ),
-            IconButton(tooltip: 'Rules', onPressed: () => _showQuickRules(context), icon: const Icon(Icons.menu_book_rounded, size: 20)),
+            IconButton(
+              tooltip: AudioService.instance.soundEnabled ? 'Mute Sound' : 'Unmute Sound',
+              icon: Icon(
+                AudioService.instance.soundEnabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+                color: AudioService.instance.soundEnabled ? const Color(0xFF48E5C2) : Colors.white38,
+                size: 20,
+              ),
+              onPressed: () {
+                setState(() {
+                  final next = !AudioService.instance.soundEnabled;
+                  AudioService.instance.setSoundEnabled(next);
+                  AudioService.instance.setMusicEnabled(next);
+                });
+              },
+            ),
+            IconButton(
+              tooltip: 'Game Rules',
+              icon: const Icon(Icons.menu_book_rounded, color: Colors.white70, size: 20),
+              onPressed: () => _showQuickRules(context),
+            ),
+            const SizedBox(width: 6),
           ],
         ),
         body: SafeArea(
           child: Stack(
-          children: [
-            // Main game layout
-            Column(
-              children: [
-                CapturesBar(captures: match.captures, completedTricks: match.completedTricksCount),
-
-                Expanded(
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: GameTable(match: match, mySeat: app.mySeat, onCardPlayed: app.playCard),
-                      ),
-                      // Emote picker
-                      Positioned(
-                        bottom: 8, right: 8,
-                        child: EmotePicker(onEmote: (code) => app.sendEmote(code)),
-                      ),
-                      // Floating emote display
-                      if (app.latestEmote != null)
-                        Positioned(
-                          top: 60, left: 0, right: 0,
-                          child: Center(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF101826).withOpacity(0.9),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.3)),
-                              ),
-                              child: Text(
-                                '${app.latestEmote!['username']}: ${_emoteEmoji(app.latestEmote!['emote'] as String? ?? '')}',
-                                style: const TextStyle(color: Colors.white, fontSize: 16),
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (app.errorMessage != null)
-                        Positioned(
-                          top: 8, left: 40, right: 40,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.redAccent.withOpacity(0.9),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.error_outline, color: Colors.white, size: 16),
-                                const SizedBox(width: 8),
-                                Expanded(child: Text(app.errorMessage!, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))),
-                                IconButton(
-                                  icon: const Icon(Icons.close, color: Colors.white, size: 16),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                  onPressed: () => app.clearError(),
-                                )
-                              ],
-                            ),
-                          ),
-                        )
-                      else if (leader != null && match.phase == 'playing')
-                        Positioned(
-                          top: 8, left: 0, right: 0,
-                          child: Center(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF101826).withOpacity(0.9),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.3)),
-                              ),
-                              child: Text('$leader leads',
-                                style: const TextStyle(color: Color(0xFF48E5C2), fontSize: 11, fontWeight: FontWeight.w700)),
-                            ),
-                          ),
-                        ),
-                      if (_trickWinnerMessage != null)
-                        Positioned(
-                          top: 40, left: 40, right: 40,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(colors: [Color(0xFFFFC857), Color(0xFFD4A017)]),
-                              borderRadius: BorderRadius.circular(14),
-                              boxShadow: [BoxShadow(color: const Color(0xFFFFC857).withOpacity(0.3), blurRadius: 16)],
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Text('🏆', style: TextStyle(fontSize: 16)),
-                                const SizedBox(width: 8),
-                                Flexible(child: Text(_trickWinnerMessage!,
-                                  style: const TextStyle(color: Color(0xFF070B13), fontSize: 13, fontWeight: FontWeight.w800),
-                                  textAlign: TextAlign.center)),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
+            children: [
+              // Main game column
+              Column(
+                children: [
+                  // Esports HUD Scoreboard
+                  CapturesBar(
+                    captures: match.captures,
+                    completedTricks: match.completedTricksCount,
+                    myTeam: app.myTeam,
+                    powerSuit: match.powerSuit,
+                    trickWinnerMessage: _trickWinnerMessage,
                   ),
-                ),
+                  // Table Arena (Clean, transparent, seamlessly integrating with table art)
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: GameTable(
+                            match: match,
+                            mySeat: app.mySeat,
+                            onCardPlayed: app.playCard,
+                            tilt3d: _tableTilt3d,
+                          ),
+                        ),
 
-                if (match.phase == 'power-select')
-                  SizedBox(
-                    height: 160,
-                    child: (match.players.firstWhere((p) => p.userId == app.userId, orElse: () => match.players.first).seat == match.firstPlayerSeat)
-                        ? PowerSuitPicker(onSelect: app.selectPower)
-                        : Center(
-                            child: Text(
-                              'Waiting for ${match.players.firstWhere((p) => p.seat == match.firstPlayerSeat).username} to select Power Suit...',
-                              style: const TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.bold),
+                        // Emote picker (Bottom-Right)
+                        Positioned(
+                          bottom: 10,
+                          right: 12,
+                          child: EmotePicker(onEmote: (code) => app.sendEmote(code)),
+                        ),
+
+                        // Floating emote display
+                        if (app.latestEmote != null)
+                          Positioned(
+                            top: 40,
+                            left: 0,
+                            right: 0,
+                            child: Center(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF10192A).withOpacity(0.92),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.4), width: 1.5),
+                                  boxShadow: [
+                                    BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 14),
+                                  ],
+                                ),
+                                child: Text(
+                                  '${app.latestEmote!['username']}: ${_emoteEmoji(app.latestEmote!['emote'] as String? ?? '')}',
+                                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                ),
+                              ),
                             ),
                           ),
+                      ],
+                    ),
                   ),
 
-                Builder(
-                  builder: (context) {
-                    final sw = MediaQuery.of(context).size.width;
-                    final cw = (sw / 8).clamp(50.0, 90.0);
-                    return SizedBox(
-                      height: (cw * 1.428) + 20,
-                      child: _showDealAnimation ? const SizedBox.shrink() : _HandArea(app: app, cardWidth: cw),
+                  // Power Suit Picker Section
+                  if (match.phase == 'power-select')
+                    SizedBox(
+                      height: 160,
+                      child: (match.players.firstWhere((p) => p.userId == app.userId, orElse: () => match.players.first).seat == match.firstPlayerSeat)
+                          ? PowerSuitPicker(onSelect: app.selectPower)
+                          : Center(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF10192A).withOpacity(0.9),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: Colors.white.withOpacity(0.1)),
+                                ),
+                                child: Text(
+                                  'Waiting for ${match.players.firstWhere((p) => p.seat == match.firstPlayerSeat).username} to select Power Suit...',
+                                  style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                    ),
+
+                  // Player Hand Area
+                  Builder(
+                    builder: (context) {
+                      final sw = MediaQuery.of(context).size.width;
+                      final cw = (sw / 8).clamp(52.0, 92.0);
+                      return SizedBox(
+                        height: (cw * 1.428) + 38,
+                        child: _showDealAnimation
+                            ? const SizedBox.shrink()
+                            : _HandArea(
+                                app: app,
+                                cardWidth: cw,
+                                autoSort: _autoSortHand,
+                                highlightLegal: _highlightLegal,
+                              ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+
+              // Top HUD Banner Alert (Positioned below scoreboard, never covers player cards!)
+              Positioned(
+                top: 76,
+                left: 20,
+                right: 20,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  transitionBuilder: (child, animation) {
+                    return SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0.0, -0.4),
+                        end: Offset.zero,
+                      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+                      child: FadeTransition(
+                        opacity: animation,
+                        child: child,
+                      ),
                     );
-                  }
-                ),
-              ],
-            ),
-
-            // Deal animation (only first time)
-            if (_showDealAnimation)
-              Positioned.fill(
-                child: DealAnimation(
-                  onComplete: () {
-                    if (mounted) setState(() => _showDealAnimation = false);
                   },
+                  child: _bannerAlert == null
+                      ? const SizedBox.shrink(key: ValueKey('empty_banner'))
+                      : Center(
+                          key: ValueKey(_bannerAlert),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(20),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0F1B2E).withOpacity(0.92),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: (_bannerColor ?? const Color(0xFFFFD166)).withOpacity(0.6),
+                                    width: 1.5,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: (_bannerColor ?? const Color(0xFFFFD166)).withOpacity(0.35),
+                                      blurRadius: 18,
+                                      spreadRadius: 1,
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _bannerIcon ?? Icons.flash_on_rounded,
+                                      color: _bannerColor ?? const Color(0xFFFFD166),
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      _bannerAlert!,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                 ),
               ),
 
-            // Match result overlay
-            if (match.phase == 'complete')
-              Positioned.fill(
-                child: MatchResultOverlay(
-                  match: match,
-                  myTeam: app.myTeam,
-                  rankUpdate: app.lastRankUpdate,
-                  onPlayAgain: () async {
-                    final mode = match.mode;
-                    app.leaveMatch();
-                    setState(() {
-                      _showDealAnimation = true;
-                      _lastTrickCount = 0;
-                    });
-                    if (mode == 'offline') {
-                      app.startOffline(_lastMatchDifficulty ?? 'hard');
-                    } else if (mode == 'ranked') {
-                      app.queueRanked();
-                      if (context.mounted) Navigator.pushReplacementNamed(context, '/matchmaking');
-                    } else {
+              // Deal Animation (First time only)
+              if (_showDealAnimation)
+                Positioned.fill(
+                  child: DealAnimation(
+                    onComplete: () {
+                      if (mounted) setState(() => _showDealAnimation = false);
+                    },
+                  ),
+                ),
+
+              // Match Result Overlay
+              if (match.phase == 'complete')
+                Positioned.fill(
+                  child: MatchResultOverlay(
+                    match: match,
+                    myTeam: app.myTeam,
+                    rankUpdate: app.lastRankUpdate,
+                    onPlayAgain: () async {
+                      final mode = match.mode;
+                      app.leaveMatch();
+                      setState(() {
+                        _showDealAnimation = true;
+                        _lastTrickCount = 0;
+                      });
+                      if (mode == 'offline') {
+                        app.startOffline(_lastMatchDifficulty ?? 'hard');
+                      } else if (mode == 'ranked') {
+                        app.queueRanked();
+                        if (context.mounted) Navigator.pushReplacementNamed(context, '/matchmaking');
+                      } else {
+                        if (context.mounted) Navigator.pushReplacementNamed(context, '/lobby');
+                      }
+                    },
+                    onHome: () {
+                      app.leaveMatch();
                       if (context.mounted) Navigator.pushReplacementNamed(context, '/lobby');
-                    }
-                  },
-                  onHome: () {
-                    app.leaveMatch();
-                    if (context.mounted) Navigator.pushReplacementNamed(context, '/lobby');
-                  },
+                    },
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
-      floatingActionButton: null,
-      bottomSheet: null,
-    ),
     );
   }
 
-  void _showQuickRules(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF101826),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 16),
-            const Text('Quick Rules', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFFFFC857))),
-            const SizedBox(height: 12),
-            const _QuickRule('🎯', 'Capture the most 10s to win'),
-            const _QuickRule('⚡', 'Power suit beats all other suits'),
-            const _QuickRule('🃏', 'Must follow the lead suit if you can'),
-            const _QuickRule('⬆️', 'Must play higher unless teammate is winning'),
-            const _QuickRule('🛡️', 'Can\'t discard off-suit 10s (hand > 3)'),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
-  }
   Future<void> _confirmQuit(BuildContext context, AppState app) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF101826),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: const Color(0xFF10192A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: BorderSide(color: Colors.redAccent.withOpacity(0.3)),
+        ),
         title: const Row(children: [
-          Icon(Icons.exit_to_app, color: Colors.redAccent, size: 22),
+          Icon(Icons.exit_to_app_rounded, color: Colors.redAccent, size: 22),
           SizedBox(width: 10),
-          Text('Quit Match?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+          Text('Leave Match?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
         ]),
         content: const Text(
-          'Are you sure you want to leave this match? Your progress will be lost.',
-          style: TextStyle(color: Colors.white60, fontSize: 14),
+          'Are you sure you want to quit this match? Your active hand and progress will be forfeited.',
+          style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
         ),
-        actionsAlignment: MainAxisAlignment.end,
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Stay', style: TextStyle(color: Color(0xFF48E5C2), fontWeight: FontWeight.w700)),
+            child: const Text('Stay in Game', style: TextStyle(color: Color(0xFF48E5C2), fontWeight: FontWeight.w700)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Quit', style: TextStyle(fontWeight: FontWeight.w800)),
+            child: const Text('Leave Match', style: TextStyle(fontWeight: FontWeight.w800)),
           ),
         ],
       ),
@@ -501,18 +601,20 @@ class _GameScreenState extends State<GameScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF101826),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: const Color(0xFF10192A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: Color(0xFFFFD166), width: 1.2),
+        ),
         title: const Row(children: [
-          Icon(Icons.refresh_rounded, color: Color(0xFFFFC857), size: 22),
+          Icon(Icons.refresh_rounded, color: Color(0xFFFFD166), size: 22),
           SizedBox(width: 10),
           Text('Restart Match?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
         ]),
         content: const Text(
-          'This will end the current game and start a fresh bot match. Are you sure?',
-          style: TextStyle(color: Colors.white60, fontSize: 14),
+          'This will restart the table with a fresh deal. Ready to redeal?',
+          style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
         ),
-        actionsAlignment: MainAxisAlignment.end,
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -520,12 +622,13 @@ class _GameScreenState extends State<GameScreen> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFFC857),
+              backgroundColor: const Color(0xFFFFD166),
               foregroundColor: const Color(0xFF070B13),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Restart', style: TextStyle(fontWeight: FontWeight.w800)),
+            child: const Text('Restart Now', style: TextStyle(fontWeight: FontWeight.w800)),
           ),
         ],
       ),
@@ -534,6 +637,39 @@ class _GameScreenState extends State<GameScreen> {
       app.leaveMatch();
       app.startOffline(_lastMatchDifficulty ?? 'hard');
     }
+  }
+
+  void _showQuickRules(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF10192A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 18),
+            const Text('Capture Tens Arena Rules', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFFFFD166))),
+            const SizedBox(height: 14),
+            const _QuickRule('🎯', 'Capture the most 10s! Most 10s wins the battle.'),
+            const _QuickRule('⚡', 'Power Suit (Trump) beats all other suits regardless of card rank.'),
+            const _QuickRule('🃏', 'Lead suit must be followed if you hold cards of that suit.'),
+            const _QuickRule('⬆️', 'Card Rank: A > K > Q > J > 10 > 9 > 8 > 7 > 6 > 5 > 4 > 3 > 2.'),
+            const _QuickRule('👥', '2v2 format: Work with your partner sitting across from you.'),
+            const SizedBox(height: 18),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -545,22 +681,59 @@ class _QuickRule extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(children: [
-        Text(icon, style: const TextStyle(fontSize: 16)),
-        const SizedBox(width: 10),
-        Expanded(child: Text(text, style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4))),
-      ]),
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 16)),
+          const SizedBox(width: 12),
+          Expanded(child: Text(text, style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.35))),
+        ],
+      ),
     );
   }
 }
 
-/// Completely static hand — NO animation controllers, NO stagger.
-/// Cards just appear instantly. Zero jank.
+// ── Hand Area with Auto-Sort & Legal Move Highlighting ───────────────────────
+
 class _HandArea extends StatelessWidget {
-  const _HandArea({required this.app, required this.cardWidth});
+  const _HandArea({
+    required this.app,
+    required this.cardWidth,
+    required this.autoSort,
+    required this.highlightLegal,
+  });
+
   final AppState app;
   final double cardWidth;
+  final bool autoSort;
+  final bool highlightLegal;
+
+  static const _rankValues = {
+    'A': 14, 'K': 13, 'Q': 12, 'J': 11, '10': 10,
+    '9': 9, '8': 8, '7': 7, '6': 6, '5': 5, '4': 4, '3': 3, '2': 2,
+  };
+
+  static const _suitValues = {
+    'spades': 4,
+    'hearts': 3,
+    'diamonds': 2,
+    'clubs': 1,
+  };
+
+  bool _isCardLegal(ArenaCard card, CurrentTrick? trick, List<ArenaCard> hand) {
+    if (trick == null || trick.plays.isEmpty) {
+      return true;
+    }
+    final leadSuit = trick.leadSuit;
+    if (leadSuit == null) return true;
+
+    final hasLeadSuit = hand.any((c) => c.suit == leadSuit);
+    if (hasLeadSuit) {
+      return card.suit == leadSuit;
+    }
+    return true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -568,7 +741,20 @@ class _HandArea extends StatelessWidget {
     final isMyTurn = match.players.any(
       (p) => p.userId == app.userId && p.seat == match.currentTurnSeat,
     );
-    final hand = match.hand;
+
+    // Prepare hand
+    final hand = List<ArenaCard>.from(match.hand);
+    if (autoSort) {
+      hand.sort((a, b) {
+        final sA = _suitValues[a.suit] ?? 0;
+        final sB = _suitValues[b.suit] ?? 0;
+        if (sA != sB) return sB.compareTo(sA);
+        final rA = _rankValues[a.rank] ?? 0;
+        final rB = _rankValues[b.rank] ?? 0;
+        return rB.compareTo(rA);
+      });
+    }
+
     final N = hand.length;
 
     return LayoutBuilder(
@@ -577,13 +763,13 @@ class _HandArea extends StatelessWidget {
         double widthFactor = 1.0;
         if (N > 1) {
           final maxOverlap = (aw - cardWidth) / (N - 1);
-          final overlapWidth = maxOverlap.clamp(20.0, cardWidth + 4.0);
+          final overlapWidth = maxOverlap.clamp(24.0, cardWidth + 4.0);
           widthFactor = overlapWidth / cardWidth;
         }
 
         return Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Center(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -591,26 +777,44 @@ class _HandArea extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: List.generate(N, (index) {
                   final card = hand[index];
+                  final isLegal = _isCardLegal(card, match.currentTrick, match.hand);
+                  final canPlay = isMyTurn && isLegal;
+
+                  // 3D fan arc
+                  final double fanAngle = N > 1 ? (index - (N - 1) / 2) * 0.03 : 0.0;
+                  final double yOffset = N > 1 ? ((index - (N - 1) / 2).abs() * 3).toDouble() : 0.0;
+
                   final cardWidget = ArenaCardWidget(
                     card: card,
                     powerSuit: match.powerSuit,
-                    onPlay: isMyTurn ? () {
-                      AudioService.instance.playCardPlace();
-                      AudioService.instance.hapticLight();
-                      app.playCard(card.id);
-                    } : null,
+                    isLegal: highlightLegal ? isLegal : true,
+                    onPlay: canPlay
+                        ? () {
+                            AudioService.instance.playCardPlace();
+                            AudioService.instance.hapticLight();
+                            app.playCard(card.id);
+                          }
+                        : null,
                     dimmed: !isMyTurn,
                     width: cardWidth,
                   );
 
-                  Widget wrappedCard = cardWidget;
-                  if (isMyTurn) {
+                  Widget wrappedCard = Transform(
+                    transform: Matrix4.identity()
+                      ..setEntry(3, 2, 0.001)
+                      ..translate(0.0, yOffset, 0.0)
+                      ..rotateZ(fanAngle),
+                    alignment: Alignment.bottomCenter,
+                    child: cardWidget,
+                  );
+
+                  if (canPlay) {
                     wrappedCard = Draggable<String>(
                       data: card.id,
                       feedback: Material(
                         color: Colors.transparent,
                         child: Transform.scale(
-                          scale: 1.1,
+                          scale: 1.12,
                           child: ArenaCardWidget(
                             card: card,
                             powerSuit: match.powerSuit,
@@ -621,10 +825,10 @@ class _HandArea extends StatelessWidget {
                         ),
                       ),
                       childWhenDragging: Opacity(
-                        opacity: 0.2,
-                        child: cardWidget,
+                        opacity: 0.25,
+                        child: wrappedCard,
                       ),
-                      child: cardWidget,
+                      child: wrappedCard,
                     );
                   }
 
@@ -648,12 +852,12 @@ class _HandArea extends StatelessWidget {
 
 String _emoteEmoji(String code) {
   const map = {
-    'nice': '👏',
-    'gg': '🤝',
-    'oops': '😬',
-    'wow': '😲',
-    'hurry': '⏰',
-    'angry': '😤',
+    'nice': '👏 Nice!',
+    'gg': '🤝 GG!',
+    'oops': '😬 Oops!',
+    'wow': '😲 Wow!',
+    'hurry': '⏰ Hurry up!',
+    'angry': '😤 Urgh!',
   };
   return map[code] ?? code;
 }

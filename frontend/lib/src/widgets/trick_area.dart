@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/match_state.dart';
+import '../services/audio_service.dart';
 import 'arena_card_widget.dart';
 
 /// Renders the 4 cards of the current trick in a cross layout.
@@ -25,6 +26,7 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
   final Map<int, Animation<Offset>> _slideAnimations = {};
   final Map<int, Animation<double>> _fadeAnimations = {};
   final Map<int, Animation<double>> _scaleAnimations = {};
+  final Map<int, Animation<double>> _rotateYAnimations = {};
 
   @override
   void didUpdateWidget(TrickArea oldWidget) {
@@ -56,6 +58,9 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
   }
 
   void _startFlyIn(int seat) {
+    AudioService.instance.playCardPlace();
+    AudioService.instance.hapticLight();
+
     // Dispose any previous controller for this seat
     _controllers[seat]?.dispose();
 
@@ -91,6 +96,14 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
       curve: Curves.easeOutBack,
     ));
 
+    _rotateYAnimations[seat] = Tween<double>(
+      begin: 0.4,
+      end: 0.0,
+    ).animate(CurvedAnimation(
+      parent: controller,
+      curve: Curves.easeOutCubic,
+    ));
+
     _controllers[seat] = controller;
     controller.forward();
   }
@@ -116,6 +129,7 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
     _slideAnimations.clear();
     _fadeAnimations.clear();
     _scaleAnimations.clear();
+    _rotateYAnimations.clear();
   }
 
   @override
@@ -133,38 +147,52 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
     }
 
     final double sw = MediaQuery.of(context).size.width;
-    final double size = (sw * 0.55).clamp(180.0, 260.0);
-    final double cardWidth = (size * 0.25).clamp(45.0, 65.0);
+    final double width = (sw * 0.46).clamp(180.0, 220.0);
+    final double height = (width * 0.85).clamp(150.0, 185.0);
+    final double cardWidth = (width * 0.26).clamp(48.0, 58.0);
 
     return SizedBox(
-      width: size,
-      height: size,
+      width: width,
+      height: height,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Relative Seat 2 → top
+          // Relative Seat 2 → top (Partner)
           if (byRelativeSeats[2] != null)
-            Positioned(top: 0, left: 0, right: 0,
-              child: Center(child: _buildAnimatedCard(byRelativeSeats[2]!.seat, byRelativeSeats[2]!, cardWidth))),
+            Align(
+              alignment: const Alignment(0.0, -0.62),
+              child: _buildAnimatedCard(byRelativeSeats[2]!.seat, byRelativeSeats[2]!, cardWidth),
+            ),
 
-          // Relative Seat 1 → right
+          // Relative Seat 1 → right (Opponent 2)
           if (byRelativeSeats[1] != null)
-            Positioned(right: 0, top: 0, bottom: 0,
-              child: Center(child: _buildAnimatedCard(byRelativeSeats[1]!.seat, byRelativeSeats[1]!, cardWidth))),
+            Align(
+              alignment: const Alignment(0.68, 0.0),
+              child: _buildAnimatedCard(byRelativeSeats[1]!.seat, byRelativeSeats[1]!, cardWidth),
+            ),
 
-          // Relative Seat 3 → left
+          // Relative Seat 3 → left (Opponent 1)
           if (byRelativeSeats[3] != null)
-            Positioned(left: 0, top: 0, bottom: 0,
-              child: Center(child: _buildAnimatedCard(byRelativeSeats[3]!.seat, byRelativeSeats[3]!, cardWidth))),
+            Align(
+              alignment: const Alignment(-0.68, 0.0),
+              child: _buildAnimatedCard(byRelativeSeats[3]!.seat, byRelativeSeats[3]!, cardWidth),
+            ),
 
-          // Relative Seat 0 → bottom
+          // Relative Seat 0 → bottom (You)
           if (byRelativeSeats[0] != null)
-            Positioned(bottom: 0, left: 0, right: 0,
-              child: Center(child: _buildAnimatedCard(byRelativeSeats[0]!.seat, byRelativeSeats[0]!, cardWidth))),
+            Align(
+              alignment: const Alignment(0.0, 0.62),
+              child: _buildAnimatedCard(byRelativeSeats[0]!.seat, byRelativeSeats[0]!, cardWidth),
+            ),
 
           // Empty centre hint
           if (widget.trick.plays.isEmpty)
-            const Center(child: Text('Play a card', style: TextStyle(color: Colors.white24, fontSize: 13, fontWeight: FontWeight.w600))),
+            const Center(
+              child: Text(
+                'Play a card',
+                style: TextStyle(color: Colors.white24, fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+            ),
         ],
       ),
     );
@@ -180,13 +208,34 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
       return AnimatedBuilder(
         animation: controller,
         builder: (context, child) {
+          final rotateYValue = _rotateYAnimations[seat]?.value ?? 0.0;
+          final fadeValue = _fadeAnimations[seat]?.value ?? 1.0;
+
           return SlideTransition(
             position: _slideAnimations[seat]!,
             child: FadeTransition(
               opacity: _fadeAnimations[seat]!,
               child: ScaleTransition(
                 scale: _scaleAnimations[seat]!,
-                child: child,
+                child: Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..setEntry(3, 2, 0.002)
+                    ..rotateY(rotateYValue),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08 + 0.24 * fadeValue),
+                          blurRadius: 3.0 + 9.0 * fadeValue,
+                          offset: Offset(0, 2.0 + 4.0 * fadeValue),
+                        ),
+                      ],
+                    ),
+                    child: child,
+                  ),
+                ),
               ),
             ),
           );
@@ -195,7 +244,25 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
       );
     }
 
-    return card;
+    return Transform(
+      alignment: Alignment.center,
+      transform: Matrix4.identity()
+        ..setEntry(3, 2, 0.002)
+        ..rotateY(0.0),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.32),
+              blurRadius: 12.0,
+              offset: const Offset(0, 6.0),
+            ),
+          ],
+        ),
+        child: card,
+      ),
+    );
   }
 }
 
@@ -220,7 +287,7 @@ class _PlayedCard extends StatelessWidget {
         card: play.card,
         powerSuit: powerSuit,
         onPlay: null,
-        dimmed: true,
+        dimmed: false,
         width: cardWidth,
       ),
     );

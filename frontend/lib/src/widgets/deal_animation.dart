@@ -1,6 +1,8 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 
+import '../services/audio_service.dart';
+
 /// Simple shuffle + deal animation. Shows only once at game start.
 /// A deck wobbles briefly, then cards fan out and fade.
 class DealAnimation extends StatefulWidget {
@@ -18,6 +20,10 @@ class _DealAnimationState extends State<DealAnimation>
   @override
   void initState() {
     super.initState();
+    AudioService.instance.playCardShuffle();
+    Future.delayed(const Duration(milliseconds: 800), () {
+      AudioService.instance.playCardDeal();
+    });
     _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2000));
     _ctrl.forward().then((_) => widget.onComplete());
   }
