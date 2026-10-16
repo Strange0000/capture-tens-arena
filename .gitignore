@@ -4,7 +4,6 @@ backend/dist/
 frontend/.dart_tool/
 frontend/.flutter-plugins
 frontend/.flutter-plugins-dependencies
-frontend/build/
 frontend/devtools_options.yaml
 frontend/package.json
 frontend/package-lock.json
