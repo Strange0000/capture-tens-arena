@@ -118,7 +118,11 @@ export function registerGameSockets(io: Server) {
       }
       matchmaking.removeFromQueue(userId);
 
+      // The cancelling client resets its own state synchronously. Notify only
+      // other party members so a late acknowledgement cannot cancel a brand-new
+      // search started immediately after Play Again.
       for (const queuedUserId of queuedIds) {
+        if (queuedUserId === userId) continue;
         io.to(`user:${queuedUserId}`).emit("queue:cancelled", { mode: "ranked" });
       }
       console.log(`[RankedQueue] Cancelled search for ${[...queuedIds].join(", ")}`);
