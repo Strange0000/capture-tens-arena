@@ -20,6 +20,7 @@ class SocketService {
     required VoidJsonCallback onRoomJoined,
     required VoidJsonCallback onRoomUpdated,
     required VoidJsonCallback onRoomInvited,
+    required VoidJsonCallback onRoomLeft,
     required VoidJsonCallback onPartyUpdated,
     required VoidJsonCallback onPartyInvited,
     required VoidJsonCallback onRankUpdated,
@@ -74,6 +75,7 @@ class SocketService {
       ..on('room:joined', (data) => onRoomJoined(_asMap(data)))
       ..on('room:updated', (data) => onRoomUpdated(_asMap(data)))
       ..on('room:invited', (data) => onRoomInvited(_asMap(data)))
+      ..on('room:left', (data) => onRoomLeft(_asMap(data)))
       ..on('party:updated', (data) => onPartyUpdated(_asMap(data)))
       ..on('party:invited', (data) => onPartyInvited(_asMap(data)))
       ..on('rank:updated', (data) => onRankUpdated(_asMap(data)))
@@ -113,6 +115,7 @@ class SocketService {
   void createRoom() => _emit('room:create', {});
 
   void joinRoom(String code) => _emit('room:join', {'code': code.toUpperCase()});
+  void leaveRoom() => _emit('room:leave', {});
 
   void startRoomWithBots(String code) => _emit('room:startWithBots', {'code': code});
   void inviteToRoom(String targetUserId, String code) =>
