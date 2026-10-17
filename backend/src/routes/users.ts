@@ -105,7 +105,7 @@ usersRouter.get("/search", requireAuth, async (req, res, next) => {
   try {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     if (q.length < 2) return res.json({ users: [] });
-    const escaped = q.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const users = await UserModel.find({
       username: { $regex: new RegExp(escaped, "i") },
       _id: { $ne: req.user!.id },
@@ -173,7 +173,7 @@ usersRouter.post("/friends/request", requireAuth, async (req, res, next) => {
     const raw = req.body?.username;
     const username = typeof raw === "string" ? raw.trim() : "";
     if (username.length < 2 || username.length > 24) return res.status(400).json({ error: "Enter a username between 2 and 24 characters" });
-    const escaped = username.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
+    const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const target = await UserModel.findOne({ username: { $regex: new RegExp("^" + escaped + "$", "i") } }).select("_id username");
     if (!target) return res.status(404).json({ error: "User not found" });
     if (target.id === req.user!.id) return res.status(400).json({ error: "You cannot add yourself as a friend" });
