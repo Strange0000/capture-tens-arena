@@ -81,6 +81,7 @@ class AppState extends ChangeNotifier {
   Map<String, bool> friendOnlineStatus = {}; // userId -> online
   List<dynamic>? party; // null if not in party
   Map<String, dynamic>? pendingPartyInvite;
+  Map<String, dynamic>? pendingRoomInvite;
   
   // Cached session info (for "Continue as" flow)
   String? cachedUsername;
@@ -214,6 +215,9 @@ class AppState extends ChangeNotifier {
     _friendSearchGeneration++;
     friendOnlineStatus = {};
     party = null;
+    pendingPartyInvite = null;
+    pendingRoomInvite = null;
+    roomCode = null;
     cachedUsername = null;
     cachedUserId = null;
     socket.disconnect();
@@ -232,6 +236,7 @@ class AppState extends ChangeNotifier {
       onRoomCreated: _onRoomCreated,
       onRoomJoined: _onRoomJoined,
       onRoomUpdated: _onRoomUpdated,
+      onRoomInvited: _onRoomInvited,
       onPartyUpdated: _onPartyUpdated,
       onPartyInvited: _onPartyInvited,
       onRankUpdated: _onRankUpdated,
@@ -323,6 +328,11 @@ class AppState extends ChangeNotifier {
 
   void _onPartyInvited(Map<String, dynamic> json) {
     pendingPartyInvite = json;
+    notifyListeners();
+  }
+
+  void _onRoomInvited(Map<String, dynamic> json) {
+    pendingRoomInvite = json;
     notifyListeners();
   }
 
@@ -560,10 +570,31 @@ class AppState extends ChangeNotifier {
     socket.inviteToParty(targetUserId);
   }
 
-  void acceptPartyInvite() {
-    if (pendingPartyInvite == null) return;
-    socket.acceptPartyInvite(pendingPartyInvite!['partyId']);
+  void acceptPartyInvite([String? invitePartyId]) {
+    // The dialog may clear the pending banner before the player taps Accept.
+    final partyId = invitePartyId ?? pendingPartyInvite?['partyId']?.toString();
+    if (partyId == null || partyId.isEmpty) return;
+    socket.acceptPartyInvite(partyId);
     pendingPartyInvite = null;
+    notifyListeners();
+  }
+
+  void inviteToRoom(String targetUserId, String code) {
+    socket.inviteToRoom(targetUserId, code);
+  }
+
+  void acceptRoomInvite([String? code]) {
+    final room = code ?? pendingRoomInvite?['code']?.toString();
+    pendingRoomInvite = null;
+    notifyListeners();
+    if (room != null && room.trim().isNotEmpty) {
+      if (lobbyStatus == LobbyStatus.queuing) cancelRankedQueue();
+      joinRoom(room);
+    }
+  }
+
+  void declineRoomInvite() {
+    pendingRoomInvite = null;
     notifyListeners();
   }
 
