@@ -1816,14 +1816,14 @@ class _PartyBanner extends StatelessWidget {
           const SizedBox(height: 12),
           Wrap(spacing: 8, runSpacing: 8, children: [
             OutlinedButton.icon(
-              onPressed: onInviteFriend,
+              onPressed: party.length >= 2 ? null : onInviteFriend,
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFFB388FF),
                 side: BorderSide(color: const Color(0xFFB388FF).withOpacity(0.4)),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
               icon: const Icon(Icons.person_add_alt_1_rounded, size: 17),
-              label: const Text('Invite friend'),
+              label: Text(party.length >= 2 ? 'Duo is full' : 'Invite friend'),
             ),
             FilledButton.icon(
               onPressed: party.length >= 2 ? onQueueRanked : null,
