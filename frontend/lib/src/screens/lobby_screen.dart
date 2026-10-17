@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1791,112 +1792,335 @@ class _RuleSection extends StatelessWidget {
 // Friends Bottom Sheet
 // ═══════════════════════════════════════════════════════════════════════════════
 
-class _FriendsSheet extends StatelessWidget {
+class _FriendsSheet extends StatefulWidget {
   const _FriendsSheet({required this.controller});
   final TextEditingController controller;
 
   @override
+  State<_FriendsSheet> createState() => _FriendsSheetState();
+}
+
+class _FriendsSheetState extends State<_FriendsSheet> {
+  Timer? _searchDebounce;
+  final Set<String> _busyKeys = {};
+  bool _didLoad = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_didLoad) return;
+    _didLoad = true;
+    final app = context.read<AppState>();
+    app.fetchFriends();
+    if (widget.controller.text.trim().length >= 2) {
+      app.searchFriends(widget.controller.text.trim());
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    final app = context.read<AppState>();
+    if (value.trim().length < 2) {
+      app.searchFriends("");
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) context.read<AppState>().searchFriends(value);
+    });
+  }
+
+  Future<void> _runAction(
+    String key,
+    Future<bool> Function() action,
+    String successMessage,
+  ) async {
+    if (_busyKeys.contains(key)) return;
+    setState(() => _busyKeys.add(key));
+    final app = context.read<AppState>();
+    final success = await action();
+    if (!mounted) return;
+    setState(() => _busyKeys.remove(key));
+    final message = success ? successMessage : (app.friendActionError ?? "Could not update friend relationship");
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(message),
+        backgroundColor: success ? const Color(0xFF167D68) : Colors.redAccent.shade700,
+        behavior: SnackBarBehavior.floating,
+      ));
+  }
+
+  Widget _avatar(String username, {bool online = false}) {
+    return Stack(
+      children: [
+        CircleAvatar(
+          backgroundColor: const Color(0xFF48E5C2).withOpacity(0.15),
+          child: Text(
+            username.trim().isEmpty ? "?" : username.trim()[0].toUpperCase(),
+            style: const TextStyle(color: Color(0xFF48E5C2), fontWeight: FontWeight.w800),
+          ),
+        ),
+        if (online)
+          Positioned(
+            right: 0, bottom: 0,
+            child: Container(
+              width: 11, height: 11,
+              decoration: BoxDecoration(
+                color: const Color(0xFF48E5C2),
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF101826), width: 2),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _sectionTitle(String title, int count) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 18, bottom: 8),
+      child: Row(children: [
+        Expanded(child: Text(title.toUpperCase(), style: const TextStyle(fontSize: 11, color: Colors.white54, fontWeight: FontWeight.w900, letterSpacing: 1.4))),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(color: Colors.white.withOpacity(0.07), borderRadius: BorderRadius.circular(20)),
+          child: Text("$count", style: const TextStyle(fontSize: 11, color: Colors.white70, fontWeight: FontWeight.bold)),
+        ),
+      ]),
+    );
+  }
+
+  Widget _searchResultTile(AppState app, Map<String, dynamic> user) {
+    final username = user["username"]?.toString() ?? "Player";
+    final id = user["id"]?.toString() ?? username;
+    final raw = user["relationship"];
+    final relation = raw is Map ? Map<String, dynamic>.from(raw) : null;
+    final status = relation?["status"]?.toString();
+    final isRequester = relation?["isRequester"] == true;
+    final friendId = relation?["friendId"]?.toString() ?? "";
+    final busy = _busyKeys.contains("search:$id");
+    Widget action;
+    if (status == "accepted") {
+      action = IconButton(
+        tooltip: "Invite to party",
+        onPressed: busy ? null : () { app.inviteToParty(id); Navigator.pop(context); },
+        icon: const Icon(Icons.group_add_rounded, color: Color(0xFFB388FF)),
+      );
+    } else if (status == "pending" && !isRequester) {
+      action = Row(mainAxisSize: MainAxisSize.min, children: [
+        IconButton(
+          tooltip: "Accept request",
+          onPressed: busy || friendId.isEmpty ? null : () => _runAction("search:$id", () => app.acceptFriendRequest(friendId), "Friend request accepted"),
+          icon: const Icon(Icons.check_circle_outline, color: Color(0xFF48E5C2)),
+        ),
+        IconButton(
+          tooltip: "Decline request",
+          onPressed: busy || friendId.isEmpty ? null : () => _runAction("search:$id", () => app.removeFriend(friendId), "Friend request declined"),
+          icon: const Icon(Icons.close_rounded, color: Colors.white54),
+        ),
+      ]);
+    } else if (status == "pending" && isRequester) {
+      action = TextButton(
+        onPressed: busy || friendId.isEmpty ? null : () => _runAction("search:$id", () => app.removeFriend(friendId), "Friend request cancelled"),
+        child: Text(busy ? "…" : "Sent", style: const TextStyle(color: Colors.white54, fontSize: 12)),
+      );
+    } else if (status == "blocked") {
+      action = const Text("Blocked", style: TextStyle(color: Colors.redAccent, fontSize: 11));
+    } else {
+      action = ElevatedButton(
+        onPressed: busy ? null : () => _runAction("search:$id", () => app.sendFriendRequest(username), "Friend request sent"),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF48E5C2).withOpacity(0.15),
+          foregroundColor: const Color(0xFF48E5C2),
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        ),
+        child: Text(busy ? "…" : "Add", style: const TextStyle(fontWeight: FontWeight.w800)),
+      );
+    }
+    final subtitle = status == "accepted"
+        ? (user["status"] == "online" ? "Friend • Online" : "Friend • Offline")
+        : status == "pending"
+            ? (isRequester ? "Request sent" : "Wants to be friends")
+            : status == "blocked"
+                ? "Unavailable"
+                : (user["status"] == "online" ? "Online • Player" : "Player");
+    return ListTile(
+      key: ValueKey("search-$id"),
+      contentPadding: EdgeInsets.zero,
+      leading: _avatar(username, online: user["status"] == "online"),
+      title: Text(username, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      subtitle: Text(subtitle, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+      trailing: action,
+    );
+  }
+
+  Widget _relationshipTile(AppState app, Map<String, dynamic> f) {
+    final rawUser = f["user"];
+    final user = rawUser is Map ? Map<String, dynamic>.from(rawUser) : <String, dynamic>{};
+    final username = user["username"]?.toString() ?? "Unknown player";
+    final id = user["id"]?.toString() ?? "";
+    final friendId = f["id"]?.toString() ?? "";
+    final status = f["status"]?.toString() ?? "pending";
+    final isRequester = f["isRequester"] == true;
+    final busy = _busyKeys.contains("friend:$friendId");
+    final online = user["status"] == "online" || app.friendOnlineStatus[id] == true;
+    Widget trailing;
+    if (status == "pending" && !isRequester) {
+      trailing = Row(mainAxisSize: MainAxisSize.min, children: [
+        IconButton(
+          tooltip: "Accept request",
+          onPressed: busy ? null : () => _runAction("friend:$friendId", () => app.acceptFriendRequest(friendId), "Friend request accepted"),
+          icon: const Icon(Icons.check_circle_outline, color: Color(0xFF48E5C2)),
+        ),
+        IconButton(
+          tooltip: "Decline request",
+          onPressed: busy ? null : () => _runAction("friend:$friendId", () => app.removeFriend(friendId), "Friend request declined"),
+          icon: const Icon(Icons.close_rounded, color: Colors.white54),
+        ),
+      ]);
+    } else if (status == "accepted") {
+      trailing = Row(mainAxisSize: MainAxisSize.min, children: [
+        IconButton(
+          tooltip: "Invite to party",
+          onPressed: id.isEmpty ? null : () { app.inviteToParty(id); Navigator.pop(context); },
+          icon: const Icon(Icons.group_add_rounded, color: Color(0xFFB388FF)),
+        ),
+        IconButton(
+          tooltip: "Remove friend",
+          onPressed: busy ? null : () => _confirmRemove(friendId, username),
+          icon: const Icon(Icons.person_remove_alt_1_rounded, color: Colors.white54),
+        ),
+      ]);
+    } else {
+      trailing = TextButton(
+        onPressed: busy ? null : () => _runAction("friend:$friendId", () => app.removeFriend(friendId), isRequester ? "Friend request cancelled" : "Relationship removed"),
+        child: Text(busy ? "…" : (isRequester ? "Cancel" : "Remove"), style: const TextStyle(color: Colors.white54)),
+      );
+    }
+    final subtitle = status == "accepted"
+        ? (online ? "Online" : user["status"]?.toString() == "in-match" ? "In a match" : "Offline")
+        : status == "pending"
+            ? (isRequester ? "Request sent • Waiting for response" : "Incoming friend request")
+            : "Blocked";
+    return ListTile(
+      key: ValueKey("friend-$friendId"),
+      contentPadding: EdgeInsets.zero,
+      leading: _avatar(username, online: online),
+      title: Text(username, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      subtitle: Text(subtitle, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+      trailing: trailing,
+    );
+  }
+
+  Future<void> _confirmRemove(String friendId, String username) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF101826),
+        title: const Text("Remove friend?", style: TextStyle(color: Colors.white)),
+        content: Text("Remove $username from your friends list?", style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text("Keep friend")),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            child: const Text("Remove"),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await _runAction("friend:$friendId", () => context.read<AppState>().removeFriend(friendId), "Friend removed");
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final incoming = app.friends.where((f) => f["status"] == "pending" && f["isRequester"] != true).toList();
+    final outgoing = app.friends.where((f) => f["status"] == "pending" && f["isRequester"] == true).toList();
+    final accepted = app.friends.where((f) => f["status"] == "accepted").toList();
+    final query = widget.controller.text.trim();
+    final showSearch = query.length >= 2;
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.8,
-      maxChildSize: 0.9,
-      minChildSize: 0.5,
+      initialChildSize: 0.86,
+      maxChildSize: 0.94,
+      minChildSize: 0.55,
       expand: false,
       builder: (context, scrollController) {
         return Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(2),
+              Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 18),
+              const Text("Friends", style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.white)),
+              const SizedBox(height: 5),
+              const Text("Find players, manage requests, and invite friends to your party.", style: TextStyle(color: Colors.white54, fontSize: 12)),
+              const SizedBox(height: 14),
+              TextField(
+                controller: widget.controller,
+                textCapitalization: TextCapitalization.none,
+                autocorrect: false,
+                onChanged: _onSearchChanged,
+                onSubmitted: (value) => context.read<AppState>().searchFriends(value),
+                decoration: InputDecoration(
+                  hintText: "Search username (at least 2 characters)",
+                  prefixIcon: const Icon(Icons.search_rounded, color: Colors.white54),
+                  suffixIcon: query.isEmpty ? null : IconButton(
+                    tooltip: "Clear search",
+                    icon: const Icon(Icons.close_rounded, color: Colors.white54),
+                    onPressed: () { widget.controller.clear(); _onSearchChanged(""); setState(() {}); },
                   ),
+                  filled: true,
+                  fillColor: Colors.white.withOpacity(0.05),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.white.withOpacity(0.08))),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.white.withOpacity(0.08))),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 ),
+                style: const TextStyle(color: Colors.white),
               ),
-              const SizedBox(height: 20),
-              const Text(
-                'Friends',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.white),
-              ),
-              const SizedBox(height: 16),
-              // Add friend
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: controller,
-                      decoration: const InputDecoration(
-                        hintText: 'Add by username',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  ElevatedButton(
-                    onPressed: () {
-                      final u = controller.text.trim();
-                      if (u.isNotEmpty) {
-                        app.sendFriendRequest(u);
-                        controller.clear();
-                      }
-                    },
-                    child: const Text('Add'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              // Friend list
+              if (app.friendActionError != null) ...[
+                const SizedBox(height: 6),
+                Text(app.friendActionError!, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+              ],
+              const SizedBox(height: 8),
               Expanded(
-                child: ListView.separated(
+                child: ListView(
                   controller: scrollController,
-                  itemCount: app.friends.length,
-                  separatorBuilder: (_, __) => const Divider(color: Colors.white10),
-                  itemBuilder: (context, i) {
-                    final f = app.friends[i];
-                    final user = f['user'];
-                    final status = f['status'];
-                    final isReq = f['isRequester'];
-
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: CircleAvatar(
-                        backgroundColor: const Color(0xFF48E5C2).withOpacity(0.2),
-                        child: Text(
-                          user['username'].toString().substring(0, 1).toUpperCase(),
-                          style: const TextStyle(color: Color(0xFF48E5C2)),
-                        ),
-                      ),
-                      title: Text(user['username'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text(status, style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (status == 'pending' && !isReq)
-                            TextButton(
-                              onPressed: () => app.acceptFriendRequest(f['id']),
-                              child: const Text('Accept'),
-                            ),
-                          if (status == 'accepted')
-                            IconButton(
-                              tooltip: 'Invite to Party',
-                              icon: const Icon(Icons.person_add_alt_1, color: Color(0xFF7C4DFF)),
-                              onPressed: () {
-                                app.inviteToParty(user['id']);
-                                Navigator.pop(context);
-                              },
-                            ),
-                        ],
-                      ),
-                    );
-                  },
+                  children: [
+                    if (showSearch) ...[
+                      _sectionTitle("Players", app.friendSearchResults.length),
+                      if (app.friendSearchLoading) const Padding(padding: EdgeInsets.all(18), child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
+                      if (!app.friendSearchLoading && app.friendSearchError != null) Padding(padding: const EdgeInsets.all(12), child: Text(app.friendSearchError!, style: const TextStyle(color: Colors.redAccent))),
+                      if (!app.friendSearchLoading && app.friendSearchError == null && app.friendSearchResults.isEmpty) const Padding(padding: EdgeInsets.all(12), child: Text("No players found. Try a different username.", style: TextStyle(color: Colors.white54))),
+                      ...app.friendSearchResults.map((user) => _searchResultTile(app, user)),
+                      const Divider(color: Colors.white12, height: 24),
+                    ],
+                    if (app.friendsLoading && app.friends.isEmpty) const Padding(padding: EdgeInsets.all(22), child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
+                    if (app.friendsError != null) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text(app.friendsError!, style: const TextStyle(color: Colors.redAccent, fontSize: 12))),
+                    if (incoming.isNotEmpty) ...[
+                      _sectionTitle("Incoming requests", incoming.length),
+                      ...incoming.map((friend) => _relationshipTile(app, friend)),
+                    ],
+                    if (outgoing.isNotEmpty) ...[
+                      _sectionTitle("Sent requests", outgoing.length),
+                      ...outgoing.map((friend) => _relationshipTile(app, friend)),
+                    ],
+                    _sectionTitle("Friends", accepted.length),
+                    if (accepted.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text("No friends yet. Search for a username above to send a request.", style: TextStyle(color: Colors.white54, fontSize: 12))),
+                    ...accepted.map((friend) => _relationshipTile(app, friend)),
+                    const SizedBox(height: 20),
+                  ],
                 ),
               ),
             ],
@@ -1906,7 +2130,6 @@ class _FriendsSheet extends StatelessWidget {
     );
   }
 }
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // Glass Container Component
 // ═══════════════════════════════════════════════════════════════════════════════
