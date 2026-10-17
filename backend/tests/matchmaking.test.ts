@@ -72,3 +72,34 @@ describe("private room lifecycle", () => {
     expect(changedRooms[0].players.map((member) => member.userId)).toEqual(["owner"]);
   });
 });
+
+describe("ranked queue cancellation", () => {
+  it("exposes and removes a queued solo player so a fallback cannot start after cancel", () => {
+    const matchmaking = new MatchmakingService();
+    const queued = player("queued-user");
+
+    matchmaking.enqueueRanked([queued]);
+    expect(matchmaking.isUserInRankedQueue(queued.userId)).toBe(true);
+    expect(matchmaking.getRankedQueueGroupForUser(queued.userId)?.map((p) => p.userId))
+      .toEqual(["queued-user"]);
+
+    matchmaking.removeFromQueue(queued.userId);
+
+    expect(matchmaking.isUserInRankedQueue(queued.userId)).toBe(false);
+    expect(matchmaking.getRankedQueueGroupForUser(queued.userId)).toBeUndefined();
+  });
+
+  it("cancelling one queued party member removes the entire queued group", () => {
+    const matchmaking = new MatchmakingService();
+    const duo = [player("party-one"), player("party-two")];
+
+    matchmaking.enqueueRanked(duo);
+    expect(matchmaking.getRankedQueueGroupForUser("party-two")?.map((p) => p.userId))
+      .toEqual(["party-one", "party-two"]);
+
+    matchmaking.removeFromQueue("party-two");
+
+    expect(matchmaking.isUserInRankedQueue("party-one")).toBe(false);
+    expect(matchmaking.isUserInRankedQueue("party-two")).toBe(false);
+  });
+});
