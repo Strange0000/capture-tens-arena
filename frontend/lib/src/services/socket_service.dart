@@ -15,6 +15,7 @@ class SocketService {
     required StateCallback onMatchState,
     required VoidJsonCallback onMatchCreated,
     required VoidJsonCallback onQueueJoined,
+    required VoidJsonCallback onQueueCancelled,
     required VoidJsonCallback onRoomCreated,
     required VoidJsonCallback onRoomJoined,
     required VoidJsonCallback onRoomUpdated,
@@ -66,6 +67,7 @@ class SocketService {
         onMatchCreated(_asMap(data));
       })
       ..on('queue:joined', (data) => onQueueJoined(_asMap(data)))
+      ..on('queue:cancelled', (data) => onQueueCancelled(_asMap(data)))
       ..on('room:created', (data) => onRoomCreated(_asMap(data)))
       ..on('room:joined', (data) => onRoomJoined(_asMap(data)))
       ..on('room:updated', (data) => onRoomUpdated(_asMap(data)))
@@ -96,6 +98,8 @@ class SocketService {
 
   void queueRanked({int mmr = 0}) =>
       _emit('queue:ranked', {'mmr': mmr});
+
+  void cancelRankedQueue() => _emit('queue:cancel', {});
 
   void startOffline(String difficulty) =>
       _emit('bot:offline', {'difficulty': difficulty});

@@ -47,15 +47,9 @@ class _GameScreenState extends State<GameScreen> {
     AudioService.instance.playGameBgm();
     _loadPreferences();
     _startWaitTimer();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final app = context.read<AppState>();
-      // Only auto-start a bot match if truly idle (not queuing or waiting in a custom room)
-      if (app.match == null && app.lobbyStatus == LobbyStatus.idle) {
-        print('[GameScreen] No match found on mount, starting bot match...');
-        app.startOffline(_lastMatchDifficulty ?? 'hard');
-      }
-    });
+    // Starting a match must be an explicit action from the lobby/retry button.
+    // Auto-starting here made a remounted GameScreen launch another bot match
+    // after the user had intentionally left the previous match.
   }
 
   Future<void> _loadPreferences() async {
@@ -545,7 +539,12 @@ class _GameScreenState extends State<GameScreen> {
                     },
                     onHome: () {
                       app.leaveMatch();
-                      if (context.mounted) Navigator.pushReplacementNamed(context, '/lobby');
+                      if (context.mounted) {
+                        Navigator.of(context).pushNamedAndRemoveUntil(
+                          '/lobby',
+                          (route) => false,
+                        );
+                      }
                     },
                   ),
                 ),
@@ -594,7 +593,12 @@ class _GameScreenState extends State<GameScreen> {
     );
     if (confirmed == true && context.mounted) {
       app.leaveMatch();
-      Navigator.of(context).popUntil((r) => r.isFirst);
+      // Remove stale game/matchmaking routes. Leaving must never reveal an
+      // older GameScreen which could restart or resurrect the previous match.
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/lobby',
+        (route) => false,
+      );
     }
   }
 

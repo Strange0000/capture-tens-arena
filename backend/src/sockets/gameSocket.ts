@@ -50,45 +50,82 @@ export function registerGameSockets(io: Server) {
           userId,
           username: socket.user!.username,
           socketId: socket.id,
-          mmr: 0
+          mmr: 0,
         }];
       }
-      
+
+      // Prevent stale fallback timers from a previous search from launching a
+      // match during this search.
+      for (const player of party) clearQueueTimeout(player.userId);
+
       const group = matchmaking.enqueueRanked(party);
-      for (const p of party) {
-        io.to(`user:${p.userId}`).emit("queue:joined", { mode: "ranked" });
+      for (const player of party) {
+        io.to(`user:${player.userId}`).emit("queue:joined", { mode: "ranked" });
       }
-      
+
       if (group) {
+        for (const player of group) clearQueueTimeout(player.userId);
         startMatch(io, matchmaking.toSeats(group), "ranked");
-      } else {
-        // Fallback: If still in queue after 5 seconds, fill with bots!
-        // Cancel any previously scheduled timeout for this user
-        const existingTimeout = queueTimeouts.get(userId);
-        if (existingTimeout) clearTimeout(existingTimeout);
-        const timeout = setTimeout(() => {
-          console.log(`[RankedQueue] Timeout fired for user ${userId}. InQueue: ${matchmaking.isUserInRankedQueue(userId)}`);
-          if (!matchmaking.isUserInRankedQueue(userId)) return;
-          
-          for (const p of party) matchmaking.removeFromQueue(p.userId);
-          const seats: PlayerSeat[] = [];
-          
-          if (party.length === 2) {
-            seats.push({ seat: 0, userId: party[0].userId, username: party[0].username, connected: true, isBot: false });
-            seats.push({ seat: 1, userId: "bot-1", username: "Vector", connected: true, isBot: true, botDifficulty: "hard" });
-            seats.push({ seat: 2, userId: party[1].userId, username: party[1].username, connected: true, isBot: false });
-            seats.push({ seat: 3, userId: "bot-2", username: "Nova", connected: true, isBot: true, botDifficulty: "hard" });
-          } else {
-            seats.push({ seat: 0, userId, username: socket.user!.username, connected: true, isBot: false });
-            seats.push({ seat: 1, userId: "bot-1", username: "Vector", connected: true, isBot: true, botDifficulty: "hard" });
-            seats.push({ seat: 2, userId: "bot-2", username: "Nova", connected: true, isBot: true, botDifficulty: "hard" });
-            seats.push({ seat: 3, userId: "bot-3", username: "Cipher", connected: true, isBot: true, botDifficulty: "hard" });
-          }
-          
-          startMatch(io, seats, "ranked");
-        }, 5000);
-        queueTimeouts.set(userId, timeout);
+        return;
       }
+
+      // Keep the current behavior of offering bots after a short search, but
+      // ensure cancellation clears this timer before it can create the match.
+      const timeout = setTimeout(() => {
+        if (queueTimeouts.get(userId) === timeout) {
+          queueTimeouts.delete(userId);
+        }
+
+        const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId);
+        console.log(
+          `[RankedQueue] Timeout fired for user ${userId}. InQueue: ${Boolean(queuedGroup)}`,
+        );
+        if (!queuedGroup) return;
+
+        for (const player of queuedGroup) {
+          clearQueueTimeout(player.userId);
+          matchmaking.removeFromQueue(player.userId);
+        }
+
+        const seats: PlayerSeat[] = [];
+        if (queuedGroup.length === 2) {
+          seats.push(
+            { seat: 0, userId: queuedGroup[0].userId, username: queuedGroup[0].username, connected: true, isBot: false },
+            { seat: 1, userId: "bot-1", username: "Vector", connected: true, isBot: true, botDifficulty: "hard" },
+            { seat: 2, userId: queuedGroup[1].userId, username: queuedGroup[1].username, connected: true, isBot: false },
+            { seat: 3, userId: "bot-2", username: "Nova", connected: true, isBot: true, botDifficulty: "hard" },
+          );
+        } else {
+          const player = queuedGroup[0];
+          seats.push(
+            { seat: 0, userId: player.userId, username: player.username, connected: true, isBot: false },
+            { seat: 1, userId: "bot-1", username: "Vector", connected: true, isBot: true, botDifficulty: "hard" },
+            { seat: 2, userId: "bot-2", username: "Nova", connected: true, isBot: true, botDifficulty: "hard" },
+            { seat: 3, userId: "bot-3", username: "Cipher", connected: true, isBot: true, botDifficulty: "hard" },
+          );
+        }
+        startMatch(io, seats, "ranked");
+      }, 5000);
+      queueTimeouts.set(userId, timeout);
+    });
+
+    socket.on("queue:cancel", () => {
+      const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
+      const queuedIds = new Set<string>([userId, ...queuedGroup.map((player) => player.userId)]);
+
+      for (const queuedUserId of queuedIds) {
+        clearQueueTimeout(queuedUserId);
+      }
+      matchmaking.removeFromQueue(userId);
+
+      // The cancelling client resets its own state synchronously. Notify only
+      // other party members so a late acknowledgement cannot cancel a brand-new
+      // search started immediately after Play Again.
+      for (const queuedUserId of queuedIds) {
+        if (queuedUserId === userId) continue;
+        io.to(`user:${queuedUserId}`).emit("queue:cancelled", { mode: "ranked" });
+      }
+      console.log(`[RankedQueue] Cancelled search for ${[...queuedIds].join(", ")}`);
     });
 
     socket.on("party:invite", ({ targetUserId }: { targetUserId: string }) => {
@@ -208,6 +245,9 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("match:leave", async () => {
+      const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
+      for (const player of queuedGroup) clearQueueTimeout(player.userId);
+      clearQueueTimeout(userId);
       matchmaking.removeFromQueue(userId);
       const state = matchStore.findByUser(userId);
       if (state) {
@@ -335,6 +375,9 @@ export function registerGameSockets(io: Server) {
 
     socket.on("disconnect", () => {
       onlineUsers.delete(userId);
+      const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
+      for (const player of queuedGroup) clearQueueTimeout(player.userId);
+      clearQueueTimeout(userId);
       matchmaking.removeFromQueue(userId);
       for (const changedRoom of matchmaking.removeFromPrivateRooms(userId)) {
         broadcastPrivateRoom(io, changedRoom.code, changedRoom.players);
@@ -382,6 +425,13 @@ export function registerGameSockets(io: Server) {
       disconnectGraceTimers.set(userId, graceTimer);
     });
   });
+}
+
+function clearQueueTimeout(userId: string) {
+  const timeout = queueTimeouts.get(userId);
+  if (!timeout) return;
+  clearTimeout(timeout);
+  queueTimeouts.delete(userId);
 }
 
 function broadcastPrivateRoom(

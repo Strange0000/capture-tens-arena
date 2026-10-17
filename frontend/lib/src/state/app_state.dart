@@ -212,6 +212,7 @@ class AppState extends ChangeNotifier {
       onMatchState: _onMatchState,
       onMatchCreated: _onMatchCreated,
       onQueueJoined: _onQueueJoined,
+      onQueueCancelled: _onQueueCancelled,
       onRoomCreated: _onRoomCreated,
       onRoomJoined: _onRoomJoined,
       onRoomUpdated: _onRoomUpdated,
@@ -251,6 +252,15 @@ class AppState extends ChangeNotifier {
 
   void _onQueueJoined(Map<String, dynamic> _) {
     lobbyStatus = LobbyStatus.queuing;
+    notifyListeners();
+  }
+
+  void _onQueueCancelled(Map<String, dynamic> _) {
+    // The server also notifies party members when one member cancels the
+    // shared search. Avoid touching a real match if a late event arrives.
+    if (lobbyStatus != LobbyStatus.queuing) return;
+    match = null;
+    lobbyStatus = LobbyStatus.idle;
     notifyListeners();
   }
 
@@ -477,8 +487,21 @@ class AppState extends ChangeNotifier {
 
   void queueRanked() {
     print('[AppState] queueRanked called, socket connected=${socket.connected}');
+    // Ignore late state broadcasts from the previous match until a new match
+    // ID arrives. Do not clear _leftMatchId here when searching again.
+    match = null;
     socket.queueRanked(mmr: rankInfo?.mmr ?? 0);
     lobbyStatus = LobbyStatus.queuing;
+    notifyListeners();
+  }
+
+  /// Cancels ranked matchmaking without sending a match-leave event or
+  /// requiring the screen to perform its own second navigation pop.
+  void cancelRankedQueue() {
+    socket.cancelRankedQueue();
+    match = null;
+    lobbyStatus = LobbyStatus.idle;
+    errorMessage = null;
     notifyListeners();
   }
 
@@ -518,6 +541,8 @@ class AppState extends ChangeNotifier {
   /// Called when player returns to home after a completed match.
   void leaveMatch() {
     _leftMatchId = match?.id; // Remember so we ignore stale server updates
+    // Explicitly cancel any ranked search as well as marking a match leave.
+    socket.cancelRankedQueue();
     socket.leaveMatch();
     match = null;
     lastRankUpdate = null;

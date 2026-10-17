@@ -77,6 +77,13 @@ export class MatchmakingService {
     return this.rankedQueue.some(p => p.some(u => u.userId === userId));
   }
 
+  getRankedQueueGroupForUser(userId: string): QueuePlayer[] | undefined {
+    const group = this.rankedQueue.find((players) =>
+      players.some((player) => player.userId === userId),
+    );
+    return group ? [...group] : undefined;
+  }
+
   createPrivateRoom(owner: QueuePlayer) {
     // A player must not silently create multiple active rooms.
     for (const [existingCode, members] of this.rooms.entries()) {
