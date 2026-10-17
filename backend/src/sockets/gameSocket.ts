@@ -242,16 +242,29 @@ export function registerGameSockets(io: Server) {
           throw new Error("Party is full");
         }
 
-        // A player who accepts a duo invitation must be removed from any
-        // previous solo/party queue before joining the invited party.
-        const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
-        const queuedIds = new Set<string>([userId, ...queuedGroup.map((player) => player.userId)]);
-        for (const queuedUserId of queuedIds) clearQueueTimeout(queuedUserId);
-        if (queuedGroup.length > 0) {
-          matchmaking.removeFromQueue(userId);
-          for (const queuedUserId of queuedIds) {
-            io.to(`user:${queuedUserId}`).emit("queue:cancelled", { mode: "ranked", reason: "party-joined" });
+        // A player may have started a fresh solo search while their invite
+        // was pending. Cancel stale queues for both the invitee and the host
+        // before the party becomes a duo, so they can't be matched separately.
+        const queueMembers = new Map<string, QueuePlayer>();
+        const partyMemberIds = new Set<string>([
+          userId,
+          ...invitedParty.map((member) => member.userId),
+        ]);
+        for (const memberId of partyMemberIds) {
+          const queuedGroup = matchmaking.getRankedQueueGroupForUser(memberId) ?? [];
+          for (const queuedPlayer of queuedGroup) {
+            queueMembers.set(queuedPlayer.userId, queuedPlayer);
           }
+        }
+        for (const queuedUserId of queueMembers.keys()) {
+          clearQueueTimeout(queuedUserId);
+          matchmaking.removeFromQueue(queuedUserId);
+        }
+        for (const queuedUserId of queueMembers.keys()) {
+          io.to(`user:${queuedUserId}`).emit("queue:cancelled", {
+            mode: "ranked",
+            reason: "party-joined",
+          });
         }
         const party = matchmaking.joinParty(partyId, {
           userId,
