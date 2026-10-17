@@ -15,6 +15,7 @@ dependencies:
   provider: ^6.1.2
   shared_preferences: ^2.2.3
   google_sign_in: ^6.2.1
+  google_sign_in_web: ^0.12.4+4
   just_audio: ^0.9.38
   confetti: ^0.7.0
 
