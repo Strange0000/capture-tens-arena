@@ -419,14 +419,13 @@ function maybeBotPowerSelect(io: Server, matchId: string) {
     const suitCounts: Record<string, number> = {};
     for (const c of botHand) { suitCounts[c.suit] = (suitCounts[c.suit] || 0) + 1; }
     const bestSuit = (Object.entries(suitCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "spades") as Suit;
-    selectPowerSuit(fresh, fresh.firstPlayerSeat, bestSuit);
-    dealRemainingCards(fresh);
-    fresh.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
-    matchStore.set(fresh);
+    const stateAfterDeal = dealRemainingCards(selectPowerSuit(fresh, fresh.firstPlayerSeat, bestSuit));
+    stateAfterDeal.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+    matchStore.set(stateAfterDeal);
     broadcastState(io, matchId);
     maybeBotTurn(io, matchId);
-    if (fresh.phase === "playing" && !fresh.players[fresh.currentTurnSeat].isBot) {
-      scheduleTurnTimeout(io, matchId, fresh.currentTurnSeat, fresh.turnDeadline, fresh.turnGeneration);
+    if (!stateAfterDeal.players[stateAfterDeal.currentTurnSeat].isBot) {
+      scheduleTurnTimeout(io, matchId, stateAfterDeal.currentTurnSeat, stateAfterDeal.turnDeadline, stateAfterDeal.turnGeneration);
     }
   }, env.BOT_THINK_MS);
 }

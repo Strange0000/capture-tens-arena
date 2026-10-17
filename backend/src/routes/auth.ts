@@ -33,11 +33,6 @@ authRouter.post("/google", async (req, res, next) => {
       displayName = body.username;
     } else {
       // In production, verify with Google
-      let googleId: string;
-      let email: string | undefined;
-      let avatarUrl: string | undefined;
-      let displayName: string | undefined;
-
       try {
         const client = new OAuth2Client(env.GOOGLE_CLIENT_ID);
         const ticket = await client.verifyIdToken({

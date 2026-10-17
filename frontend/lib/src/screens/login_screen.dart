@@ -77,10 +77,81 @@ class _LoginScreenState extends State<LoginScreen>
       await app.loginWithGoogle();
       if (mounted) Navigator.pushReplacementNamed(context, '/lobby');
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Google Sign-In failed: $e'), backgroundColor: Colors.redAccent));
+      if (mounted) {
+        final origin = Uri.base.origin;
+        _showGoogleOAuthHelpDialog(context, origin, e.toString());
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _showGoogleOAuthHelpDialog(BuildContext context, String currentDomain, String rawError) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF10192A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: Color(0xFF48E5C2), width: 1.2),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.g_mobiledata, color: Color(0xFF48E5C2), size: 28),
+            SizedBox(width: 8),
+            Text('Google Sign-In Setup', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'To enable Google Sign-In on this website domain:',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.07),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.3)),
+              ),
+              child: SelectableText(
+                currentDomain,
+                style: const TextStyle(color: Color(0xFFFFD166), fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              '1. Open Google Cloud Console > Credentials > OAuth 2.0 Client IDs\n2. Add the domain URL above to "Authorized JavaScript origins"\n\nOr click below to jump straight into the arena with Guest play!',
+              style: TextStyle(color: Colors.white60, fontSize: 12, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF48E5C2),
+              foregroundColor: const Color(0xFF070B13),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _loginAsGuest();
+            },
+            icon: const Icon(Icons.play_arrow_rounded, size: 20),
+            label: const Text('Play as Guest Now', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close', style: TextStyle(color: Colors.white54)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -210,67 +281,74 @@ class _LoginScreenState extends State<LoginScreen>
                   child: SafeArea(
                     child: FadeTransition(
                       opacity: CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 36),
-                        child: Column(
-                          children: [
-                            const Spacer(flex: 3),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          return Center(
+                            child: SingleChildScrollView(
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 420),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const SizedBox(height: 12),
+                                    // Premium logo
+                                    _buildLogo(),
+                                    const SizedBox(height: 24),
 
-                            // Premium logo
-                            _buildLogo(),
-                            const SizedBox(height: 32),
+                                    // Title
+                                    ShaderMask(
+                                      shaderCallback: (bounds) => const LinearGradient(
+                                        colors: [Colors.white, Color(0xFFB0BEC5)],
+                                      ).createShader(bounds),
+                                      child: const Text('Capture Tens', style: TextStyle(
+                                        fontSize: 38, fontWeight: FontWeight.w900, color: Colors.white, height: 1, letterSpacing: -1,
+                                      )),
+                                    ),
+                                    ShaderMask(
+                                      shaderCallback: (bounds) => const LinearGradient(
+                                        colors: [Color(0xFF48E5C2), Color(0xFF30B89C)],
+                                      ).createShader(bounds),
+                                      child: const Text('Arena', style: TextStyle(
+                                        fontSize: 38, fontWeight: FontWeight.w900, color: Colors.white, height: 1.2, letterSpacing: -1,
+                                      )),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    const Text('The ultimate trick-taking card game', style: TextStyle(
+                                      fontSize: 13, color: Colors.white30, fontWeight: FontWeight.w500, letterSpacing: 0.5,
+                                    )),
 
-                            // Title
-                            ShaderMask(
-                              shaderCallback: (bounds) => const LinearGradient(
-                                colors: [Colors.white, Color(0xFFB0BEC5)],
-                              ).createShader(bounds),
-                              child: const Text('Capture Tens', style: TextStyle(
-                                fontSize: 40, fontWeight: FontWeight.w900, color: Colors.white, height: 1, letterSpacing: -1,
-                              )),
-                            ),
-                            ShaderMask(
-                              shaderCallback: (bounds) => const LinearGradient(
-                                colors: [Color(0xFF48E5C2), Color(0xFF30B89C)],
-                              ).createShader(bounds),
-                              child: const Text('Arena', style: TextStyle(
-                                fontSize: 40, fontWeight: FontWeight.w900, color: Colors.white, height: 1.2, letterSpacing: -1,
-                              )),
-                            ),
-                            const SizedBox(height: 10),
-                            const Text('The ultimate trick-taking card game', style: TextStyle(
-                              fontSize: 13, color: Colors.white30, fontWeight: FontWeight.w500, letterSpacing: 0.5,
-                            )),
+                                    const SizedBox(height: 24),
 
-                            const Spacer(flex: 2),
+                                    // Card suits strip with dividers
+                                    _buildSuitStrip(),
+                                    const SizedBox(height: 28),
 
-                            // Card suits strip with dividers
-                            _buildSuitStrip(),
-                            const SizedBox(height: 36),
+                                    // Buttons
+                                    AnimatedOpacity(
+                                      opacity: _buttonsVisible ? 1.0 : 0.0,
+                                      duration: const Duration(milliseconds: 700),
+                                      child: AnimatedSlide(
+                                        offset: _buttonsVisible ? Offset.zero : const Offset(0, 0.2),
+                                        duration: const Duration(milliseconds: 700),
+                                        curve: Curves.easeOutCubic,
+                                        child: _buildButtons(hasCached, app),
+                                      ),
+                                    ),
 
-                            // Buttons
-                            AnimatedOpacity(
-                              opacity: _buttonsVisible ? 1.0 : 0.0,
-                              duration: const Duration(milliseconds: 700),
-                              child: AnimatedSlide(
-                                offset: _buttonsVisible ? Offset.zero : const Offset(0, 0.2),
-                                duration: const Duration(milliseconds: 700),
-                                curve: Curves.easeOutCubic,
-                                child: _buildButtons(hasCached, app),
+                                    const SizedBox(height: 28),
+
+                                    Text(
+                                      'v1.0  ·  Strategy • Teamwork • Tens',
+                                      style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.15), letterSpacing: 1),
+                                    ),
+                                    const SizedBox(height: 10),
+                                  ],
+                                ),
                               ),
                             ),
-
-                            const Spacer(),
-
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 20),
-                              child: Text(
-                                'v1.0  ·  Strategy • Teamwork • Tens',
-                                style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.15), letterSpacing: 1),
-                              ),
-                            ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
                     ),
                   ),
@@ -302,14 +380,17 @@ class _LoginScreenState extends State<LoginScreen>
                 ..setEntry(3, 2, 0.001)
                 ..rotateY(mouseOffset.dx * 0.1)
                 ..rotateX(-mouseOffset.dy * 0.1),
-              child: Container(
-                width: 160,
-                height: 160,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF48E5C2).withOpacity(0.15 + t * 0.2),
+              child: Builder(
+                builder: (context) {
+                  final logoSize = (MediaQuery.of(context).size.width * 0.35).clamp(110.0, 150.0);
+                  return Container(
+                    width: logoSize,
+                    height: logoSize,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF48E5C2).withOpacity(0.15 + t * 0.2),
                       blurRadius: 30 + t * 20,
                       spreadRadius: t * 6,
                     ),
@@ -319,12 +400,14 @@ class _LoginScreenState extends State<LoginScreen>
                   'assets/images/lobby_hero_logo.png',
                   fit: BoxFit.contain,
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         );
       },
     );
+  },
+);
   }
 
   Widget _buildSuitStrip() {

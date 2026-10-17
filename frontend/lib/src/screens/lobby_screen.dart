@@ -518,6 +518,9 @@ class _LobbyTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final sw = MediaQuery.of(context).size.width;
+    final isCompact = sw < 680;
+
     return Row(
       children: [
         // Brand Logo & Live Season Badge
@@ -526,41 +529,43 @@ class _LobbyTopBar extends StatelessWidget {
           children: [
             Image.asset(
               'assets/images/lobby_hero_logo.png',
-              height: 48,
+              height: isCompact ? 36 : 48,
               fit: BoxFit.contain,
             ),
-            const SizedBox(width: 14),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF48E5C2).withOpacity(0.12),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.3)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 7,
-                    height: 7,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF48E5C2),
-                      shape: BoxShape.circle,
+            if (!isCompact) ...[
+              const SizedBox(width: 14),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF48E5C2).withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF48E5C2),
+                        shape: BoxShape.circle,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Text(
-                    'SEASON 1',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF48E5C2),
-                      letterSpacing: 1.2,
+                    const SizedBox(width: 6),
+                    const Text(
+                      'SEASON 1',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF48E5C2),
+                        letterSpacing: 1.2,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ],
           ],
         ),
 
@@ -569,28 +574,71 @@ class _LobbyTopBar extends StatelessWidget {
         // Right Action Capsule & Profile
         GlassPanel(
           borderRadius: 24,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: EdgeInsets.symmetric(horizontal: isCompact ? 4 : 8, vertical: 4),
           backgroundColor: Colors.white.withOpacity(0.04),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _TopIconButton(
-                tooltip: 'Game Rules',
-                icon: Icons.menu_book_rounded,
-                iconColor: const Color(0xFF64B5F6),
-                onTap: onRules,
-              ),
-              _TopIconButton(
-                tooltip: 'Interactive Tutorial',
-                icon: Icons.school_rounded,
-                onTap: onTutorial,
-              ),
-              _TopIconButton(
-                tooltip: 'Achievements',
-                icon: Icons.emoji_events_rounded,
-                iconColor: const Color(0xFFFFC857),
-                onTap: onAchievements,
-              ),
+              if (!isCompact) ...[
+                _TopIconButton(
+                  tooltip: 'Game Rules',
+                  icon: Icons.menu_book_rounded,
+                  iconColor: const Color(0xFF64B5F6),
+                  onTap: onRules,
+                ),
+                _TopIconButton(
+                  tooltip: 'Interactive Tutorial',
+                  icon: Icons.school_rounded,
+                  onTap: onTutorial,
+                ),
+                _TopIconButton(
+                  tooltip: 'Achievements',
+                  icon: Icons.emoji_events_rounded,
+                  iconColor: const Color(0xFFFFC857),
+                  onTap: onAchievements,
+                ),
+              ] else ...[
+                // Compact overflow menu button on mobile
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert_rounded, color: Colors.white70, size: 20),
+                  color: const Color(0xFF10192A),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(color: Colors.white.withOpacity(0.12)),
+                  ),
+                  onSelected: (val) {
+                    if (val == 'rules') onRules();
+                    if (val == 'tutorial') onTutorial();
+                    if (val == 'achievements') onAchievements();
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'rules',
+                      child: Row(children: [
+                        Icon(Icons.menu_book_rounded, color: Color(0xFF64B5F6), size: 18),
+                        SizedBox(width: 10),
+                        Text('Rules', style: TextStyle(color: Colors.white, fontSize: 13)),
+                      ]),
+                    ),
+                    const PopupMenuItem(
+                      value: 'tutorial',
+                      child: Row(children: [
+                        Icon(Icons.school_rounded, color: Color(0xFF48E5C2), size: 18),
+                        SizedBox(width: 10),
+                        Text('Tutorial', style: TextStyle(color: Colors.white, fontSize: 13)),
+                      ]),
+                    ),
+                    const PopupMenuItem(
+                      value: 'achievements',
+                      child: Row(children: [
+                        Icon(Icons.emoji_events_rounded, color: Color(0xFFFFC857), size: 18),
+                        SizedBox(width: 10),
+                        Text('Achievements', style: TextStyle(color: Colors.white, fontSize: 13)),
+                      ]),
+                    ),
+                  ],
+                ),
+              ],
               _TopIconButton(
                 tooltip: 'Friends',
                 icon: Icons.people_alt_rounded,
@@ -602,13 +650,13 @@ class _LobbyTopBar extends StatelessWidget {
                 icon: Icons.settings_rounded,
                 onTap: onSettings,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
               // Profile Pill Button
               InkWell(
                 borderRadius: BorderRadius.circular(18),
                 onTap: onProfile,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: EdgeInsets.symmetric(horizontal: isCompact ? 6 : 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(18),
@@ -622,15 +670,21 @@ class _LobbyTopBar extends StatelessWidget {
                         backgroundColor: const Color(0xFF48E5C2).withOpacity(0.2),
                         child: const Icon(Icons.person, size: 14, color: Color(0xFF48E5C2)),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        app.username ?? 'Player',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
+                      if (!isCompact) ...[
+                        const SizedBox(width: 8),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 90),
+                          child: Text(
+                            app.username ?? 'Player',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -991,152 +1045,174 @@ class _GamePortalCardState extends State<_GamePortalCard> {
             borderRadius: BorderRadius.circular(18),
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Row(
-                  children: [
-                    // Left: Large Glowing Portal Crest
-                    Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: widget.themeColor.withOpacity(0.14),
-                        border: Border.all(
-                          color: widget.themeColor.withOpacity(0.5),
-                          width: 1.5,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: widget.themeColor.withOpacity(0.3),
-                            blurRadius: 16,
-                          ),
-                        ],
-                      ),
-                      child: Icon(
-                        widget.icon,
-                        color: widget.themeColor,
-                        size: 32,
-                      ),
-                    ),
-                    const SizedBox(width: 20),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isMobile = constraints.maxWidth < 480;
 
-                    // Middle: Mode Information & Perks
-                    Expanded(
-                      child: Column(
+                Widget ctaButton({bool fullWidth = false}) {
+                  return Container(
+                    width: fullWidth ? double.infinity : null,
+                    alignment: fullWidth ? Alignment.center : null,
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+                    decoration: BoxDecoration(
+                      color: _isHovered ? widget.themeColor : widget.themeColor.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: widget.themeColor.withOpacity(0.6)),
+                      boxShadow: _isHovered
+                          ? [
+                              BoxShadow(
+                                color: widget.themeColor.withOpacity(0.4),
+                                blurRadius: 16,
+                                spreadRadius: 1,
+                              ),
+                            ]
+                          : [],
+                    ),
+                    child: Row(
+                      mainAxisSize: fullWidth ? MainAxisSize.max : MainAxisSize.min,
+                      mainAxisAlignment: fullWidth ? MainAxisAlignment.center : MainAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.ctaText,
+                          style: TextStyle(
+                            color: _isHovered ? const Color(0xFF070B13) : widget.themeColor,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 13,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(
+                          Icons.arrow_forward_rounded,
+                          size: 16,
+                          color: _isHovered ? const Color(0xFF070B13) : widget.themeColor,
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return Padding(
+                  padding: EdgeInsets.all(isMobile ? 14 : 20),
+                  child: Column(
+                    children: [
+                      Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Badge Tag
+                          // Left: Glowing Portal Crest
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            width: isMobile ? 48 : 64,
+                            height: isMobile ? 48 : 64,
                             decoration: BoxDecoration(
-                              color: widget.themeColor.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              widget.badgeTag,
-                              style: TextStyle(
-                                color: widget.themeColor,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 1.5,
+                              shape: BoxShape.circle,
+                              color: widget.themeColor.withOpacity(0.14),
+                              border: Border.all(
+                                color: widget.themeColor.withOpacity(0.5),
+                                width: 1.5,
                               ),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-
-                          // Title
-                          Text(
-                            widget.title,
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.white,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-
-                          // Subtitle
-                          Text(
-                            widget.subtitle,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.white.withOpacity(0.55),
-                              height: 1.3,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-
-                          // Perks Row
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
-                            children: widget.perks.map((p) {
-                              return Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.06),
-                                  borderRadius: BorderRadius.circular(6),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: widget.themeColor.withOpacity(0.3),
+                                  blurRadius: 16,
                                 ),
-                                child: Text(
-                                  p,
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.75),
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
+                              ],
+                            ),
+                            child: Icon(
+                              widget.icon,
+                              color: widget.themeColor,
+                              size: isMobile ? 24 : 32,
+                            ),
+                          ),
+                          SizedBox(width: isMobile ? 12 : 20),
+
+                          // Middle: Mode Information & Perks
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Badge Tag
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: widget.themeColor.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    widget.badgeTag,
+                                    style: TextStyle(
+                                      color: widget.themeColor,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 1.5,
+                                    ),
                                   ),
                                 ),
-                              );
-                            }).toList(),
-                          ),
-                        ],
-                      ),
-                    ),
+                                const SizedBox(height: 6),
 
-                    const SizedBox(width: 16),
-
-                    // Right: Action CTA Button
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: _isHovered ? widget.themeColor : widget.themeColor.withOpacity(0.18),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: widget.themeColor.withOpacity(0.6)),
-                        boxShadow: _isHovered
-                            ? [
-                                BoxShadow(
-                                  color: widget.themeColor.withOpacity(0.4),
-                                  blurRadius: 16,
-                                  spreadRadius: 1,
+                                // Title
+                                Text(
+                                  widget.title,
+                                  style: TextStyle(
+                                    fontSize: isMobile ? 18 : 20,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white,
+                                    letterSpacing: 0.5,
+                                  ),
                                 ),
-                              ]
-                            : [],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            widget.ctaText,
-                            style: TextStyle(
-                              color: _isHovered ? const Color(0xFF070B13) : widget.themeColor,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 13,
-                              letterSpacing: 1.0,
+                                const SizedBox(height: 4),
+
+                                // Subtitle
+                                Text(
+                                  widget.subtitle,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white.withOpacity(0.55),
+                                    height: 1.3,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+
+                                // Perks Row
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 4,
+                                  children: widget.perks.map((p) {
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.06),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        p,
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(0.75),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          Icon(
-                            Icons.arrow_forward_rounded,
-                            size: 16,
-                            color: _isHovered ? const Color(0xFF070B13) : widget.themeColor,
-                          ),
+
+                          if (!isMobile) ...[
+                            const SizedBox(width: 16),
+                            ctaButton(fullWidth: false),
+                          ],
                         ],
                       ),
-                    ),
-                  ],
-                ),
-              ),
+                      if (isMobile) ...[
+                        const SizedBox(height: 14),
+                        ctaButton(fullWidth: true),
+                      ],
+                    ],
+                  ),
+                );
+              },
+            ),
             ),
           ),
         ),
@@ -1212,55 +1288,110 @@ class _RoomBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final sw = MediaQuery.of(context).size.width;
+    final isMobile = sw < 520;
+
     return GlassPanel(
-      padding: const EdgeInsets.all(18),
+      padding: EdgeInsets.all(isMobile ? 14 : 18),
       backgroundColor: const Color(0xFF26193E).withOpacity(0.65),
       border: Border.all(color: const Color(0xFFB388FF).withOpacity(0.5)),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFB388FF).withOpacity(0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.meeting_room_rounded, color: Color(0xFFB388FF), size: 28),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: isMobile
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'CUSTOM ROOM CODE',
-                  style: TextStyle(fontSize: 11, color: Colors.white54, letterSpacing: 1.5, fontWeight: FontWeight.bold),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFB388FF).withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.meeting_room_rounded, color: Color(0xFFB388FF), size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'CUSTOM ROOM CODE',
+                            style: TextStyle(fontSize: 10, color: Colors.white54, letterSpacing: 1.5, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            code,
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 4,
+                              color: Color(0xFFB388FF),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  code,
-                  style: const TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 6,
-                    color: Color(0xFFB388FF),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF30B89C),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
+                  onPressed: onStartWithBots,
+                  icon: const Icon(Icons.smart_toy, size: 18),
+                  label: const Text('Start with Bots', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFB388FF).withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.meeting_room_rounded, color: Color(0xFFB388FF), size: 28),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'CUSTOM ROOM CODE',
+                        style: TextStyle(fontSize: 11, color: Colors.white54, letterSpacing: 1.5, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        code,
+                        style: const TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 6,
+                          color: Color(0xFFB388FF),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF30B89C),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: onStartWithBots,
+                  icon: const Icon(Icons.smart_toy, size: 18),
+                  label: const Text('Start with Bots', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF30B89C),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: onStartWithBots,
-            icon: const Icon(Icons.smart_toy, size: 18),
-            label: const Text('Start with Bots', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -1278,64 +1409,127 @@ class _PrivateRoomPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final sw = MediaQuery.of(context).size.width;
+    final isMobile = sw < 560;
+
     return GlassPanel(
       backgroundColor: const Color(0xFF161F33).withOpacity(0.75),
       border: Border.all(color: const Color(0xFFB388FF).withOpacity(0.3)),
-      padding: const EdgeInsets.all(20),
-      child: Row(
-        children: [
-          // Create Button
-          Expanded(
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF7C4DFF),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: onCreate,
-              icon: const Icon(Icons.add_circle_outline),
-              label: const Text('Create New Room', style: TextStyle(fontWeight: FontWeight.bold)),
+      padding: EdgeInsets.all(isMobile ? 14 : 20),
+      child: isMobile
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF7C4DFF),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: onCreate,
+                  icon: const Icon(Icons.add_circle_outline),
+                  label: const Text('Create New Room', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(height: 12),
+                Center(
+                  child: Text(
+                    '── OR JOIN WITH CODE ──',
+                    style: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.5),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: controller,
+                        textCapitalization: TextCapitalization.characters,
+                        maxLength: 6,
+                        decoration: InputDecoration(
+                          hintText: 'ROOM CODE',
+                          counterText: '',
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.06),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        ),
+                        style: const TextStyle(
+                          letterSpacing: 4,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white12,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: onJoin,
+                      child: const Text('Join', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                // Create Button
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7C4DFF),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: onCreate,
+                    icon: const Icon(Icons.add_circle_outline),
+                    label: const Text('Create New Room', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Text('OR', style: TextStyle(color: Colors.white.withOpacity(0.3), fontWeight: FontWeight.bold)),
+                const SizedBox(width: 16),
+                // Code field
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    textCapitalization: TextCapitalization.characters,
+                    maxLength: 6,
+                    decoration: InputDecoration(
+                      hintText: 'ROOM CODE',
+                      counterText: '',
+                      filled: true,
+                      fillColor: Colors.white.withOpacity(0.06),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    ),
+                    style: const TextStyle(
+                      letterSpacing: 4,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // Join Button
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white12,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: onJoin,
+                  child: const Text('Join', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(width: 16),
-          Text('OR', style: TextStyle(color: Colors.white.withOpacity(0.3), fontWeight: FontWeight.bold)),
-          const SizedBox(width: 16),
-          // Code field
-          Expanded(
-            child: TextField(
-              controller: controller,
-              textCapitalization: TextCapitalization.characters,
-              maxLength: 6,
-              decoration: InputDecoration(
-                hintText: 'ROOM CODE',
-                counterText: '',
-                filled: true,
-                fillColor: Colors.white.withOpacity(0.06),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              ),
-              style: const TextStyle(
-                letterSpacing: 4,
-                fontWeight: FontWeight.w900,
-                fontSize: 16,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          // Join Button
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white12,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: onJoin,
-            child: const Text('Join', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
     );
   }
 }

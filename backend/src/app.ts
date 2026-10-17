@@ -22,6 +22,7 @@ export function createApp() {
           connectSrc: ["'self'", "ws:", "wss:"],
         },
       },
+      crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
     })
   );
   app.use(cors({ origin: env.CLIENT_ORIGIN === "*" ? true : env.CLIENT_ORIGIN, credentials: true }));

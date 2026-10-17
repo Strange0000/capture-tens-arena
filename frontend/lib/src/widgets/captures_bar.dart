@@ -26,17 +26,23 @@ class CapturesBar extends StatelessWidget {
     final isTeamA = myTeam.toUpperCase() == 'A';
     final myCaptures = isTeamA ? captures.a : captures.b;
     final rivalCaptures = isTeamA ? captures.b : captures.a;
-    final myLabel = isTeamA ? 'YOUR SQUAD (A)' : 'YOUR SQUAD (B)';
-    final rivalLabel = isTeamA ? 'RIVALS (B)' : 'RIVALS (A)';
+    final sw = MediaQuery.of(context).size.width;
+    final isMobile = sw < 450;
+    final myLabel = isMobile
+        ? (isTeamA ? 'SQUAD A' : 'SQUAD B')
+        : (isTeamA ? 'YOUR SQUAD (A)' : 'YOUR SQUAD (B)');
+    final rivalLabel = isMobile
+        ? (isTeamA ? 'RIVALS B' : 'RIVALS A')
+        : (isTeamA ? 'RIVALS (B)' : 'RIVALS (A)');
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: EdgeInsets.symmetric(horizontal: isMobile ? 6 : 12, vertical: isMobile ? 4 : 6),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 16, vertical: isMobile ? 6 : 10),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,

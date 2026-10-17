@@ -79,12 +79,14 @@ class _PowerSuitPickerState extends State<PowerSuitPicker> with SingleTickerProv
           ),
           const SizedBox(height: 14),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _SuitButton(suit: 'hearts', onSelect: widget.onSelect),
-              _SuitButton(suit: 'diamonds', onSelect: widget.onSelect),
-              _SuitButton(suit: 'clubs', onSelect: widget.onSelect),
-              _SuitButton(suit: 'spades', onSelect: widget.onSelect),
+              Expanded(child: _SuitButton(suit: 'hearts', onSelect: widget.onSelect)),
+              const SizedBox(width: 8),
+              Expanded(child: _SuitButton(suit: 'diamonds', onSelect: widget.onSelect)),
+              const SizedBox(width: 8),
+              Expanded(child: _SuitButton(suit: 'clubs', onSelect: widget.onSelect)),
+              const SizedBox(width: 8),
+              Expanded(child: _SuitButton(suit: 'spades', onSelect: widget.onSelect)),
             ],
           ),
         ],
@@ -126,11 +128,10 @@ class _SuitButtonState extends State<_SuitButton> {
         },
         onTapCancel: () => setState(() => _pressed = false),
         child: AnimatedScale(
-          scale: _pressed ? 1.12 : _hovered ? 1.05 : 1.0,
+          scale: _pressed ? 1.08 : _hovered ? 1.04 : 1.0,
           duration: const Duration(milliseconds: 150),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
-            width: 76,
             padding: const EdgeInsets.symmetric(vertical: 10),
             decoration: BoxDecoration(
               color: active ? color.withOpacity(0.18) : Colors.white.withOpacity(0.07),
