@@ -322,7 +322,8 @@ export function registerGameSockets(io: Server) {
           }
         }
 
-        socket.emit("room:joined", { code });        if (group) {
+        socket.emit("room:joined", { code });
+        if (group) {
           startMatch(io, matchmaking.toSeats(group), "private");
         } else {
           broadcastPrivateRoom(io, code);
