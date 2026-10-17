@@ -487,9 +487,9 @@ class AppState extends ChangeNotifier {
 
   void queueRanked() {
     print('[AppState] queueRanked called, socket connected=${socket.connected}');
-    // Clear old local match state before starting a fresh search.
+    // Ignore late state broadcasts from the previous match until a new match
+    // ID arrives. Do not clear _leftMatchId here when searching again.
     match = null;
-    _leftMatchId = null;
     socket.queueRanked(mmr: rankInfo?.mmr ?? 0);
     lobbyStatus = LobbyStatus.queuing;
     notifyListeners();
