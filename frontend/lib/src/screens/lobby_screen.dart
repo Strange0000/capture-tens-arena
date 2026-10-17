@@ -125,15 +125,19 @@ class _LobbyScreenState extends State<LobbyScreen>
       });
     }
 
-    if (app.pendingPartyInvite != null) {
+    // The lobby may remain mounted under the matchmaking route. Only the
+    // active route should present invite dialogs, otherwise the same invite
+    // can appear twice when a notification arrives during ranked search.
+    final isCurrentRoute = ModalRoute.of(context)?.isCurrent ?? true;
+    if (isCurrentRoute && app.pendingPartyInvite != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!context.mounted) return;
+        if (!context.mounted || ModalRoute.of(context)?.isCurrent != true) return;
         _showPartyInviteDialog(context, app);
       });
     }
-    if (app.pendingRoomInvite != null) {
+    if (isCurrentRoute && app.pendingRoomInvite != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!context.mounted) return;
+        if (!context.mounted || ModalRoute.of(context)?.isCurrent != true) return;
         _showRoomInviteDialog(context, app);
       });
     }
