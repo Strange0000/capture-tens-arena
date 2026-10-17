@@ -1,0 +1,73 @@
+name: Verify friend request flow
+
+on:
+  push:
+    branches:
+      - feature/friend-request-flow
+    paths-ignore:
+      - "frontend/build/web/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: friend-flow-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/friend-request-flow
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Build backend
+        working-directory: backend
+        run: npm run build
+
+      - name: Run backend tests
+        working-directory: backend
+        run: npm test
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.32.1"
+          cache: true
+
+      - name: Get Flutter dependencies
+        working-directory: frontend
+        run: flutter pub get
+
+      - name: Build production web app
+        working-directory: frontend
+        run: flutter build web --release
+
+      - name: Commit rebuilt web bundle
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/build/web
+          if git diff --cached --quiet; then
+            echo "Build output unchanged; nothing to commit."
+            exit 0
+          fi
+          git commit -m "build(web): ship friend request flow"
+          git push origin HEAD:feature/friend-request-flow
