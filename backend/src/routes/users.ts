@@ -101,24 +101,34 @@ usersRouter.get("/leaderboard", async (_req, res, next) => {
 });
 
 usersRouter.get("/search", requireAuth, async (req, res, next) => {
-  if (env.OFFLINE_DEV_MODE) {
-    return res.json({ users: [] });
-  }
+  if (env.OFFLINE_DEV_MODE) return res.json({ users: [] });
   try {
-    const q = (req.query.q as string)?.trim();
-    if (!q || q.length < 2) return res.json({ users: [] });
-    
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (q.length < 2) return res.json({ users: [] });
+    const escaped = q.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
     const users = await UserModel.find({
-      username: { $regex: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i") },
-      _id: { $ne: req.user!.id }
-    }).select("username avatarUrl status").limit(10);
-    
-    res.json({ users: users.map(u => ({ id: u.id, username: u.username, avatarUrl: u.avatarUrl, status: u.status })) });
-  } catch (error) {
-    next(error);
-  }
+      username: { $regex: new RegExp(escaped, "i") },
+      _id: { $ne: req.user!.id },
+    }).select("username avatarUrl status").sort({ username: 1 }).limit(10);
+    const ids = users.map((user) => user.id);
+    const relationships = ids.length ? await FriendModel.find({
+      $or: [
+        { requesterId: req.user!.id, addresseeId: { $in: ids } },
+        { addresseeId: req.user!.id, requesterId: { $in: ids } },
+      ],
+    }).select("requesterId addresseeId status") : [];
+    const byUser = new Map<string, { status: string; isRequester: boolean; friendId: string }>();
+    for (const relation of relationships) {
+      const isRequester = relation.requesterId.toString() === req.user!.id;
+      const otherId = isRequester ? relation.addresseeId.toString() : relation.requesterId.toString();
+      byUser.set(otherId, { status: relation.status, isRequester, friendId: relation.id });
+    }
+    res.json({ users: users.map((user) => ({
+      id: user.id, username: user.username, avatarUrl: user.avatarUrl, status: user.status,
+      relationship: byUser.get(user.id) ?? null,
+    })) });
+  } catch (error) { next(error); }
 });
-
 usersRouter.get("/friends", requireAuth, async (req, res, next) => {
   if (env.OFFLINE_DEV_MODE) {
     return res.json({ friends: [] });
@@ -158,72 +168,70 @@ usersRouter.get("/friends", requireAuth, async (req, res, next) => {
 });
 
 usersRouter.post("/friends/request", requireAuth, async (req, res, next) => {
-  if (env.OFFLINE_DEV_MODE) {
-    return res.status(400).json({ error: "Cannot add friends in offline dev mode" });
-  }
+  if (env.OFFLINE_DEV_MODE) return res.status(400).json({ error: "Friend requests are unavailable in offline dev mode" });
   try {
-    const { username } = req.body;
-    if (!username) return res.status(400).json({ error: "Username is required" });
-    
-    const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const targetUser = await UserModel.findOne({ username: { $regex: new RegExp(`^${escaped}$`, "i") } });
-    if (!targetUser) return res.status(404).json({ error: "User not found" });
-    if (targetUser.id === req.user!.id) return res.status(400).json({ error: "Cannot add yourself" });
-
-    const existing = await FriendModel.findOne({
-      $or: [
-        { requesterId: req.user!.id, addresseeId: targetUser.id },
-        { requesterId: targetUser.id, addresseeId: req.user!.id }
-      ]
-    });
-
-    if (existing) {
-      return res.status(400).json({ error: `Friend request already exists with status: ${existing.status}` });
+    const raw = req.body?.username;
+    const username = typeof raw === "string" ? raw.trim() : "";
+    if (username.length < 2 || username.length > 24) return res.status(400).json({ error: "Enter a username between 2 and 24 characters" });
+    const escaped = username.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
+    const target = await UserModel.findOne({ username: { $regex: new RegExp("^" + escaped + "$", "i") } }).select("_id username");
+    if (!target) return res.status(404).json({ error: "User not found" });
+    if (target.id === req.user!.id) return res.status(400).json({ error: "You cannot add yourself as a friend" });
+    const requesterId = req.user!.id;
+    const addresseeId = target.id;
+    const pairKey = [requesterId, addresseeId].sort().join(":");
+    const findPair = () => FriendModel.findOne({ $or: [
+      { requesterId, addresseeId },
+      { requesterId: addresseeId, addresseeId: requesterId },
+      { pairKey },
+    ] });
+    let existing = await findPair();
+    if (existing?.status === "accepted") return res.status(409).json({ error: "You are already friends" });
+    if (existing?.status === "blocked") return res.status(403).json({ error: "This friendship is blocked and cannot receive requests" });
+    if (existing?.status === "pending" && existing.requesterId.toString() === addresseeId && existing.addresseeId.toString() === requesterId) {
+      const accepted = await FriendModel.findOneAndUpdate({ _id: existing._id, status: "pending", addresseeId: requesterId }, { $set: { status: "accepted" } }, { new: true });
+      if (accepted) {
+        await incrementFriendCounts(accepted.requesterId.toString(), accepted.addresseeId.toString());
+        return res.json({ success: true, status: "accepted", message: "You and " + target.username + " are now friends", friend: accepted });
+      }
+      existing = await findPair();
+      if (existing?.status === "accepted") return res.status(409).json({ error: "You are already friends" });
     }
-
-    const friend = await FriendModel.create({
-      requesterId: req.user!.id,
-      addresseeId: targetUser.id,
-      status: "pending"
-    });
-
-    res.json({ success: true, friend });
-  } catch (error) {
-    next(error);
-  }
+    if (existing?.status === "pending") return res.status(409).json({ error: "Friend request already sent" });
+    try {
+      const friend = await FriendModel.create({ requesterId, addresseeId, pairKey, status: "pending" });
+      return res.status(201).json({ success: true, status: "pending", message: "Friend request sent to " + target.username, friend });
+    } catch (error: any) {
+      if (error?.code !== 11000) throw error;
+      existing = await findPair();
+      if (existing?.status === "accepted") return res.status(409).json({ error: "You are already friends" });
+      if (existing?.status === "blocked") return res.status(403).json({ error: "This friendship is blocked and cannot receive requests" });
+      if (existing?.status === "pending" && existing.requesterId.toString() === addresseeId && existing.addresseeId.toString() === requesterId) {
+        const accepted = await FriendModel.findOneAndUpdate({ _id: existing._id, status: "pending", addresseeId: requesterId }, { $set: { status: "accepted" } }, { new: true });
+        if (accepted) {
+          await incrementFriendCounts(accepted.requesterId.toString(), accepted.addresseeId.toString());
+          return res.json({ success: true, status: "accepted", message: "You and " + target.username + " are now friends", friend: accepted });
+        }
+      }
+      return res.status(409).json({ error: "A friend request already exists" });
+    }
+  } catch (error) { next(error); }
 });
-
 usersRouter.post("/friends/accept", requireAuth, async (req, res, next) => {
-  if (env.OFFLINE_DEV_MODE) {
-    return res.status(400).json({ error: "Cannot accept friends in offline dev mode" });
-  }
+  if (env.OFFLINE_DEV_MODE) return res.status(400).json({ error: "Friend requests are unavailable in offline dev mode" });
   try {
-    const { friendId } = req.body;
-    if (!friendId) return res.status(400).json({ error: "Friend ID is required" });
-
-    const friend = await FriendModel.findOne({
-      _id: friendId,
-      addresseeId: req.user!.id,
-      status: "pending"
-    });
-
-    if (!friend) return res.status(404).json({ error: "Pending friend request not found" });
-
-    friend.status = "accepted";
-    await friend.save();
-
-    // Update friend counts for both users
-    await Promise.all([
-      UserModel.updateOne({ _id: friend.requesterId }, { $inc: { friendCount: 1 } }),
-      UserModel.updateOne({ _id: friend.addresseeId }, { $inc: { friendCount: 1 } }),
-    ]);
-
-    res.json({ success: true, friend });
-  } catch (error) {
-    next(error);
-  }
+    const friendId = typeof req.body?.friendId === "string" ? req.body.friendId : "";
+    if (!friendId) return res.status(400).json({ error: "Friend request ID is required" });
+    const friend = await FriendModel.findOneAndUpdate({ _id: friendId, addresseeId: req.user!.id, status: "pending" }, { $set: { status: "accepted" } }, { new: true });
+    if (!friend) {
+      const visible = await FriendModel.findOne({ _id: friendId, $or: [{ requesterId: req.user!.id }, { addresseeId: req.user!.id }] });
+      if (visible?.status === "accepted") return res.json({ success: true, status: "accepted", message: "You are already friends" });
+      return res.status(404).json({ error: "Incoming friend request not found or already handled" });
+    }
+    await incrementFriendCounts(friend.requesterId.toString(), friend.addresseeId.toString());
+    return res.json({ success: true, status: "accepted", message: "Friend request accepted", friend });
+  } catch (error) { next(error); }
 });
-
 usersRouter.delete("/friends/:id", requireAuth, async (req, res, next) => {
   if (env.OFFLINE_DEV_MODE) {
     return res.status(400).json({ error: "Cannot remove friends in offline dev mode" });
@@ -252,6 +260,13 @@ usersRouter.delete("/friends/:id", requireAuth, async (req, res, next) => {
     next(error);
   }
 });
+
+async function incrementFriendCounts(requesterId: string, addresseeId: string) {
+  await Promise.all([
+    UserModel.updateOne({ _id: requesterId }, { $inc: { friendCount: 1 } }),
+    UserModel.updateOne({ _id: addresseeId }, { $inc: { friendCount: 1 } }),
+  ]);
+}
 
 function currentSeason() {
   const now = new Date();
