@@ -16,6 +16,7 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
   late final AnimationController _rotateCtrl;
   late final AnimationController _searchCtrl;
   int _elapsedSeconds = 0;
+  bool _navigationTriggered = false;
 
   @override
   void initState() {
@@ -77,19 +78,22 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
       );
     }
 
-    // Navigate to game when match found
-    if (app.match != null) {
+    // Make a single navigation decision per screen instance. Previously the
+    // cancel button popped manually while this state listener also popped,
+    // which could leave the route stack stuck or pop the lobby as well.
+    if (!_navigationTriggered && app.match != null) {
+      _navigationTriggered = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (context.mounted) {
           Navigator.pushReplacementNamed(context, '/game');
         }
       });
-    }
-
-    // If no longer queuing (cancelled), pop back
-    if (app.lobbyStatus == LobbyStatus.idle && app.match == null) {
+    } else if (!_navigationTriggered &&
+        app.lobbyStatus == LobbyStatus.idle &&
+        app.match == null) {
+      _navigationTriggered = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) Navigator.pop(context);
+        if (context.mounted) Navigator.of(context).pop();
       });
     }
 
@@ -235,8 +239,7 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
                       onPressed: () {
-                        app.leaveMatch();
-                        Navigator.pop(context);
+                        app.cancelRankedQueue();
                       },
                       icon: const Icon(Icons.close_rounded, size: 18),
                       label: const Text('Cancel Search', style: TextStyle(fontWeight: FontWeight.w800)),
