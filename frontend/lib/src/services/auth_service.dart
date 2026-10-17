@@ -79,9 +79,13 @@ class AuthService {
 
   Future<GuestSession> googleLogin() async {
     const envClientId = String.fromEnvironment('GOOGLE_CLIENT_ID', defaultValue: '');
-    const defaultClientId = '925721095742-omjs30pn4s3lcag3r8pr5grl514voisn.apps.googleusercontent.com';
+    const defaultClientId =
+        '925721095742-omjs30pn4s3lcag3r8pr5grl514voisn.apps.googleusercontent.com';
     final clientId = envClientId.isNotEmpty ? envClientId : defaultClientId;
 
+    // google_sign_in 6.x supports this API on web, but its signIn() flow is
+    // deprecated for web. Keep the existing native flow; use renderButton on web
+    // in a follow-up migration rather than passing an access token to ID-token verification.
     final googleSignIn = GoogleSignIn(
       clientId: clientId,
       serverClientId: clientId,
@@ -91,8 +95,16 @@ class AuthService {
     if (account == null) throw Exception('Google Sign-In aborted');
 
     final auth = await account.authentication;
-    final googleAuthToken = auth.idToken ?? auth.accessToken;
-    if (googleAuthToken == null) throw Exception('Failed to get Google authentication token');
+    // The backend /auth/google endpoint verifies a Google ID token. Never fall
+    // back to auth.accessToken here: it is not an ID token and will fail
+    // verifyIdToken (and the backend fallback depends on provider permissions).
+    final idToken = auth.idToken;
+    if (idToken == null || idToken.isEmpty) {
+      throw Exception(
+        'Google Sign-In did not return an ID token. Check the Web OAuth client ID '
+        'and GOOGLE_CLIENT_ID configuration.',
+      );
+    }
 
     final response = await http.post(
       Uri.parse('$baseUrl/auth/google'),
@@ -101,7 +113,7 @@ class AuthService {
         ..._defaultHeaders,
       },
       body: jsonEncode({
-        'idToken': googleAuthToken,
+        'idToken': idToken,
         'username': account.displayName ?? account.email.split('@').first,
       }),
     ).timeout(_timeout);
