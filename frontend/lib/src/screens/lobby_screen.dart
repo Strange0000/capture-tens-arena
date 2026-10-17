@@ -172,10 +172,16 @@ class _LobbyScreenState extends State<LobbyScreen>
                             if (app.lobbyStatus == LobbyStatus.inRoom && app.roomCode != null) ...[
                               _RoomBanner(
                                 code: app.roomCode!,
-                                onStartWithBots: () {
-                                  app.startRoomWithBots();
-                                  Navigator.pushNamed(context, '/game');
+                                playerNames: app.roomPlayerNames,
+                                playerCount: app.roomPlayerCount,
+                                capacity: app.roomCapacity,
+                                onCopyCode: () {
+                                  Clipboard.setData(ClipboardData(text: app.roomCode!));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Room code copied')),
+                                  );
                                 },
+                                onStartWithBots: app.startRoomWithBots,
                               ),
                               const SizedBox(height: 16),
                             ],
@@ -1282,14 +1288,70 @@ class _QueueBanner extends StatelessWidget {
 }
 
 class _RoomBanner extends StatelessWidget {
-  const _RoomBanner({required this.code, required this.onStartWithBots});
+  const _RoomBanner({
+    required this.code,
+    required this.playerNames,
+    required this.playerCount,
+    required this.capacity,
+    required this.onCopyCode,
+    required this.onStartWithBots,
+  });
+
   final String code;
+  final List<String> playerNames;
+  final int playerCount;
+  final int capacity;
+  final VoidCallback onCopyCode;
   final VoidCallback onStartWithBots;
+
+  Widget _roomDetails() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'PRIVATE ROOM CODE',
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.white54,
+            letterSpacing: 1.5,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          code,
+          style: const TextStyle(
+            fontSize: 25,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 5,
+            color: Color(0xFFB388FF),
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          '$playerCount of $capacity players joined',
+          style: const TextStyle(
+            fontSize: 12,
+            color: Colors.white70,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        if (playerNames.isNotEmpty) ...[
+          const SizedBox(height: 3),
+          Text(
+            playerNames.join(' · '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, color: Colors.white54),
+          ),
+        ],
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final sw = MediaQuery.of(context).size.width;
-    final isMobile = sw < 520;
+    final isMobile = MediaQuery.of(context).size.width < 520;
 
     return GlassPanel(
       padding: EdgeInsets.all(isMobile ? 14 : 18),
@@ -1301,35 +1363,14 @@ class _RoomBanner extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFB388FF).withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(Icons.meeting_room_rounded, color: Color(0xFFB388FF), size: 24),
-                    ),
+                    const Icon(Icons.meeting_room_rounded,
+                        color: Color(0xFFB388FF), size: 28),
                     const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'CUSTOM ROOM CODE',
-                            style: TextStyle(fontSize: 10, color: Colors.white54, letterSpacing: 1.5, fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            code,
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 4,
-                              color: Color(0xFFB388FF),
-                            ),
-                          ),
-                        ],
-                      ),
+                    Expanded(child: _roomDetails()),
+                    IconButton(
+                      tooltip: 'Copy room code',
+                      onPressed: onCopyCode,
+                      icon: const Icon(Icons.copy_rounded, color: Colors.white70),
                     ),
                   ],
                 ),
@@ -1339,56 +1380,49 @@ class _RoomBanner extends StatelessWidget {
                     backgroundColor: const Color(0xFF30B89C),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                   onPressed: onStartWithBots,
                   icon: const Icon(Icons.smart_toy, size: 18),
-                  label: const Text('Start with Bots', style: TextStyle(fontWeight: FontWeight.bold)),
+                  label: const Text(
+                    'Start with Bots',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ),
               ],
             )
           : Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFB388FF).withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.meeting_room_rounded, color: Color(0xFFB388FF), size: 28),
-                ),
+                const Icon(Icons.meeting_room_rounded,
+                    color: Color(0xFFB388FF), size: 32),
                 const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'CUSTOM ROOM CODE',
-                        style: TextStyle(fontSize: 11, color: Colors.white54, letterSpacing: 1.5, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        code,
-                        style: const TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 6,
-                          color: Color(0xFFB388FF),
-                        ),
-                      ),
-                    ],
-                  ),
+                Expanded(child: _roomDetails()),
+                IconButton(
+                  tooltip: 'Copy room code',
+                  onPressed: onCopyCode,
+                  icon: const Icon(Icons.copy_rounded, color: Colors.white70),
                 ),
+                const SizedBox(width: 10),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF30B89C),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                   onPressed: onStartWithBots,
                   icon: const Icon(Icons.smart_toy, size: 18),
-                  label: const Text('Start with Bots', style: TextStyle(fontWeight: FontWeight.bold)),
+                  label: const Text(
+                    'Start with Bots',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ),
               ],
             ),
