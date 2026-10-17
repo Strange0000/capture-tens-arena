@@ -301,6 +301,15 @@ export function registerGameSockets(io: Server) {
         if (!code) throw new Error("Enter a room code");
         if (code.length !== 6) throw new Error("Room code must be 6 characters");
 
+        // Validate and reserve the room seat before cancelling an active queue.
+        // An invalid/full room code must not silently cancel ranked matchmaking.
+        const group = matchmaking.joinPrivateRoom(code, {
+          userId,
+          username: socket.user!.username,
+          socketId: socket.id,
+          mmr: 0,
+        });
+
         const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
         const queuedIds = new Set<string>([userId, ...queuedGroup.map((player) => player.userId)]);
         for (const queuedUserId of queuedIds) clearQueueTimeout(queuedUserId);
@@ -313,14 +322,7 @@ export function registerGameSockets(io: Server) {
           }
         }
 
-        const group = matchmaking.joinPrivateRoom(code, {
-          userId,
-          username: socket.user!.username,
-          socketId: socket.id,
-          mmr: 0,
-        });
-        socket.emit("room:joined", { code });
-        if (group) {
+        socket.emit("room:joined", { code });        if (group) {
           startMatch(io, matchmaking.toSeats(group), "private");
         } else {
           broadcastPrivateRoom(io, code);
