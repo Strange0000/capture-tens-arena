@@ -163,6 +163,22 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> loginWithGoogleIdToken(
+    String idToken, {
+    String? username,
+  }) async {
+    final session = await auth.googleLoginWithIdToken(
+      idToken,
+      username: username,
+    );
+    token = session.token;
+    userId = session.userId;
+    this.username = session.username;
+    _connectSocket();
+    _fetchInitialData();
+    notifyListeners();
+  }
+
   Future<void> _fetchInitialData() async {
     try { await fetchRankInfo(); } catch (_) {}
     try { await fetchFriends(); } catch (_) {}
