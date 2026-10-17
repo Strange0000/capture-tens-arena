@@ -430,17 +430,23 @@ class AppState extends ChangeNotifier {
   // ── Friends & Party ──────────────────────────────────────────────────────
 
   Future<void> fetchFriends() async {
-    if (token == null) return;
+    final sessionToken = token;
+    if (sessionToken == null) return;
     friendsLoading = true;
     friendsError = null;
     notifyListeners();
     try {
-      friends = await auth.fetchFriends(token!);
+      final loadedFriends = await auth.fetchFriends(sessionToken);
+      if (token != sessionToken) return;
+      friends = loadedFriends;
     } catch (e) {
+      if (token != sessionToken) return;
       friendsError = e.toString().replaceFirst("Exception: ", "");
     } finally {
-      friendsLoading = false;
-      notifyListeners();
+      if (token == sessionToken) {
+        friendsLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -482,10 +488,12 @@ class AppState extends ChangeNotifier {
   }
 
   Future<bool> sendFriendRequest(String targetUsername) async {
-    if (token == null) return false;
+    final sessionToken = token;
+    if (sessionToken == null) return false;
     friendActionError = null;
     try {
-      await auth.sendFriendRequest(token!, targetUsername.trim());
+      await auth.sendFriendRequest(sessionToken, targetUsername.trim());
+      if (token != sessionToken) return false;
       await fetchFriends();
       await _refreshFriendSearchIfNeeded();
       return true;
@@ -497,10 +505,12 @@ class AppState extends ChangeNotifier {
   }
 
   Future<bool> acceptFriendRequest(String friendId) async {
-    if (token == null) return false;
+    final sessionToken = token;
+    if (sessionToken == null) return false;
     friendActionError = null;
     try {
-      await auth.acceptFriendRequest(token!, friendId);
+      await auth.acceptFriendRequest(sessionToken, friendId);
+      if (token != sessionToken) return false;
       await fetchFriends();
       await _refreshFriendSearchIfNeeded();
       return true;
@@ -512,10 +522,12 @@ class AppState extends ChangeNotifier {
   }
 
   Future<bool> removeFriend(String friendId) async {
-    if (token == null) return false;
+    final sessionToken = token;
+    if (sessionToken == null) return false;
     friendActionError = null;
     try {
-      await auth.removeFriend(token!, friendId);
+      await auth.removeFriend(sessionToken, friendId);
+      if (token != sessionToken) return false;
       await fetchFriends();
       await _refreshFriendSearchIfNeeded();
       return true;
