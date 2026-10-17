@@ -131,6 +131,12 @@ class _LobbyScreenState extends State<LobbyScreen>
         _showPartyInviteDialog(context, app);
       });
     }
+    if (app.pendingRoomInvite != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        _showRoomInviteDialog(context, app);
+      });
+    }
 
     return Stack(
       children: [
@@ -530,10 +536,43 @@ class _LobbyScreenState extends State<LobbyScreen>
           ),
           ElevatedButton(
             onPressed: () {
-              app.acceptPartyInvite();
+              app.acceptPartyInvite(invite['partyId']?.toString());
               Navigator.pop(context);
             },
             child: const Text('Accept'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRoomInviteDialog(BuildContext context, AppState app) {
+    final invite = app.pendingRoomInvite!;
+    app.pendingRoomInvite = null;
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF101826),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: const Row(children: [
+          Icon(Icons.meeting_room_rounded, color: Color(0xFFB388FF)),
+          SizedBox(width: 10),
+          Expanded(child: Text('Private room invite', style: TextStyle(color: Colors.white, fontSize: 19))),
+        ]),
+        content: Text(
+          '${invite['from'] ?? 'A friend'} invited you to room ${invite['code'] ?? ''}. Accept to join their private table.',
+          style: const TextStyle(color: Colors.white70, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () { app.declineRoomInvite(); Navigator.pop(dialogContext); },
+            child: const Text('Not now'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFB388FF), foregroundColor: const Color(0xFF160D27)),
+            onPressed: () { app.acceptRoomInvite(invite['code']?.toString()); Navigator.pop(dialogContext); },
+            icon: const Icon(Icons.login_rounded, size: 18),
+            label: const Text('Join room'),
           ),
         ],
       ),
