@@ -144,6 +144,14 @@ export function registerGameSockets(io: Server) {
           if (!friendship) throw new Error("You can only invite accepted friends");
         }
 
+        const existingParty = matchmaking.getPartyForUser(userId);
+        if (existingParty && existingParty.length >= 2) {
+          throw new Error("Your party is full");
+        }
+        if (matchmaking.getPartyForUser(targetUserId)) {
+          throw new Error("That friend is already in a party");
+        }
+
         // Leaving ranked search before making a duo prevents the old solo
         // fallback timer from launching a match after the invite is sent.
         const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
@@ -156,7 +164,6 @@ export function registerGameSockets(io: Server) {
           }
         }
 
-        let existingParty = matchmaking.getPartyForUser(userId);
         let partyId: string | null = null;
         if (!existingParty) {
           partyId = matchmaking.createParty({
@@ -204,6 +211,16 @@ export function registerGameSockets(io: Server) {
           });
           if (!friendship) throw new Error("You can only invite accepted friends");
         }
+        // The room may have filled or been removed while the friendship query
+        // was in flight; never send an invitation to a stale room code.
+        const currentRoom = matchmaking.getPrivateRoom(normalizedCode);
+        if (!currentRoom || !currentRoom.some((player) => player.userId === userId)) {
+          throw new Error("This private room is no longer available");
+        }
+        if (currentRoom.some((player) => player.userId === targetUserId)) {
+          throw new Error("That friend is already in this room");
+        }
+        if (currentRoom.length >= 4) throw new Error("This room is full");
         io.to(`user:${targetUserId}`).emit("room:invited", {
           from: socket.user!.username,
           code: normalizedCode,
@@ -215,6 +232,16 @@ export function registerGameSockets(io: Server) {
 
     socket.on("party:accept", ({ partyId }: { partyId: string }) => {
       try {
+        const invitedParty = matchmaking.getParty(partyId);
+        if (!invitedParty) throw new Error("Party not found");
+        const currentPartyId = matchmaking.getPartyIdForUser(userId);
+        if (currentPartyId && currentPartyId !== partyId) {
+          throw new Error("Leave your current party before joining another one");
+        }
+        if (currentPartyId !== partyId && invitedParty.length >= 2) {
+          throw new Error("Party is full");
+        }
+
         // A player who accepts a duo invitation must be removed from any
         // previous solo/party queue before joining the invited party.
         const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
