@@ -18,6 +18,7 @@ async function main() {
     cors: { origin: env.CLIENT_ORIGIN === "*" ? true : env.CLIENT_ORIGIN, credentials: true },
     transports: ["websocket", "polling"]
   });
+  app.set("io", io);
   registerGameSockets(io);
   server.listen(env.PORT, () => {
     console.log(`Capture Tens backend listening on ${env.PORT}`);
