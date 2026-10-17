@@ -3,6 +3,7 @@ import { OAuth2Client } from "google-auth-library";
 import { z } from "zod";
 import { env } from "../config/env.js";
 import { createGuest, loginWithGoogle } from "../services/authService.js";
+import { AppError } from "../middleware/error.js";
 
 export const authRouter = Router();
 
@@ -32,7 +33,14 @@ authRouter.post("/google", async (req, res, next) => {
       googleId = body.idToken;
       displayName = body.username;
     } else {
-      // In production, verify with Google
+      // Production requires the Web OAuth client ID used to mint the frontend ID token.
+      if (!env.GOOGLE_CLIENT_ID) {
+        throw new AppError(
+          500,
+          "Google login is not configured on the backend (missing GOOGLE_CLIENT_ID).",
+        );
+      }
+
       try {
         const client = new OAuth2Client(env.GOOGLE_CLIENT_ID);
         const ticket = await client.verifyIdToken({
@@ -40,27 +48,16 @@ authRouter.post("/google", async (req, res, next) => {
           audience: env.GOOGLE_CLIENT_ID,
         });
         const payload = ticket.getPayload();
-        if (!payload || !payload.sub) throw new Error("Invalid Google token");
+        if (!payload || !payload.sub) throw new Error("Invalid Google ID token");
         googleId = payload.sub;
         email = payload.email;
         avatarUrl = payload.picture;
         displayName = payload.name;
-      } catch (verifyErr) {
-        // Fallback: If body.idToken is an OAuth2 access token from GIS, verify with userinfo API
-        try {
-          const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-            headers: { Authorization: `Bearer ${body.idToken}` },
-          });
-          if (!res.ok) throw verifyErr;
-          const payload = (await res.json()) as any;
-          if (!payload || !payload.sub) throw verifyErr;
-          googleId = payload.sub;
-          email = payload.email;
-          avatarUrl = payload.picture;
-          displayName = payload.name;
-        } catch (_) {
-          throw verifyErr;
-        }
+      } catch (_) {
+        throw new AppError(
+          401,
+          "Google ID token verification failed. Confirm that GOOGLE_CLIENT_ID matches the frontend Web OAuth client ID.",
+        );
       }
     }
 
