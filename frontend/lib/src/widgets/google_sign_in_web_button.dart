@@ -97,40 +97,48 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
 
   @override
   Widget build(BuildContext context) {
-    final buttonWidth = widget.compact ? 180.0 : 300.0;
-    return SizedBox(
-      width: buttonWidth,
-      height: 50,
-      child: Stack(
-        alignment: Alignment.center,
-        children: <Widget>[
-          IgnorePointer(
-            ignoring: _handlingSignIn,
-            child: Opacity(
-              opacity: _handlingSignIn ? 0.45 : 1,
-              child: google_sign_in_web.renderButton(
-                configuration: google_sign_in_web.GSIButtonConfiguration(
-                  type: google_sign_in_web.GSIButtonType.standard,
-                  theme: google_sign_in_web.GSIButtonTheme.filledBlack,
-                  size: google_sign_in_web.GSIButtonSize.large,
-                  text: google_sign_in_web.GSIButtonText.signinWith,
-                  shape: google_sign_in_web.GSIButtonShape.rectangular,
-                  minimumWidth: buttonWidth,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final desiredWidth = widget.compact ? 180.0 : 300.0;
+        final buttonWidth = constraints.maxWidth.isFinite &&
+                constraints.maxWidth < desiredWidth
+            ? constraints.maxWidth
+            : desiredWidth;
+        return SizedBox(
+          width: buttonWidth,
+          height: 50,
+          child: Stack(
+            alignment: Alignment.center,
+            children: <Widget>[
+              IgnorePointer(
+                ignoring: _handlingSignIn,
+                child: Opacity(
+                  opacity: _handlingSignIn ? 0.45 : 1,
+                  child: google_sign_in_web.renderButton(
+                    configuration: google_sign_in_web.GSIButtonConfiguration(
+                      type: google_sign_in_web.GSIButtonType.standard,
+                      theme: google_sign_in_web.GSIButtonTheme.filledBlack,
+                      size: google_sign_in_web.GSIButtonSize.large,
+                      text: google_sign_in_web.GSIButtonText.signinWith,
+                      shape: google_sign_in_web.GSIButtonShape.rectangular,
+                      minimumWidth: buttonWidth,
+                    ),
+                  ),
                 ),
               ),
-            ),
+              if (_handlingSignIn)
+                const Positioned(
+                  right: 8,
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+            ],
           ),
-          if (_handlingSignIn)
-            const Positioned(
-              right: 8,
-              child: SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
