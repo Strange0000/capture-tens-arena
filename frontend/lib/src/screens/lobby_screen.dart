@@ -1825,6 +1825,7 @@ class _FriendsSheetState extends State<_FriendsSheet> {
 
   void _onSearchChanged(String value) {
     _searchDebounce?.cancel();
+    setState(() {});
     final app = context.read<AppState>();
     if (value.trim().length < 2) {
       app.searchFriends("");
