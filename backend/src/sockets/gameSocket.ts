@@ -11,7 +11,7 @@ import { MatchModel } from "../models/Match.js";
 import { ReplayModel } from "../models/Replay.js";
 import { FriendModel } from "../models/Friend.js";
 import { UserModel } from "../models/User.js";
-import { matchmaking } from "../services/matchmakingService.js";
+import { matchmaking, type QueuePlayer } from "../services/matchmakingService.js";
 import { matchStore } from "../services/matchStore.js";
 import { applyRankedResult } from "../services/rankingService.js";
 import { authenticateSocket, AuthedSocket } from "./authSocket.js";
