@@ -143,36 +143,51 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("room:create", () => {
-      const code = matchmaking.createPrivateRoom({
-        userId,
-        username: socket.user!.username,
-        socketId: socket.id,
-        mmr: 0
-      });
-      socket.emit("room:created", { code });
-    });
-
-    socket.on("room:join", ({ code }: { code: string }) => {
       try {
-        const group = matchmaking.joinPrivateRoom(code.toUpperCase(), {
+        const code = matchmaking.createPrivateRoom({
           userId,
           username: socket.user!.username,
           socketId: socket.id,
-          mmr: 0
+          mmr: 0,
         });
-        socket.emit("room:joined", { code });
-        if (group) startMatch(io, matchmaking.toSeats(group), "private");
+        socket.emit("room:created", { code });
+        broadcastPrivateRoom(io, code);
       } catch (err: any) {
-        socket.emit("error", { message: err.message });
+        socket.emit("error", { message: err?.message ?? "Could not create room" });
       }
     });
 
-    socket.on("room:startWithBots", ({ code }: { code: string }) => {
+    socket.on("room:join", (data?: { code?: string }) => {
       try {
-        const group = matchmaking.startRoomWithBots(code.toUpperCase(), "hard");
+        const code = typeof data?.code === "string" ? data.code.trim().toUpperCase() : "";
+        if (!code) throw new Error("Enter a room code");
+        if (code.length !== 6) throw new Error("Room code must be 6 characters");
+
+        const group = matchmaking.joinPrivateRoom(code, {
+          userId,
+          username: socket.user!.username,
+          socketId: socket.id,
+          mmr: 0,
+        });
+        socket.emit("room:joined", { code });
+        if (group) {
+          startMatch(io, matchmaking.toSeats(group), "private");
+        } else {
+          broadcastPrivateRoom(io, code);
+        }
+      } catch (err: any) {
+        socket.emit("error", { message: err?.message ?? "Could not join room" });
+      }
+    });
+
+    socket.on("room:startWithBots", (data?: { code?: string }) => {
+      try {
+        const code = typeof data?.code === "string" ? data.code.trim().toUpperCase() : "";
+        if (!code) throw new Error("Create or join a room first");
+        const group = matchmaking.startRoomWithBots(code, "hard", userId);
         if (group) startMatch(io, matchmaking.toSeats(group), "private");
       } catch (err: any) {
-        socket.emit("error", { message: err.message });
+        socket.emit("error", { message: err?.message ?? "Could not start room" });
       }
     });
 
@@ -321,6 +336,9 @@ export function registerGameSockets(io: Server) {
     socket.on("disconnect", () => {
       onlineUsers.delete(userId);
       matchmaking.removeFromQueue(userId);
+      for (const changedRoom of matchmaking.removeFromPrivateRooms(userId)) {
+        broadcastPrivateRoom(io, changedRoom.code, changedRoom.players);
+      }
       broadcastFriendStatus(io, userId, "offline");
       
       const partyId = matchmaking.leaveParty(userId);
@@ -364,6 +382,28 @@ export function registerGameSockets(io: Server) {
       disconnectGraceTimers.set(userId, graceTimer);
     });
   });
+}
+
+function broadcastPrivateRoom(
+  io: Server,
+  code: string,
+  knownPlayers?: Array<{ userId: string; username: string }>,
+) {
+  const players = knownPlayers ?? matchmaking.getPrivateRoom(code);
+  if (!players || players.length === 0) return;
+
+  const update = {
+    code,
+    players: players.map((player) => ({
+      userId: player.userId,
+      username: player.username,
+    })),
+    playerCount: players.length,
+    capacity: 4,
+  };
+  for (const player of players) {
+    io.to(`user:${player.userId}`).emit("room:updated", update);
+  }
 }
 
 function startMatch(io: Server, players: PlayerSeat[], mode: MatchMode) {
