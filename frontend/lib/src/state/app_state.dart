@@ -212,6 +212,7 @@ class AppState extends ChangeNotifier {
       onMatchState: _onMatchState,
       onMatchCreated: _onMatchCreated,
       onQueueJoined: _onQueueJoined,
+      onQueueCancelled: _onQueueCancelled,
       onRoomCreated: _onRoomCreated,
       onRoomJoined: _onRoomJoined,
       onRoomUpdated: _onRoomUpdated,
@@ -251,6 +252,15 @@ class AppState extends ChangeNotifier {
 
   void _onQueueJoined(Map<String, dynamic> _) {
     lobbyStatus = LobbyStatus.queuing;
+    notifyListeners();
+  }
+
+  void _onQueueCancelled(Map<String, dynamic> _) {
+    // The server also notifies party members when one member cancels the
+    // shared search. Avoid touching a real match if a late event arrives.
+    if (lobbyStatus != LobbyStatus.queuing) return;
+    match = null;
+    lobbyStatus = LobbyStatus.idle;
     notifyListeners();
   }
 
