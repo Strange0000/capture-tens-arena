@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
+import 'lobby_screen.dart' show showFriendsPicker;
 
 class MatchmakingScreen extends StatefulWidget {
   const MatchmakingScreen({super.key});
@@ -17,6 +18,7 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
   late final AnimationController _searchCtrl;
   int _elapsedSeconds = 0;
   bool _navigationTriggered = false;
+  final TextEditingController _friendUsernameController = TextEditingController();
 
   @override
   void initState() {
@@ -45,6 +47,7 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
     _pulseCtrl.dispose();
     _rotateCtrl.dispose();
     _searchCtrl.dispose();
+    _friendUsernameController.dispose();
     super.dispose();
   }
 
@@ -54,10 +57,69 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
+  void _showPartyInviteDialog(AppState app) {
+    final invite = app.pendingPartyInvite;
+    if (invite == null) return;
+    app.pendingPartyInvite = null;
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF101826),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: const Text('Duo invite', style: TextStyle(color: Colors.white)),
+        content: Text('${invite['from'] ?? 'A friend'} invited you to form a ranked duo.',
+          style: const TextStyle(color: Colors.white70, height: 1.5)),
+        actions: [
+          TextButton(onPressed: () { app.declinePartyInvite(); Navigator.pop(dialogContext); }, child: const Text('Not now')),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFFC857), foregroundColor: const Color(0xFF1C1608)),
+            onPressed: () { app.acceptPartyInvite(invite['partyId']?.toString()); Navigator.pop(dialogContext); },
+            icon: const Icon(Icons.people_alt_rounded), label: const Text('Join duo'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRoomInviteDialog(AppState app) {
+    final invite = app.pendingRoomInvite;
+    if (invite == null) return;
+    app.pendingRoomInvite = null;
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF101826),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: const Text('Private room invite', style: TextStyle(color: Colors.white)),
+        content: Text('${invite['from'] ?? 'A friend'} invited you to room ${invite['code'] ?? ''}. Joining will leave your current search.',
+          style: const TextStyle(color: Colors.white70, height: 1.5)),
+        actions: [
+          TextButton(onPressed: () { app.declineRoomInvite(); Navigator.pop(dialogContext); }, child: const Text('Not now')),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFB388FF), foregroundColor: const Color(0xFF160D27)),
+            onPressed: () { app.acceptRoomInvite(invite['code']?.toString()); Navigator.pop(dialogContext); },
+            icon: const Icon(Icons.login_rounded), label: const Text('Join room'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final isCustom = app.roomCode != null || app.match?.mode == 'private';
+
+    if (app.pendingPartyInvite != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showPartyInviteDialog(app);
+      });
+    }
+    if (app.pendingRoomInvite != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showRoomInviteDialog(app);
+      });
+    }
 
     // Auto-redirect to login if not logged in
     if (!app.isLoggedIn) {
@@ -229,6 +291,26 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
                     _DotLoader(),
 
                     const SizedBox(height: 32),
+
+                    // Invite a teammate while searching. The backend cancels this
+                    // queue before the invited duo can start a fresh ranked search.
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: const Color(0xFFB388FF).withOpacity(0.65)),
+                        foregroundColor: const Color(0xFFD4C0FF),
+                        padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 13),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: isCustom ? null : () => showFriendsPicker(
+                        context,
+                        controller: _friendUsernameController,
+                        subtitle: 'Invite an accepted friend to form a duo. Ranked search pauses while you build your team.',
+                        onInvite: app.inviteToParty,
+                      ),
+                      icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+                      label: const Text('Invite teammate', style: TextStyle(fontWeight: FontWeight.w800)),
+                    ),
+                    const SizedBox(height: 12),
 
                     // Cancel button
                     OutlinedButton.icon(
