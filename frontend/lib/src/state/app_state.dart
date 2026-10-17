@@ -237,6 +237,7 @@ class AppState extends ChangeNotifier {
       onRoomJoined: _onRoomJoined,
       onRoomUpdated: _onRoomUpdated,
       onRoomInvited: _onRoomInvited,
+      onRoomLeft: _onRoomLeft,
       onPartyUpdated: _onPartyUpdated,
       onPartyInvited: _onPartyInvited,
       onRankUpdated: _onRankUpdated,
@@ -333,6 +334,15 @@ class AppState extends ChangeNotifier {
 
   void _onRoomInvited(Map<String, dynamic> json) {
     pendingRoomInvite = json;
+    notifyListeners();
+  }
+
+  void _onRoomLeft(Map<String, dynamic> _) {
+    roomCode = null;
+    roomPlayerNames = [];
+    roomPlayerCount = 1;
+    roomCapacity = 4;
+    if (lobbyStatus == LobbyStatus.inRoom) lobbyStatus = LobbyStatus.idle;
     notifyListeners();
   }
 
@@ -647,7 +657,16 @@ class AppState extends ChangeNotifier {
   }
 
   void joinRoom(String code) {
-    socket.joinRoom(code);
+    final normalized = code.trim().toUpperCase();
+    if (roomCode != null && roomCode != normalized && lobbyStatus == LobbyStatus.inRoom) {
+      socket.leaveRoom();
+      roomCode = null;
+      roomPlayerNames = [];
+      roomPlayerCount = 1;
+      roomCapacity = 4;
+      lobbyStatus = LobbyStatus.idle;
+    }
+    socket.joinRoom(normalized);
   }
 
   void startRoomWithBots() {
