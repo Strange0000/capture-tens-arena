@@ -236,6 +236,7 @@ class AppState extends ChangeNotifier {
       onPartyInvited: _onPartyInvited,
       onRankUpdated: _onRankUpdated,
       onFriendStatus: _onFriendStatus,
+      onFriendsChanged: _onFriendsChanged,
       onEmoteReceived: _onEmoteReceived,
       onAchievementUnlocked: _onAchievementUnlocked,
       onPlayerBotReplaced: _onPlayerBotReplaced,
@@ -341,6 +342,15 @@ class AppState extends ChangeNotifier {
     if (fUserId != null && status != null) {
       friendOnlineStatus[fUserId] = status == 'online';
       notifyListeners();
+    }
+  }
+
+  void _onFriendsChanged(Map<String, dynamic> _) {
+    // Requests and accept/remove actions are initiated over HTTP, but notify
+    // connected clients over Socket.IO so their list stays current in real time.
+    fetchFriends();
+    if (friendSearchQuery.length >= 2) {
+      searchFriends(friendSearchQuery);
     }
   }
 
