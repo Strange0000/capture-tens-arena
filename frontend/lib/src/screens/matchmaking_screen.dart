@@ -110,6 +110,21 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
     final app = context.watch<AppState>();
     final isCustom = app.roomCode != null || app.match?.mode == 'private';
 
+    if (app.errorMessage != null) {
+      final message = app.errorMessage!;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        app.clearError();
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.redAccent.shade700,
+            behavior: SnackBarBehavior.floating,
+          ));
+      });
+    }
+
     if (app.pendingPartyInvite != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _showPartyInviteDialog(app);
