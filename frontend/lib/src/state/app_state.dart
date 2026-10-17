@@ -70,6 +70,13 @@ class AppState extends ChangeNotifier {
 
   // Friends & Party
   List<Map<String, dynamic>> friends = [];
+  List<Map<String, dynamic>> friendSearchResults = [];
+  bool friendsLoading = false;
+  bool friendSearchLoading = false;
+  String? friendsError;
+  String? friendSearchError;
+  String? friendActionError;
+  int _friendSearchGeneration = 0;
   Map<String, bool> friendOnlineStatus = {}; // userId -> online
   List<dynamic>? party; // null if not in party
   Map<String, dynamic>? pendingPartyInvite;
@@ -415,48 +422,102 @@ class AppState extends ChangeNotifier {
 
   Future<void> fetchFriends() async {
     if (token == null) return;
+    friendsLoading = true;
+    friendsError = null;
+    notifyListeners();
     try {
       friends = await auth.fetchFriends(token!);
-      notifyListeners();
-    } catch (_) {
-      // Silently ignore — friends list is non-critical
-      friends = [];
-    }
-  }
-
-  Future<void> sendFriendRequest(String targetUsername) async {
-    if (token == null) return;
-    try {
-      await auth.sendFriendRequest(token!, targetUsername);
-      await fetchFriends();
     } catch (e) {
-      errorMessage = e.toString().replaceFirst('Exception: ', '');
+      friendsError = e.toString().replaceFirst("Exception: ", "");
+    } finally {
+      friendsLoading = false;
       notifyListeners();
     }
   }
 
-  Future<void> acceptFriendRequest(String friendId) async {
-    if (token == null) return;
+  Future<void> searchFriends(String query) async {
+    final q = query.trim();
+    final generation = ++_friendSearchGeneration;
+    friendSearchError = null;
+    if (q.length < 2) {
+      friendSearchResults = [];
+      friendSearchLoading = false;
+      notifyListeners();
+      return;
+    }
+    friendSearchLoading = true;
+    notifyListeners();
+    try {
+      final results = await auth.searchUsers(token!, q);
+      // Drop stale responses when someone keeps typing.
+      if (generation != _friendSearchGeneration) return;
+      friendSearchResults = results;
+    } catch (e) {
+      if (generation != _friendSearchGeneration) return;
+      friendSearchResults = [];
+      friendSearchError = e.toString().replaceFirst("Exception: ", "");
+    } finally {
+      if (generation == _friendSearchGeneration) {
+        friendSearchLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<bool> sendFriendRequest(String targetUsername) async {
+    if (token == null) return false;
+    friendActionError = null;
+    try {
+      await auth.sendFriendRequest(token!, targetUsername.trim());
+      await fetchFriends();
+      await _refreshFriendSearchIfNeeded();
+      return true;
+    } catch (e) {
+      friendActionError = e.toString().replaceFirst("Exception: ", "");
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> acceptFriendRequest(String friendId) async {
+    if (token == null) return false;
+    friendActionError = null;
     try {
       await auth.acceptFriendRequest(token!, friendId);
       await fetchFriends();
+      await _refreshFriendSearchIfNeeded();
+      return true;
     } catch (e) {
-      errorMessage = e.toString().replaceFirst('Exception: ', '');
+      friendActionError = e.toString().replaceFirst("Exception: ", "");
       notifyListeners();
+      return false;
     }
   }
 
-  Future<void> removeFriend(String friendId) async {
-    if (token == null) return;
+  Future<bool> removeFriend(String friendId) async {
+    if (token == null) return false;
+    friendActionError = null;
     try {
       await auth.removeFriend(token!, friendId);
       await fetchFriends();
+      await _refreshFriendSearchIfNeeded();
+      return true;
     } catch (e) {
-      errorMessage = e.toString().replaceFirst('Exception: ', '');
+      friendActionError = e.toString().replaceFirst("Exception: ", "");
       notifyListeners();
+      return false;
     }
   }
 
+  Future<void> _refreshFriendSearchIfNeeded() async {
+    // Re-run the current query so action labels update immediately.
+    if (friendSearchResults.isEmpty) return;
+    final currentQuery = friendSearchResults.map((u) => u["username"]).whereType<String>().join(" ");
+    // The UI normally calls searchFriends after its own actions; avoid inventing
+    // a query from result data here. Just invalidate stale search relationships.
+    friendSearchResults = [];
+    friendSearchError = null;
+  }
   void inviteToParty(String targetUserId) {
     socket.inviteToParty(targetUserId);
   }
