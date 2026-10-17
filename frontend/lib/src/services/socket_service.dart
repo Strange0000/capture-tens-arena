@@ -23,6 +23,7 @@ class SocketService {
     required VoidJsonCallback onPartyInvited,
     required VoidJsonCallback onRankUpdated,
     required VoidJsonCallback onFriendStatus,
+    required VoidJsonCallback onFriendsChanged,
     required VoidJsonCallback onEmoteReceived,
     required VoidJsonCallback onAchievementUnlocked,
     required VoidJsonCallback onPlayerBotReplaced,
@@ -75,6 +76,7 @@ class SocketService {
       ..on('party:invited', (data) => onPartyInvited(_asMap(data)))
       ..on('rank:updated', (data) => onRankUpdated(_asMap(data)))
       ..on('friend:status', (data) => onFriendStatus(_asMap(data)))
+      ..on('friends:changed', (data) => onFriendsChanged(_asMap(data)))
       ..on('emote:received', (data) => onEmoteReceived(_asMap(data)))
       ..on('achievements:unlocked', (data) => onAchievementUnlocked(_asMap(data)))
       ..on('match:playerBotReplaced', (data) => onPlayerBotReplaced(_asMap(data)))

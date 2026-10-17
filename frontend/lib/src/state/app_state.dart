@@ -70,6 +70,14 @@ class AppState extends ChangeNotifier {
 
   // Friends & Party
   List<Map<String, dynamic>> friends = [];
+  List<Map<String, dynamic>> friendSearchResults = [];
+  bool friendsLoading = false;
+  bool friendSearchLoading = false;
+  String friendSearchQuery = "";
+  String? friendsError;
+  String? friendSearchError;
+  String? friendActionError;
+  int _friendSearchGeneration = 0;
   Map<String, bool> friendOnlineStatus = {}; // userId -> online
   List<dynamic>? party; // null if not in party
   Map<String, dynamic>? pendingPartyInvite;
@@ -196,6 +204,14 @@ class AppState extends ChangeNotifier {
     rankInfo = null;
     lastRankUpdate = null;
     friends = [];
+    friendSearchResults = [];
+    friendSearchQuery = "";
+    friendsLoading = false;
+    friendSearchLoading = false;
+    friendsError = null;
+    friendSearchError = null;
+    friendActionError = null;
+    _friendSearchGeneration++;
     friendOnlineStatus = {};
     party = null;
     cachedUsername = null;
@@ -220,6 +236,7 @@ class AppState extends ChangeNotifier {
       onPartyInvited: _onPartyInvited,
       onRankUpdated: _onRankUpdated,
       onFriendStatus: _onFriendStatus,
+      onFriendsChanged: _onFriendsChanged,
       onEmoteReceived: _onEmoteReceived,
       onAchievementUnlocked: _onAchievementUnlocked,
       onPlayerBotReplaced: _onPlayerBotReplaced,
@@ -328,6 +345,15 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  void _onFriendsChanged(Map<String, dynamic> _) {
+    // Requests and accept/remove actions are initiated over HTTP, but notify
+    // connected clients over Socket.IO so their list stays current in real time.
+    fetchFriends();
+    if (friendSearchQuery.length >= 2) {
+      searchFriends(friendSearchQuery);
+    }
+  }
+
   void _onError(String msg) {
     errorMessage = msg;
     if (msg.contains('Invalid auth token') || msg.contains('Missing auth token')) {
@@ -414,49 +440,122 @@ class AppState extends ChangeNotifier {
   // ── Friends & Party ──────────────────────────────────────────────────────
 
   Future<void> fetchFriends() async {
-    if (token == null) return;
+    final sessionToken = token;
+    if (sessionToken == null) return;
+    friendsLoading = true;
+    friendsError = null;
+    notifyListeners();
     try {
-      friends = await auth.fetchFriends(token!);
-      notifyListeners();
-    } catch (_) {
-      // Silently ignore — friends list is non-critical
-      friends = [];
-    }
-  }
-
-  Future<void> sendFriendRequest(String targetUsername) async {
-    if (token == null) return;
-    try {
-      await auth.sendFriendRequest(token!, targetUsername);
-      await fetchFriends();
+      final loadedFriends = await auth.fetchFriends(sessionToken);
+      if (token != sessionToken) return;
+      friends = loadedFriends;
     } catch (e) {
-      errorMessage = e.toString().replaceFirst('Exception: ', '');
-      notifyListeners();
+      if (token != sessionToken) return;
+      friendsError = e.toString().replaceFirst("Exception: ", "");
+    } finally {
+      if (token == sessionToken) {
+        friendsLoading = false;
+        notifyListeners();
+      }
     }
   }
 
-  Future<void> acceptFriendRequest(String friendId) async {
-    if (token == null) return;
+  Future<void> searchFriends(String query) async {
+    final q = query.trim();
+    friendSearchQuery = q;
+    final generation = ++_friendSearchGeneration;
+    if (token == null) {
+      friendSearchResults = [];
+      friendSearchLoading = false;
+      friendSearchError = "Sign in to search for players";
+      notifyListeners();
+      return;
+    }
+    friendSearchError = null;
+    if (q.length < 2) {
+      friendSearchResults = [];
+      friendSearchLoading = false;
+      notifyListeners();
+      return;
+    }
+    friendSearchLoading = true;
+    notifyListeners();
     try {
-      await auth.acceptFriendRequest(token!, friendId);
-      await fetchFriends();
+      final results = await auth.searchUsers(token!, q);
+      // Drop stale responses when someone keeps typing.
+      if (generation != _friendSearchGeneration) return;
+      friendSearchResults = results;
     } catch (e) {
-      errorMessage = e.toString().replaceFirst('Exception: ', '');
-      notifyListeners();
+      if (generation != _friendSearchGeneration) return;
+      friendSearchResults = [];
+      friendSearchError = e.toString().replaceFirst("Exception: ", "");
+    } finally {
+      if (generation == _friendSearchGeneration) {
+        friendSearchLoading = false;
+        notifyListeners();
+      }
     }
   }
 
-  Future<void> removeFriend(String friendId) async {
-    if (token == null) return;
+  Future<bool> sendFriendRequest(String targetUsername) async {
+    final sessionToken = token;
+    if (sessionToken == null) return false;
+    friendActionError = null;
     try {
-      await auth.removeFriend(token!, friendId);
+      await auth.sendFriendRequest(sessionToken, targetUsername.trim());
+      if (token != sessionToken) return false;
       await fetchFriends();
+      await _refreshFriendSearchIfNeeded();
+      return true;
     } catch (e) {
-      errorMessage = e.toString().replaceFirst('Exception: ', '');
+      friendActionError = e.toString().replaceFirst("Exception: ", "");
       notifyListeners();
+      return false;
     }
   }
 
+  Future<bool> acceptFriendRequest(String friendId) async {
+    final sessionToken = token;
+    if (sessionToken == null) return false;
+    friendActionError = null;
+    try {
+      await auth.acceptFriendRequest(sessionToken, friendId);
+      if (token != sessionToken) return false;
+      await fetchFriends();
+      await _refreshFriendSearchIfNeeded();
+      return true;
+    } catch (e) {
+      friendActionError = e.toString().replaceFirst("Exception: ", "");
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> removeFriend(String friendId) async {
+    final sessionToken = token;
+    if (sessionToken == null) return false;
+    friendActionError = null;
+    try {
+      await auth.removeFriend(sessionToken, friendId);
+      if (token != sessionToken) return false;
+      await fetchFriends();
+      await _refreshFriendSearchIfNeeded();
+      return true;
+    } catch (e) {
+      friendActionError = e.toString().replaceFirst("Exception: ", "");
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> _refreshFriendSearchIfNeeded() async {
+    if (friendSearchQuery.length >= 2) {
+      await searchFriends(friendSearchQuery);
+    } else {
+      friendSearchResults = [];
+      friendSearchError = null;
+    }
+  }
   void inviteToParty(String targetUserId) {
     socket.inviteToParty(targetUserId);
   }
