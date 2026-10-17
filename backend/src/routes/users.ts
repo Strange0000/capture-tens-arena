@@ -8,6 +8,7 @@ import { env } from "../config/env.js";
 import { rankForMmr, TIERS } from "../services/rankingService.js";
 import { AchievementModel } from "../models/Achievement.js";
 import { ACHIEVEMENTS } from "../game/achievements.js";
+import { classifyFriendRequest, friendshipPairKey } from "../services/friendshipService.js";
 
 export const usersRouter = Router();
 
@@ -179,16 +180,21 @@ usersRouter.post("/friends/request", requireAuth, async (req, res, next) => {
     if (target.id === req.user!.id) return res.status(400).json({ error: "You cannot add yourself as a friend" });
     const requesterId = req.user!.id;
     const addresseeId = target.id;
-    const pairKey = [requesterId, addresseeId].sort().join(":");
+    const pairKey = friendshipPairKey(requesterId, addresseeId);
     const findPair = () => FriendModel.findOne({ $or: [
       { requesterId, addresseeId },
       { requesterId: addresseeId, addresseeId: requesterId },
       { pairKey },
     ] });
     let existing = await findPair();
-    if (existing?.status === "accepted") return res.status(409).json({ error: "You are already friends" });
-    if (existing?.status === "blocked") return res.status(403).json({ error: "This friendship is blocked and cannot receive requests" });
-    if (existing?.status === "pending" && existing.requesterId.toString() === addresseeId && existing.addresseeId.toString() === requesterId) {
+    const requestAction = classifyFriendRequest(existing ? {
+      status: existing.status,
+      requesterId: existing.requesterId.toString(),
+      addresseeId: existing.addresseeId.toString(),
+    } : null, requesterId, addresseeId);
+    if (requestAction === "already-friends") return res.status(409).json({ error: "You are already friends" });
+    if (requestAction === "blocked") return res.status(403).json({ error: "This friendship is blocked and cannot receive requests" });
+    if (requestAction === "accept-incoming") {
       const accepted = await FriendModel.findOneAndUpdate({ _id: existing._id, status: "pending", addresseeId: requesterId }, { $set: { status: "accepted" } }, { new: true });
       if (accepted) {
         await incrementFriendCounts(accepted.requesterId.toString(), accepted.addresseeId.toString());
@@ -197,16 +203,21 @@ usersRouter.post("/friends/request", requireAuth, async (req, res, next) => {
       existing = await findPair();
       if (existing?.status === "accepted") return res.status(409).json({ error: "You are already friends" });
     }
-    if (existing?.status === "pending") return res.status(409).json({ error: "Friend request already sent" });
+    if (requestAction === "already-sent") return res.status(409).json({ error: "Friend request already sent" });
     try {
       const friend = await FriendModel.create({ requesterId, addresseeId, pairKey, status: "pending" });
       return res.status(201).json({ success: true, status: "pending", message: "Friend request sent to " + target.username, friend });
     } catch (error: any) {
       if (error?.code !== 11000) throw error;
       existing = await findPair();
-      if (existing?.status === "accepted") return res.status(409).json({ error: "You are already friends" });
-      if (existing?.status === "blocked") return res.status(403).json({ error: "This friendship is blocked and cannot receive requests" });
-      if (existing?.status === "pending" && existing.requesterId.toString() === addresseeId && existing.addresseeId.toString() === requesterId) {
+      const racedAction = classifyFriendRequest(existing ? {
+        status: existing.status,
+        requesterId: existing.requesterId.toString(),
+        addresseeId: existing.addresseeId.toString(),
+      } : null, requesterId, addresseeId);
+      if (racedAction === "already-friends") return res.status(409).json({ error: "You are already friends" });
+      if (racedAction === "blocked") return res.status(403).json({ error: "This friendship is blocked and cannot receive requests" });
+      if (racedAction === "accept-incoming") {
         const accepted = await FriendModel.findOneAndUpdate({ _id: existing._id, status: "pending", addresseeId: requesterId }, { $set: { status: "accepted" } }, { new: true });
         if (accepted) {
           await incrementFriendCounts(accepted.requesterId.toString(), accepted.addresseeId.toString());
