@@ -355,55 +355,76 @@ class _LobbyScreenState extends State<LobbyScreen>
   }
 
   Widget _buildGamePortals(BuildContext context, AppState app) {
+    final portals = <Widget>[
+      _GamePortalCard(
+        themeColor: const Color(0xFFFFC857),
+        badgeTag: 'COMPETITIVE 2v2',
+        title: 'Ranked Match',
+        subtitle: 'Climb competitive tiers and earn seasonal MMR points',
+        icon: Icons.military_tech_rounded,
+        perks: const ['⚡ +25 MMR / Win', '🏆 Tier Leaderboard', '👥 2v2 Teams'],
+        ctaText: 'PLAY RANKED',
+        onTap: () {
+          app.queueRanked();
+          Navigator.pushNamed(context, '/matchmaking');
+        },
+      ),
+      _GamePortalCard(
+        themeColor: const Color(0xFF48E5C2),
+        badgeTag: 'SOLO PRACTICE',
+        title: 'Bot Practice',
+        subtitle: 'Hone your strategy against advanced neural AI bots',
+        icon: Icons.smart_toy_rounded,
+        perks: const ['🤖 Hard AI', '⚡ Instant Match', '🎯 Risk Free'],
+        ctaText: 'PLAY PRACTICE',
+        onTap: () {
+          app.startOffline('hard');
+          Navigator.pushNamed(context, '/game');
+        },
+      ),
+      _GamePortalCard(
+        themeColor: const Color(0xFFB388FF),
+        badgeTag: 'CUSTOM ROOM',
+        title: 'Private Room',
+        subtitle: 'Create a private table, invite friends, or join with a code',
+        icon: Icons.group_add_rounded,
+        perks: const ['🔒 Invite Only', '👥 Play with Friends', '🤖 Fill with Bots'],
+        ctaText: _showRoomPanel ? 'HIDE ROOM PANEL' : 'HOST OR JOIN ROOM',
+        onTap: () => setState(() => _showRoomPanel = !_showRoomPanel),
+      ),
+    ];
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ── Ranked Match Portal ─────────────────────────────────────────────
-        _GamePortalCard(
-          themeColor: const Color(0xFFFFC857),
-          badgeTag: 'COMPETITIVE 2v2',
-          title: 'Ranked Match',
-          subtitle: 'Climb competitive tiers and earn seasonal MMR points',
-          icon: Icons.military_tech_rounded,
-          perks: const ['⚡ +25 MMR / Win', '🏆 Tier Leaderboard', '👥 2v2 Teams'],
-          ctaText: 'PLAY RANKED',
-          onTap: () {
-            app.queueRanked();
-            Navigator.pushNamed(context, '/matchmaking');
-          },
-        ),
-        const SizedBox(height: 16),
-
-        // ── Bot Match Portal ────────────────────────────────────────────────
-        _GamePortalCard(
-          themeColor: const Color(0xFF48E5C2),
-          badgeTag: 'SOLO PRACTICE',
-          title: 'Bot Practice',
-          subtitle: 'Hone your strategy against advanced neural AI bots',
-          icon: Icons.smart_toy_rounded,
-          perks: const ['🤖 Hard AI', '⚡ Instant Match', '🎯 Risk Free'],
-          ctaText: 'PLAY PRACTICE',
-          onTap: () {
-            app.startOffline('hard');
-            Navigator.pushNamed(context, '/game');
-          },
-        ),
-        const SizedBox(height: 16),
-
-        // ── Private Custom Room Portal ──────────────────────────────────────
-        _GamePortalCard(
-          themeColor: const Color(0xFFB388FF),
-          badgeTag: 'CUSTOM ROOM',
-          title: 'Private Room',
-          subtitle: 'Create a private salon with custom codes for friends or bots',
-          icon: Icons.group_add_rounded,
-          perks: const ['🔒 Private Code', '👥 Custom Squads', '🤖 Fill with Bots'],
-          ctaText: _showRoomPanel ? 'HIDE ROOM PANEL' : 'HOST OR JOIN ROOM',
-          onTap: () {
-            setState(() => _showRoomPanel = !_showRoomPanel);
+        LayoutBuilder(
+          builder: (context, constraints) {
+            // Keep cards full-width on mobile/tablet, then use a balanced
+            // two-column portal grid when the game area has enough space.
+            if (constraints.maxWidth < 820) {
+              return Column(
+                children: [
+                  portals[0],
+                  const SizedBox(height: 14),
+                  portals[1],
+                  const SizedBox(height: 14),
+                  portals[2],
+                ],
+              );
+            }
+            return GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 16,
+              childAspectRatio: constraints.maxWidth >= 1000 ? 2.05 : 1.5,
+              children: portals,
+            );
           },
         ),
 
-        // Custom room drawer
+        // The join/create controls expand beneath the private-room card.
         AnimatedSize(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOutCubic,
@@ -415,17 +436,228 @@ class _LobbyScreenState extends State<LobbyScreen>
                     onCreate: () => app.createRoom(),
                     onJoin: () {
                       final code = _roomCodeController.text.trim();
-                      if (code.isEmpty) return;
+                      if (code.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Enter a room code first')),
+                        );
+                        return;
+                      }
                       app.joinRoom(code);
                     },
                   ),
                 )
               : const SizedBox.shrink(),
         ),
+        const SizedBox(height: 16),
+        _buildSocialPreview(context, app),
       ],
     );
   }
 
+  Widget _buildSocialPreview(BuildContext context, AppState app) {
+    final accepted = app.friends.where((f) => f['status'] == 'accepted').toList();
+    final roomInviteMode =
+        app.lobbyStatus == LobbyStatus.inRoom && app.roomCode != null;
+    bool isOnline(Map<String, dynamic> friend) {
+      final rawUser = friend['user'];
+      final user = rawUser is Map
+          ? Map<String, dynamic>.from(rawUser)
+          : <String, dynamic>{};
+      final id = user['id']?.toString() ?? '';
+      return user['status'] == 'online' || app.friendOnlineStatus[id] == true;
+    }
+
+    final online = accepted.where(isOnline).toList();
+
+    return GlassPanel(
+      borderRadius: 20,
+      padding: const EdgeInsets.all(16),
+      backgroundColor: const Color(0xFF10182E).withOpacity(0.7),
+      border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.18)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF48E5C2).withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.people_alt_rounded,
+                    color: Color(0xFF48E5C2), size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('FRIENDS AT THE TABLE',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 12,
+                          letterSpacing: 1.2,
+                        )),
+                    const SizedBox(height: 3),
+                    Text(
+                      accepted.isEmpty
+                          ? 'Build your circle and play together.'
+                          : '${online.length} online · ${accepted.length} friends',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.48),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => _showFriendsSheet(context),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF48E5C2),
+                ),
+                icon: const Icon(Icons.person_add_alt_1_rounded, size: 16),
+                label: const Text('Find friends'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (accepted.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.025),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withOpacity(0.06)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.sports_esports_rounded,
+                      color: Color(0xFFB388FF), size: 20),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Invite a friend to form a duo for ranked or host a private room.',
+                      style: TextStyle(
+                        color: Colors.white60,
+                        fontSize: 12,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: accepted.take(6).map((friend) {
+                final rawUser = friend['user'];
+                final user = rawUser is Map
+                    ? Map<String, dynamic>.from(rawUser)
+                    : <String, dynamic>{};
+                final name = user['username']?.toString() ?? 'Player';
+                final id = user['id']?.toString() ?? '';
+                final onlineNow = isOnline(friend);
+                return Container(
+                  constraints: const BoxConstraints(minWidth: 150, maxWidth: 230),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.035),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.white.withOpacity(0.07)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Stack(
+                        children: [
+                          CircleAvatar(
+                            radius: 15,
+                            backgroundColor:
+                                const Color(0xFF48E5C2).withOpacity(0.15),
+                            child: Text(
+                              name.isEmpty ? '?' : name[0].toUpperCase(),
+                              style: const TextStyle(
+                                color: Color(0xFF48E5C2),
+                                fontWeight: FontWeight.w900,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                          if (onlineNow)
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: Container(
+                                width: 9,
+                                height: 9,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF48E5C2),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                      color: const Color(0xFF10182E), width: 1.5),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 11,
+                                )),
+                            Text(
+                              onlineNow ? 'Online' : 'Offline',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: onlineNow
+                                    ? const Color(0xFF48E5C2)
+                                    : Colors.white38,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: roomInviteMode ? 'Invite to room' : 'Invite to party',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+                        onPressed: id.isEmpty
+                            ? null
+                            : () {
+                                if (roomInviteMode) {
+                                  app.inviteToRoom(id, app.roomCode!);
+                                } else {
+                                  app.inviteToParty(id);
+                                }
+                              },
+                        icon: const Icon(Icons.send_rounded,
+                            size: 14, color: Color(0xFFB388FF)),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+        ],
+      ),
+    );
+  }
 
   void _showRulesSheet(BuildContext context) {
     showModalBottomSheet(
