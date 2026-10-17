@@ -477,8 +477,21 @@ class AppState extends ChangeNotifier {
 
   void queueRanked() {
     print('[AppState] queueRanked called, socket connected=${socket.connected}');
+    // Clear old local match state before starting a fresh search.
+    match = null;
+    _leftMatchId = null;
     socket.queueRanked(mmr: rankInfo?.mmr ?? 0);
     lobbyStatus = LobbyStatus.queuing;
+    notifyListeners();
+  }
+
+  /// Cancels ranked matchmaking without sending a match-leave event or
+  /// requiring the screen to perform its own second navigation pop.
+  void cancelRankedQueue() {
+    socket.cancelRankedQueue();
+    match = null;
+    lobbyStatus = LobbyStatus.idle;
+    errorMessage = null;
     notifyListeners();
   }
 
@@ -518,6 +531,8 @@ class AppState extends ChangeNotifier {
   /// Called when player returns to home after a completed match.
   void leaveMatch() {
     _leftMatchId = match?.id; // Remember so we ignore stale server updates
+    // Explicitly cancel any ranked search as well as marking a match leave.
+    socket.cancelRankedQueue();
     socket.leaveMatch();
     match = null;
     lastRankUpdate = null;
