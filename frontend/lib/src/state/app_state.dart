@@ -204,6 +204,14 @@ class AppState extends ChangeNotifier {
     rankInfo = null;
     lastRankUpdate = null;
     friends = [];
+    friendSearchResults = [];
+    friendSearchQuery = "";
+    friendsLoading = false;
+    friendSearchLoading = false;
+    friendsError = null;
+    friendSearchError = null;
+    friendActionError = null;
+    _friendSearchGeneration++;
     friendOnlineStatus = {};
     party = null;
     cachedUsername = null;
