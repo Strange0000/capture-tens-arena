@@ -57,6 +57,9 @@ class AppState extends ChangeNotifier {
   MatchState? match;
   LobbyStatus lobbyStatus = LobbyStatus.idle;
   String? roomCode;
+  List<String> roomPlayerNames = [];
+  int roomPlayerCount = 1;
+  int roomCapacity = 4;
   String? errorMessage;
   String? _leftMatchId; // Track left match to ignore stale server updates
   
@@ -211,6 +214,7 @@ class AppState extends ChangeNotifier {
       onQueueJoined: _onQueueJoined,
       onRoomCreated: _onRoomCreated,
       onRoomJoined: _onRoomJoined,
+      onRoomUpdated: _onRoomUpdated,
       onPartyUpdated: _onPartyUpdated,
       onPartyInvited: _onPartyInvited,
       onRankUpdated: _onRankUpdated,
@@ -252,11 +256,35 @@ class AppState extends ChangeNotifier {
 
   void _onRoomCreated(Map<String, dynamic> json) {
     roomCode = json['code'] as String?;
+    roomPlayerNames = username == null ? [] : [username!];
+    roomPlayerCount = roomPlayerNames.length;
+    roomCapacity = 4;
     lobbyStatus = LobbyStatus.inRoom;
     notifyListeners();
   }
 
   void _onRoomJoined(Map<String, dynamic> json) {
+    // Joining clients must retain the code too, so they can start the room
+    // with bots and see the same room banner as its creator.
+    roomCode = json['code'] as String? ?? roomCode;
+    lobbyStatus = LobbyStatus.inRoom;
+    notifyListeners();
+  }
+
+  void _onRoomUpdated(Map<String, dynamic> json) {
+    final code = json['code'];
+    if (code is String && code.isNotEmpty) roomCode = code;
+
+    final rawPlayers = json['players'];
+    if (rawPlayers is List) {
+      roomPlayerNames = rawPlayers
+          .whereType<Map>()
+          .map((player) => player['username'])
+          .whereType<String>()
+          .toList(growable: false);
+    }
+    roomPlayerCount = (json['playerCount'] as num?)?.toInt() ?? roomPlayerNames.length;
+    roomCapacity = (json['capacity'] as num?)?.toInt() ?? 4;
     lobbyStatus = LobbyStatus.inRoom;
     notifyListeners();
   }
@@ -495,6 +523,9 @@ class AppState extends ChangeNotifier {
     lastRankUpdate = null;
     lobbyStatus = LobbyStatus.idle;
     roomCode = null;
+    roomPlayerNames = [];
+    roomPlayerCount = 1;
+    roomCapacity = 4;
     notifyListeners();
   }
 

@@ -17,6 +17,7 @@ class SocketService {
     required VoidJsonCallback onQueueJoined,
     required VoidJsonCallback onRoomCreated,
     required VoidJsonCallback onRoomJoined,
+    required VoidJsonCallback onRoomUpdated,
     required VoidJsonCallback onPartyUpdated,
     required VoidJsonCallback onPartyInvited,
     required VoidJsonCallback onRankUpdated,
@@ -67,6 +68,7 @@ class SocketService {
       ..on('queue:joined', (data) => onQueueJoined(_asMap(data)))
       ..on('room:created', (data) => onRoomCreated(_asMap(data)))
       ..on('room:joined', (data) => onRoomJoined(_asMap(data)))
+      ..on('room:updated', (data) => onRoomUpdated(_asMap(data)))
       ..on('party:updated', (data) => onPartyUpdated(_asMap(data)))
       ..on('party:invited', (data) => onPartyInvited(_asMap(data)))
       ..on('rank:updated', (data) => onRankUpdated(_asMap(data)))

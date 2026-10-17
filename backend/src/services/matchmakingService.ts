@@ -6,6 +6,8 @@ export interface QueuePlayer {
   username: string;
   socketId: string;
   mmr: number;
+  isBot?: boolean;
+  botDifficulty?: "easy" | "medium" | "hard";
 }
 
 export class MatchmakingService {
@@ -49,14 +51,26 @@ export class MatchmakingService {
 
   removeFromQueue(userId: string) {
     this.rankedQueue = this.rankedQueue.filter(p => !p.some(u => u.userId === userId));
+  }
+
+  removeFromPrivateRooms(userId: string): Array<{ code: string; players: QueuePlayer[] }> {
+    const changedRooms: Array<{ code: string; players: QueuePlayer[] }> = [];
     for (const [code, room] of this.rooms.entries()) {
-      const filtered = room.filter(u => u.userId !== userId);
+      const filtered = room.filter((player) => player.userId !== userId);
+      if (filtered.length === room.length) continue;
       if (filtered.length === 0) {
         this.rooms.delete(code);
       } else {
         this.rooms.set(code, filtered);
+        changedRooms.push({ code, players: [...filtered] });
       }
     }
+    return changedRooms;
+  }
+
+  getPrivateRoom(code: string): QueuePlayer[] | undefined {
+    const room = this.rooms.get(code.trim().toUpperCase());
+    return room ? [...room] : undefined;
   }
 
   isUserInRankedQueue(userId: string): boolean {
@@ -64,22 +78,63 @@ export class MatchmakingService {
   }
 
   createPrivateRoom(owner: QueuePlayer) {
-    const code = nanoid(6).toUpperCase();
+    // A player must not silently create multiple active rooms.
+    for (const [existingCode, members] of this.rooms.entries()) {
+      if (members.some((member) => member.userId === owner.userId)) {
+        throw new Error(`You already have an open room: ${existingCode}`);
+      }
+    }
+
+    // Avoid the (very unlikely) chance of overwriting an active room code.
+    let code = nanoid(6).toUpperCase();
+    while (this.rooms.has(code)) {
+      code = nanoid(6).toUpperCase();
+    }
     this.rooms.set(code, [owner]);
     return code;
   }
 
   joinPrivateRoom(code: string, player: QueuePlayer): QueuePlayer[] | undefined {
-    const room = this.rooms.get(code);
+    const normalizedCode = code.trim().toUpperCase();
+    const room = this.rooms.get(normalizedCode);
     if (!room) throw new Error("Room not found");
+
+    // Prevent one account occupying several seats through repeated clicks.
+    const existingPlayer = room.find((member) => member.userId === player.userId);
+    if (existingPlayer) {
+      existingPlayer.username = player.username;
+      existingPlayer.socketId = player.socketId;
+      return undefined;
+    }
+
+    // A player already waiting in a different room should leave it first.
+    const otherRoom = [...this.rooms.entries()].find(
+      ([roomCode, members]) => roomCode !== normalizedCode &&
+        members.some((member) => member.userId === player.userId),
+    );
+    if (otherRoom) throw new Error(`Leave room ${otherRoom[0]} before joining another room`);
+
     if (room.length >= 4) throw new Error("Room is full");
     room.push(player);
-    return room.length === 4 ? room : undefined;
+
+    if (room.length !== 4) return undefined;
+
+    // Consume the room once a four-player match is formed.
+    this.rooms.delete(normalizedCode);
+    return [...room];
   }
 
-  startRoomWithBots(code: string, difficulty: "easy" | "medium" | "hard" = "medium"): QueuePlayer[] {
-    const room = this.rooms.get(code);
+  startRoomWithBots(
+    code: string,
+    difficulty: "easy" | "medium" | "hard" = "medium",
+    requesterUserId?: string,
+  ): QueuePlayer[] {
+    const normalizedCode = code.trim().toUpperCase();
+    const room = this.rooms.get(normalizedCode);
     if (!room) throw new Error("Room not found");
+    if (requesterUserId && !room.some((player) => player.userId === requesterUserId)) {
+      throw new Error("Only a player in this room can start the match");
+    }
     const botNames = ["Vector", "Nova", "Cipher"];
     while (room.length < 4) {
       room.push({
@@ -88,11 +143,11 @@ export class MatchmakingService {
         socketId: "bot",
         mmr: 0,
         isBot: true,
-        botDifficulty: difficulty
-      } as any);
+        botDifficulty: difficulty,
+      });
     }
-    this.rooms.delete(code);
-    return room;
+    this.rooms.delete(normalizedCode);
+    return [...room];
   }
 
   createParty(owner: QueuePlayer) {
