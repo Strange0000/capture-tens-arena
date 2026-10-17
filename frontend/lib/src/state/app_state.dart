@@ -73,6 +73,7 @@ class AppState extends ChangeNotifier {
   List<Map<String, dynamic>> friendSearchResults = [];
   bool friendsLoading = false;
   bool friendSearchLoading = false;
+  String friendSearchQuery = "";
   String? friendsError;
   String? friendSearchError;
   String? friendActionError;
@@ -437,7 +438,15 @@ class AppState extends ChangeNotifier {
 
   Future<void> searchFriends(String query) async {
     final q = query.trim();
+    friendSearchQuery = q;
     final generation = ++_friendSearchGeneration;
+    if (token == null) {
+      friendSearchResults = [];
+      friendSearchLoading = false;
+      friendSearchError = "Sign in to search for players";
+      notifyListeners();
+      return;
+    }
     friendSearchError = null;
     if (q.length < 2) {
       friendSearchResults = [];
@@ -510,13 +519,12 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _refreshFriendSearchIfNeeded() async {
-    // Re-run the current query so action labels update immediately.
-    if (friendSearchResults.isEmpty) return;
-    final currentQuery = friendSearchResults.map((u) => u["username"]).whereType<String>().join(" ");
-    // The UI normally calls searchFriends after its own actions; avoid inventing
-    // a query from result data here. Just invalidate stale search relationships.
-    friendSearchResults = [];
-    friendSearchError = null;
+    if (friendSearchQuery.length >= 2) {
+      await searchFriends(friendSearchQuery);
+    } else {
+      friendSearchResults = [];
+      friendSearchError = null;
+    }
   }
   void inviteToParty(String targetUserId) {
     socket.inviteToParty(targetUserId);
