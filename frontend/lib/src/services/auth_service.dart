@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'package:http/http.dart' as http;
@@ -83,28 +85,45 @@ class AuthService {
         '925721095742-omjs30pn4s3lcag3r8pr5grl514voisn.apps.googleusercontent.com';
     final clientId = envClientId.isNotEmpty ? envClientId : defaultClientId;
 
-    // google_sign_in 6.x supports this API on web, but its signIn() flow is
-    // deprecated for web. Keep the existing native flow; use renderButton on web
-    // in a follow-up migration rather than passing an access token to ID-token verification.
+    // Web must use the Google Identity Services button widget. This method is
+    // retained for native platforms; serverClientId is not supported on web.
     final googleSignIn = GoogleSignIn(
       clientId: clientId,
-      serverClientId: clientId,
+      serverClientId: kIsWeb ? null : clientId,
       scopes: ['email', 'profile', 'openid'],
     );
     final account = await googleSignIn.signIn();
     if (account == null) throw Exception('Google Sign-In aborted');
 
     final auth = await account.authentication;
-    // The backend /auth/google endpoint verifies a Google ID token. Never fall
-    // back to auth.accessToken here: it is not an ID token and will fail
-    // verifyIdToken (and the backend fallback depends on provider permissions).
     final idToken = auth.idToken;
     if (idToken == null || idToken.isEmpty) {
       throw Exception(
-        'Google Sign-In did not return an ID token. Check the Web OAuth client ID '
-        'and GOOGLE_CLIENT_ID configuration.',
+        'Google Sign-In did not return an ID token. Check your OAuth client configuration.',
       );
     }
+
+    return googleLoginWithIdToken(
+      idToken,
+      username: account.displayName ?? account.email.split('@').first,
+    );
+  }
+
+  /// Exchanges a Google ID token for the game's own JWT session.
+  ///
+  /// This is used by the web-only GIS button as well as native Google login.
+  Future<GuestSession> googleLoginWithIdToken(
+    String idToken, {
+    String? username,
+  }) async {
+    if (idToken.trim().isEmpty) {
+      throw Exception('Google Sign-In returned an empty ID token.');
+    }
+
+    final requestedName = username?.trim();
+    final safeName = requestedName == null || requestedName.isEmpty
+        ? 'Player'
+        : String.fromCharCodes(requestedName.runes.take(30));
 
     final response = await http.post(
       Uri.parse('$baseUrl/auth/google'),
@@ -114,7 +133,7 @@ class AuthService {
       },
       body: jsonEncode({
         'idToken': idToken,
-        'username': account.displayName ?? account.email.split('@').first,
+        'username': safeName,
       }),
     ).timeout(_timeout);
     if (response.statusCode >= 400) {
@@ -125,14 +144,14 @@ class AuthService {
     final token = data['token'] as String;
     final user = data['user'] as Map<String, dynamic>;
     final userId = user['id'] as String;
-    final username = user['username'] as String;
+    final savedUsername = user['username'] as String;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('jwt', token);
     await prefs.setString('userId', userId);
-    await prefs.setString('username', username);
+    await prefs.setString('username', savedUsername);
 
-    return GuestSession(token: token, userId: userId, username: username);
+    return GuestSession(token: token, userId: userId, username: savedUsername);
   }
 
   Future<Map<String, dynamic>> fetchMe(String token) async {
