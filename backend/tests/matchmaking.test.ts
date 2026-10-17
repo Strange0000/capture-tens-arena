@@ -120,7 +120,7 @@ describe("ranked party lifecycle", () => {
   });
 });
 
-describe("ranked queue cancellation", () =>
+describe("ranked queue cancellation", () => {
   it("exposes and removes a queued solo player so a fallback cannot start after cancel", () => {
     const matchmaking = new MatchmakingService();
     const queued = player("queued-user");
