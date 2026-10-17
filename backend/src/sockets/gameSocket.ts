@@ -215,6 +215,17 @@ export function registerGameSockets(io: Server) {
 
     socket.on("party:accept", ({ partyId }: { partyId: string }) => {
       try {
+        // A player who accepts a duo invitation must be removed from any
+        // previous solo/party queue before joining the invited party.
+        const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
+        const queuedIds = new Set<string>([userId, ...queuedGroup.map((player) => player.userId)]);
+        for (const queuedUserId of queuedIds) clearQueueTimeout(queuedUserId);
+        if (queuedGroup.length > 0) {
+          matchmaking.removeFromQueue(userId);
+          for (const queuedUserId of queuedIds) {
+            io.to(`user:${queuedUserId}`).emit("queue:cancelled", { mode: "ranked", reason: "party-joined" });
+          }
+        }
         const party = matchmaking.joinParty(partyId, {
           userId,
           username: socket.user!.username,
@@ -290,6 +301,14 @@ export function registerGameSockets(io: Server) {
       } catch (err: any) {
         socket.emit("error", { message: err?.message ?? "Could not join room" });
       }
+    });
+
+    socket.on("room:leave", () => {
+      const changedRooms = matchmaking.removeFromPrivateRooms(userId);
+      for (const changedRoom of changedRooms) {
+        broadcastPrivateRoom(io, changedRoom.code, changedRoom.players);
+      }
+      socket.emit("room:left", {});
     });
 
     socket.on("room:startWithBots", (data?: { code?: string }) => {
