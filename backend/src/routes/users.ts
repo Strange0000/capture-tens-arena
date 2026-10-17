@@ -194,7 +194,7 @@ usersRouter.post("/friends/request", requireAuth, async (req, res, next) => {
     } : null, requesterId, addresseeId);
     if (requestAction === "already-friends") return res.status(409).json({ error: "You are already friends" });
     if (requestAction === "blocked") return res.status(403).json({ error: "This friendship is blocked and cannot receive requests" });
-    if (requestAction === "accept-incoming") {
+    if (requestAction === "accept-incoming" && existing) {
       const accepted = await FriendModel.findOneAndUpdate({ _id: existing._id, status: "pending", addresseeId: requesterId }, { $set: { status: "accepted" } }, { new: true });
       if (accepted) {
         await incrementFriendCounts(accepted.requesterId.toString(), accepted.addresseeId.toString());
@@ -217,7 +217,7 @@ usersRouter.post("/friends/request", requireAuth, async (req, res, next) => {
       } : null, requesterId, addresseeId);
       if (racedAction === "already-friends") return res.status(409).json({ error: "You are already friends" });
       if (racedAction === "blocked") return res.status(403).json({ error: "This friendship is blocked and cannot receive requests" });
-      if (racedAction === "accept-incoming") {
+      if (racedAction === "accept-incoming" && existing) {
         const accepted = await FriendModel.findOneAndUpdate({ _id: existing._id, status: "pending", addresseeId: requesterId }, { $set: { status: "accepted" } }, { new: true });
         if (accepted) {
           await incrementFriendCounts(accepted.requesterId.toString(), accepted.addresseeId.toString());
