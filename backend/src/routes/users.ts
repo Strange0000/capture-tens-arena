@@ -233,34 +233,23 @@ usersRouter.post("/friends/accept", requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 usersRouter.delete("/friends/:id", requireAuth, async (req, res, next) => {
-  if (env.OFFLINE_DEV_MODE) {
-    return res.status(400).json({ error: "Cannot remove friends in offline dev mode" });
-  }
+  if (env.OFFLINE_DEV_MODE) return res.status(400).json({ error: "Friend requests are unavailable in offline dev mode" });
   try {
-    const friend = await FriendModel.findOne({
+    // Delete atomically so accept/remove races cannot double-adjust friendCount.
+    const friend = await FriendModel.findOneAndDelete({
       _id: req.params.id,
-      $or: [{ requesterId: req.user!.id }, { addresseeId: req.user!.id }]
+      $or: [{ requesterId: req.user!.id }, { addresseeId: req.user!.id }],
     });
-
-    if (!friend) return res.status(404).json({ error: "Friend not found" });
-
-    const wasAccepted = friend.status === "accepted";
-    await friend.deleteOne();
-
-    // Decrement friend counts if they were accepted friends
-    if (wasAccepted) {
+    if (!friend) return res.status(404).json({ error: "Friend request or friendship not found" });
+    if (friend.status === "accepted") {
       await Promise.all([
-        UserModel.updateOne({ _id: friend.requesterId }, { $inc: { friendCount: -1 } }),
-        UserModel.updateOne({ _id: friend.addresseeId }, { $inc: { friendCount: -1 } }),
+        UserModel.updateOne({ _id: friend.requesterId, friendCount: { $gt: 0 } }, { $inc: { friendCount: -1 } }),
+        UserModel.updateOne({ _id: friend.addresseeId, friendCount: { $gt: 0 } }, { $inc: { friendCount: -1 } }),
       ]);
     }
-
-    res.json({ success: true });
-  } catch (error) {
-    next(error);
-  }
+    return res.json({ success: true, message: friend.status === "accepted" ? "Friend removed" : "Friend request cancelled" });
+  } catch (error) { next(error); }
 });
-
 async function incrementFriendCounts(requesterId: string, addresseeId: string) {
   await Promise.all([
     UserModel.updateOne({ _id: requesterId }, { $inc: { friendCount: 1 } }),
