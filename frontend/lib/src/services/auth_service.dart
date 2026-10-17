@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'package:http/http.dart' as http;
@@ -79,20 +81,49 @@ class AuthService {
 
   Future<GuestSession> googleLogin() async {
     const envClientId = String.fromEnvironment('GOOGLE_CLIENT_ID', defaultValue: '');
-    const defaultClientId = '925721095742-omjs30pn4s3lcag3r8pr5grl514voisn.apps.googleusercontent.com';
+    const defaultClientId =
+        '925721095742-omjs30pn4s3lcag3r8pr5grl514voisn.apps.googleusercontent.com';
     final clientId = envClientId.isNotEmpty ? envClientId : defaultClientId;
 
+    // Web must use the Google Identity Services button widget. This method is
+    // retained for native platforms; serverClientId is not supported on web.
     final googleSignIn = GoogleSignIn(
       clientId: clientId,
-      serverClientId: clientId,
+      serverClientId: kIsWeb ? null : clientId,
       scopes: ['email', 'profile', 'openid'],
     );
     final account = await googleSignIn.signIn();
     if (account == null) throw Exception('Google Sign-In aborted');
 
     final auth = await account.authentication;
-    final googleAuthToken = auth.idToken ?? auth.accessToken;
-    if (googleAuthToken == null) throw Exception('Failed to get Google authentication token');
+    final idToken = auth.idToken;
+    if (idToken == null || idToken.isEmpty) {
+      throw Exception(
+        'Google Sign-In did not return an ID token. Check your OAuth client configuration.',
+      );
+    }
+
+    return googleLoginWithIdToken(
+      idToken,
+      username: account.displayName ?? account.email.split('@').first,
+    );
+  }
+
+  /// Exchanges a Google ID token for the game's own JWT session.
+  ///
+  /// This is used by the web-only GIS button as well as native Google login.
+  Future<GuestSession> googleLoginWithIdToken(
+    String idToken, {
+    String? username,
+  }) async {
+    if (idToken.trim().isEmpty) {
+      throw Exception('Google Sign-In returned an empty ID token.');
+    }
+
+    final requestedName = username?.trim();
+    final safeName = requestedName == null || requestedName.isEmpty
+        ? 'Player'
+        : String.fromCharCodes(requestedName.runes.take(30));
 
     final response = await http.post(
       Uri.parse('$baseUrl/auth/google'),
@@ -101,8 +132,8 @@ class AuthService {
         ..._defaultHeaders,
       },
       body: jsonEncode({
-        'idToken': googleAuthToken,
-        'username': account.displayName ?? account.email.split('@').first,
+        'idToken': idToken,
+        'username': safeName,
       }),
     ).timeout(_timeout);
     if (response.statusCode >= 400) {
@@ -113,14 +144,14 @@ class AuthService {
     final token = data['token'] as String;
     final user = data['user'] as Map<String, dynamic>;
     final userId = user['id'] as String;
-    final username = user['username'] as String;
+    final savedUsername = user['username'] as String;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('jwt', token);
     await prefs.setString('userId', userId);
-    await prefs.setString('username', username);
+    await prefs.setString('username', savedUsername);
 
-    return GuestSession(token: token, userId: userId, username: username);
+    return GuestSession(token: token, userId: userId, username: savedUsername);
   }
 
   Future<Map<String, dynamic>> fetchMe(String token) async {

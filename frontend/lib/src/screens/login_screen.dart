@@ -1,9 +1,13 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import '../widgets/google_sign_in_web_button_stub.dart'
+    if (dart.library.html) '../widgets/google_sign_in_web_button.dart' as google_web;
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -78,80 +82,16 @@ class _LoginScreenState extends State<LoginScreen>
       if (mounted) Navigator.pushReplacementNamed(context, '/lobby');
     } catch (e) {
       if (mounted) {
-        final origin = Uri.base.origin;
-        _showGoogleOAuthHelpDialog(context, origin, e.toString());
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Google Sign-In failed: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
-  }
-
-  void _showGoogleOAuthHelpDialog(BuildContext context, String currentDomain, String rawError) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF10192A),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: Color(0xFF48E5C2), width: 1.2),
-        ),
-        title: const Row(
-          children: [
-            Icon(Icons.g_mobiledata, color: Color(0xFF48E5C2), size: 28),
-            SizedBox(width: 8),
-            Text('Google Sign-In Setup', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'To enable Google Sign-In on this website domain:',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.07),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.3)),
-              ),
-              child: SelectableText(
-                currentDomain,
-                style: const TextStyle(color: Color(0xFFFFD166), fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 13),
-              ),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              '1. Open Google Cloud Console > Credentials > OAuth 2.0 Client IDs\n2. Add the domain URL above to "Authorized JavaScript origins"\n\nOr click below to jump straight into the arena with Guest play!',
-              style: TextStyle(color: Colors.white60, fontSize: 12, height: 1.4),
-            ),
-          ],
-        ),
-        actions: [
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF48E5C2),
-              foregroundColor: const Color(0xFF070B13),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            ),
-            onPressed: () {
-              Navigator.pop(ctx);
-              _loginAsGuest();
-            },
-            icon: const Icon(Icons.play_arrow_rounded, size: 20),
-            label: const Text('Play as Guest Now', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close', style: TextStyle(color: Colors.white54)),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -432,6 +372,40 @@ class _LoginScreenState extends State<LoginScreen>
 
   Widget _SuitIcon(String s, Color c) => Text(s, style: TextStyle(fontSize: 28, color: c.withOpacity(0.18)));
 
+  Widget _buildGoogleButton(AppState app, {bool compact = false}) {
+    if (kIsWeb) {
+      return google_web.GoogleSignInWebButton(
+        compact: compact,
+        onIdToken: (idToken, username) async {
+          setState(() => _loading = true);
+          try {
+            await app.loginWithGoogleIdToken(idToken, username: username);
+            if (mounted) Navigator.pushReplacementNamed(context, '/lobby');
+          } finally {
+            if (mounted) setState(() => _loading = false);
+          }
+        },
+        onError: (error) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Google Sign-In failed: $error'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        },
+      );
+    }
+
+    return _PremiumButton(
+      label: compact ? 'Google' : 'Sign in with Google',
+      icon: Icons.g_mobiledata,
+      loading: _loading,
+      onTap: _loginWithGoogle,
+      primary: false,
+    );
+  }
+
   Widget _buildButtons(bool hasCached, AppState app) {
     if (hasCached) {
       return Column(children: [
@@ -444,16 +418,30 @@ class _LoginScreenState extends State<LoginScreen>
         ),
         const SizedBox(height: 10),
         Row(children: [
-          Expanded(child: _PremiumButton(label: 'New Guest', icon: Icons.play_arrow_rounded, loading: false, onTap: _loginAsGuest, primary: false)),
+          Expanded(
+            child: _PremiumButton(
+              label: 'New Guest',
+              icon: Icons.play_arrow_rounded,
+              loading: false,
+              onTap: _loginAsGuest,
+              primary: false,
+            ),
+          ),
           const SizedBox(width: 10),
-          Expanded(child: _PremiumButton(label: 'Google', icon: Icons.g_mobiledata, loading: false, onTap: _loginWithGoogle, primary: false)),
+          Expanded(child: _buildGoogleButton(app, compact: true)),
         ]),
       ]);
     }
     return Column(children: [
-      _PremiumButton(label: 'Play as Guest', icon: Icons.play_arrow_rounded, loading: _loading, onTap: _loginAsGuest, primary: true),
+      _PremiumButton(
+        label: 'Play as Guest',
+        icon: Icons.play_arrow_rounded,
+        loading: _loading,
+        onTap: _loginAsGuest,
+        primary: true,
+      ),
       const SizedBox(height: 14),
-      _PremiumButton(label: 'Sign in with Google', icon: Icons.g_mobiledata, loading: _loading, onTap: _loginWithGoogle, primary: false),
+      _buildGoogleButton(app),
     ]);
   }
 
