@@ -25,7 +25,9 @@ class AuthService {
 
   final String baseUrl;
 
-  static const Duration _timeout = Duration(seconds: 15);
+  // Render's free service can take longer than 15 seconds to wake from idle.
+  // Allow enough time for the backend cold start before treating login as failed.
+  static const Duration _timeout = Duration(seconds: 60);
 
   Map<String, String> get _defaultHeaders => {};
 
