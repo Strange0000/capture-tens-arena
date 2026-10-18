@@ -20,7 +20,6 @@ import { checkAndAwardAchievements, ACHIEVEMENTS } from "../game/achievements.js
 
 // Track online users for friend status
 const onlineUsers = new Set<string>();
-const queueTimeouts = new Map<string, NodeJS.Timeout>();
 const disconnectGraceTimers = new Map<string, NodeJS.Timeout>();
 
 function currentSeason() {
@@ -54,68 +53,22 @@ export function registerGameSockets(io: Server) {
         }];
       }
 
-      // Prevent stale fallback timers from a previous search from launching a
-      // match during this search.
-      for (const player of party) clearQueueTimeout(player.userId);
-
       const group = matchmaking.enqueueRanked(party);
       for (const player of party) {
-        io.to(`user:${player.userId}`).emit("queue:joined", { mode: "ranked" });
+        io.to("user:" + player.userId).emit("queue:joined", { mode: "ranked" });
       }
 
+      // Ranked matches must be human-only. Keep players queued until a real
+      // group is available; clients can cancel at any time.
       if (group) {
-        for (const player of group) clearQueueTimeout(player.userId);
         startMatch(io, matchmaking.toSeats(group), "ranked");
-        return;
       }
-
-      // Keep the current behavior of offering bots after a short search, but
-      // ensure cancellation clears this timer before it can create the match.
-      const timeout = setTimeout(() => {
-        if (queueTimeouts.get(userId) === timeout) {
-          queueTimeouts.delete(userId);
-        }
-
-        const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId);
-        console.log(
-          `[RankedQueue] Timeout fired for user ${userId}. InQueue: ${Boolean(queuedGroup)}`,
-        );
-        if (!queuedGroup) return;
-
-        for (const player of queuedGroup) {
-          clearQueueTimeout(player.userId);
-          matchmaking.removeFromQueue(player.userId);
-        }
-
-        const seats: PlayerSeat[] = [];
-        if (queuedGroup.length === 2) {
-          seats.push(
-            { seat: 0, userId: queuedGroup[0].userId, username: queuedGroup[0].username, connected: true, isBot: false },
-            { seat: 1, userId: "bot-1", username: "Vector", connected: true, isBot: true, botDifficulty: "hard" },
-            { seat: 2, userId: queuedGroup[1].userId, username: queuedGroup[1].username, connected: true, isBot: false },
-            { seat: 3, userId: "bot-2", username: "Nova", connected: true, isBot: true, botDifficulty: "hard" },
-          );
-        } else {
-          const player = queuedGroup[0];
-          seats.push(
-            { seat: 0, userId: player.userId, username: player.username, connected: true, isBot: false },
-            { seat: 1, userId: "bot-1", username: "Vector", connected: true, isBot: true, botDifficulty: "hard" },
-            { seat: 2, userId: "bot-2", username: "Nova", connected: true, isBot: true, botDifficulty: "hard" },
-            { seat: 3, userId: "bot-3", username: "Cipher", connected: true, isBot: true, botDifficulty: "hard" },
-          );
-        }
-        startMatch(io, seats, "ranked");
-      }, 5000);
-      queueTimeouts.set(userId, timeout);
     });
 
     socket.on("queue:cancel", () => {
       const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
       const queuedIds = new Set<string>([userId, ...queuedGroup.map((player) => player.userId)]);
 
-      for (const queuedUserId of queuedIds) {
-        clearQueueTimeout(queuedUserId);
-      }
       matchmaking.removeFromQueue(userId);
 
       // The cancelling client resets its own state synchronously. Notify only
@@ -245,12 +198,18 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("match:leave", async () => {
-      const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
-      for (const player of queuedGroup) clearQueueTimeout(player.userId);
-      clearQueueTimeout(userId);
       matchmaking.removeFromQueue(userId);
       const state = matchStore.findByUser(userId);
       if (state) {
+        // Leaving an offline match should end that local table entirely instead
+        // of quietly handing the player seat to a bot.
+        if (state.mode === "offline") {
+          socket.leave("match:" + state.id);
+          io.to("match:" + state.id).emit("match:abandoned", { userLeft: userId, ended: true });
+          matchStore.delete(state.id);
+          console.log("[GAME] Offline match " + state.id + " ended because " + userId + " left");
+          return;
+        }
         if (state.mode === "ranked" && state.phase !== "complete") {
           // Penalize quitting player
           const result = await applyRankedResult(userId, currentSeason(), 0, false);
@@ -375,9 +334,6 @@ export function registerGameSockets(io: Server) {
 
     socket.on("disconnect", () => {
       onlineUsers.delete(userId);
-      const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
-      for (const player of queuedGroup) clearQueueTimeout(player.userId);
-      clearQueueTimeout(userId);
       matchmaking.removeFromQueue(userId);
       for (const changedRoom of matchmaking.removeFromPrivateRooms(userId)) {
         broadcastPrivateRoom(io, changedRoom.code, changedRoom.players);
@@ -425,13 +381,6 @@ export function registerGameSockets(io: Server) {
       disconnectGraceTimers.set(userId, graceTimer);
     });
   });
-}
-
-function clearQueueTimeout(userId: string) {
-  const timeout = queueTimeouts.get(userId);
-  if (!timeout) return;
-  clearTimeout(timeout);
-  queueTimeouts.delete(userId);
 }
 
 function broadcastPrivateRoom(
