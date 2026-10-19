@@ -5,7 +5,7 @@ import { redisPub, redisSub } from "../db/redis.js";
 import { chooseBotCard } from "../game/bot.js";
 import { createMatch, dealFirstFive, dealRemainingCards, playCard, publicStateForSeat, selectPowerSuit, startNextTrick } from "../game/engine.js";
 import { legalCardsForSeat } from "../game/rules.js";
-import { MatchMode, PlayerSeat } from "../game/types.js";
+import { MatchMode, PlayerSeat, Suit } from "../game/types.js";
 import { teamForSeat } from "../game/deck.js";
 import { MatchModel } from "../models/Match.js";
 import { ReplayModel } from "../models/Replay.js";
