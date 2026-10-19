@@ -901,7 +901,7 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
     // Only active humans receive the normal end-of-match result. A player
     // already penalized for abandoning is excluded from that update, but their
     // pre-match rating still belongs in their original team's average.
-    const humanPlayers = state.players.filter((player) => !player.isBot);
+    const humanPlayers = state.players.filter((player) => !player.isBot && player.connected);
     const rankedParticipants = state.players.filter((player) => !player.userId.startsWith("bot-"));
 
     // Snapshot this season's pre-match ratings so all players are scored
@@ -926,7 +926,35 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
     const teamAMmr = averageMmr(teamAPlayers);
     const teamBMmr = averageMmr(teamBPlayers);
 
+    // A game may finish during the reconnect grace period. Penalize any seat
+    // still disconnected at completion here; if grace takeover already ran,
+    // isBot is true and that separate path owns the penalty.
+    const disconnectedAtCompletion = state.players.filter((player) =>
+      !player.isBot && !player.connected && !player.userId.startsWith("bot-"),
+    );
+    for (const player of disconnectedAtCompletion) {
+      const opponentAvg = teamForSeat(player.seat) === "A" ? teamBMmr : teamAMmr;
+      try {
+        const result = await applyRankedResult(player.userId, season, opponentAvg, false);
+        const rankingTotals = result.ranking as { wins?: number; losses?: number; peakMmr?: number };
+        rankResults[player.userId] = {
+          oldMmr: result.oldMmr,
+          newMmr: result.newMmr,
+          mmrDelta: result.mmrDelta,
+          rank: result.rankDetail,
+          wins: rankingTotals.wins,
+          losses: rankingTotals.losses,
+          peakMmr: rankingTotals.peakMmr,
+        };
+      } catch (err) {
+        console.error(`Failed to penalize disconnected player ${player.userId}:`, err);
+      }
+    }
+
     for (const player of humanPlayers) {
+      // A grace timer may have converted this player to a bot while ratings
+      // were being fetched; in that case its abandonment handler owns the loss.
+      if (!player.connected || player.isBot) continue;
       const myTeam = teamForSeat(player.seat);
       const won = state.winnerTeam === myTeam;
       const opponentAvg = myTeam === "A" ? teamBMmr : teamAMmr;
@@ -949,7 +977,7 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
     }
     
     // Send rank update to each player
-    for (const player of humanPlayers) {
+    for (const player of state.players.filter((player) => !player.userId.startsWith("bot-"))) {
       if (rankResults[player.userId]) {
         io.to(`user:${player.userId}`).emit("rank:updated", rankResults[player.userId]);
       }
@@ -958,7 +986,9 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
 
   // ── Update Statistics & Check Achievements ────────────────────────
   const matchDurationMs = state.startedAt ? Date.now() - state.startedAt : undefined;
-  for (const player of state.players.filter((player) => !player.isBot && state.mode !== "offline")) {
+  for (const player of state.players.filter((player) =>
+    !player.isBot && player.connected && state.mode !== "offline",
+  )) {
     const myTeam = teamForSeat(player.seat);
     const won = state.winnerTeam === myTeam;
     const teamCaptures = state.captures[myTeam];
