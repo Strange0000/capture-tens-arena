@@ -395,35 +395,43 @@ export function registerGameSockets(io: Server) {
           console.log("[GAME] Offline match " + state.id + " ended because " + userId + " left");
           return;
         }
-        if (state.mode === "ranked") {
-          // Penalize quitting player
-          const season = currentSeason();
-          const opponentAvg = await opponentAverageMmr(state, userId, season);
-          const result = await applyRankedResult(userId, season, opponentAvg, false);
-          const totals = result.ranking as { wins?: number; losses?: number; peakMmr?: number };
-          socket.emit("rank:updated", {
-            oldMmr: result.oldMmr,
-            newMmr: result.newMmr,
-            mmrDelta: result.mmrDelta,
-            rank: result.rankDetail,
-            wins: totals.wins,
-            losses: totals.losses,
-            peakMmr: totals.peakMmr,
-          });
-        }
-        const player = state.players.find(p => p.userId === userId);
-        if (player) {
-          player.connected = false;
-          player.isBot = true;
-          player.botDifficulty = "medium";
-        }
+        const player = state.players.find((item) => item.userId === userId);
+        if (!player) return;
+
+        // Apply the takeover synchronously before any database await. Otherwise
+        // the match could finish during a rating query and count a quitter twice.
+        player.connected = false;
+        player.isBot = true;
+        player.botDifficulty = "medium";
         socket.leave(`match:${state.id}`);
         io.to(`match:${state.id}`).emit("match:abandoned", { userLeft: userId });
         matchStore.set(state);
-        if (state.phase === "power-select" && state.firstPlayerSeat === player?.seat) {
+
+        if (state.phase === "power-select" && state.firstPlayerSeat === player.seat) {
           maybeBotPowerSelect(io, state.id);
-        } else if (state.phase === "playing" && state.currentTurnSeat === player?.seat) {
+        } else if (state.phase === "playing" && state.currentTurnSeat === player.seat) {
           maybeBotTurn(io, state.id);
+        }
+
+        if (state.mode === "ranked") {
+          const season = currentSeason();
+          try {
+            const opponentAvg = await opponentAverageMmr(state, userId, season);
+            const result = await applyRankedResult(userId, season, opponentAvg, false);
+            const totals = result.ranking as { wins?: number; losses?: number; peakMmr?: number };
+            io.to(`user:${userId}`).emit("rank:updated", {
+              oldMmr: result.oldMmr,
+              newMmr: result.newMmr,
+              mmrDelta: result.mmrDelta,
+              rank: result.rankDetail,
+              wins: totals.wins,
+              losses: totals.losses,
+              peakMmr: totals.peakMmr,
+            });
+          } catch (err) {
+            console.error(`Failed to apply ranked abandonment penalty for ${userId}:`, err);
+            socket.emit("error", { message: "Could not save ranked abandonment penalty" });
+          }
         }
       }
     });
