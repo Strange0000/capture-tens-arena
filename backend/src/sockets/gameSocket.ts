@@ -738,14 +738,15 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
       
       try {
         const result = await applyRankedResult(player.userId, season, opponentAvg, won);
+        const rankingTotals = result.ranking as { wins?: number; losses?: number; peakMmr?: number };
         rankResults[player.userId] = {
           oldMmr: result.oldMmr,
           newMmr: result.newMmr,
           mmrDelta: result.mmrDelta,
           rank: result.rankDetail,
-          wins: result.ranking?.wins,
-          losses: result.ranking?.losses,
-          peakMmr: result.ranking?.peakMmr,
+          wins: rankingTotals.wins,
+          losses: rankingTotals.losses,
+          peakMmr: rankingTotals.peakMmr,
         };
       } catch (err) {
         console.error(`Failed to update rank for ${player.userId}:`, err);
