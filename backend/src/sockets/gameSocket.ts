@@ -22,6 +22,7 @@ import { checkAndAwardAchievements, ACHIEVEMENTS } from "../game/achievements.js
 
 // Track online users for friend status
 const onlineUsers = new Set<string>();
+const activeSocketsByUser = new Map<string, Set<string>>();
 const disconnectGraceTimers = new Map<string, NodeJS.Timeout>();
 
 function currentSeason() {
@@ -39,6 +40,9 @@ export function registerGameSockets(io: Server) {
     const userId = socket.user!.id;
     console.log(`[SOCKET] User connected: ${userId} (${socket.user?.username})`);
     socket.join(`user:${userId}`);
+    const userSockets = activeSocketsByUser.get(userId) ?? new Set<string>();
+    userSockets.add(socket.id);
+    activeSocketsByUser.set(userId, userSockets);
     onlineUsers.add(userId);
     reconnectMatch(io, socket);
     broadcastFriendStatus(io, userId, "online");
@@ -48,18 +52,25 @@ export function registerGameSockets(io: Server) {
       const requestId = ++rankedQueueRequestId;
       console.log(`[SOCKET] queue:ranked from user ${userId} (${socket.user!.username})`);
       try {
-        const party = matchmaking.getPartyForUser(userId) ?? [{
+        const requestedParty = matchmaking.getPartyForUser(userId) ?? [{
           userId,
           username: socket.user!.username,
           socketId: socket.id,
           mmr: 0,
         }];
 
+        for (const player of requestedParty) {
+          const activeMatch = matchStore.findByUser(player.userId);
+          if (activeMatch && activeMatch.phase !== "complete") {
+            throw new Error("Finish or leave your current match before queuing");
+          }
+        }
+
         // Ratings are server-owned; never trust a client-supplied MMR value.
         const ratingByUser = new Map<string, number>();
         if (!env.OFFLINE_DEV_MODE) {
           const ratings = await RankingModel.find({
-            userId: { $in: party.map((player) => player.userId) },
+            userId: { $in: requestedParty.map((player) => player.userId) },
             season: currentSeason(),
           }).select("userId mmr").lean();
           for (const rating of ratings) {
@@ -68,11 +79,17 @@ export function registerGameSockets(io: Server) {
         }
         if (requestId !== rankedQueueRequestId) return;
 
-        const ratedParty = party.map((player) => ({
+        const ratedParty = requestedParty.map((player) => ({
           ...player,
           socketId: player.userId === userId ? socket.id : player.socketId,
           mmr: ratingByUser.get(player.userId) ?? 0,
         }));
+        for (const player of ratedParty) {
+          const activeMatch = matchStore.findByUser(player.userId);
+          if (activeMatch && activeMatch.phase !== "complete") {
+            throw new Error("Finish or leave your current match before queuing");
+          }
+        }
         const group = matchmaking.enqueueRanked(ratedParty);
 
         for (const player of ratedParty) {
@@ -104,31 +121,68 @@ export function registerGameSockets(io: Server) {
       console.log(`[RankedQueue] Cancelled search for ${[...queuedIds].join(", ")}`);
     });
 
-    socket.on("party:invite", ({ targetUserId }: { targetUserId: string }) => {
-      let existingParty = matchmaking.getPartyForUser(userId);
-      let partyId: string | null = null;
-      if (!existingParty) {
-        partyId = matchmaking.createParty({
-          userId,
-          username: socket.user!.username,
-          socketId: socket.id,
-          mmr: 0
-        });
-        socket.emit("party:updated", { party: matchmaking.getParty(partyId) });
-      }
-      // Get the partyId from userParty map
-      const activePartyId = partyId ?? matchmaking.getPartyIdForUser(userId);
-      if (activePartyId) {
+    socket.on("party:invite", (payload: unknown) => {
+      try {
+        const parsed = z.object({ targetUserId: z.string().min(1).max(128) }).safeParse(payload);
+        if (!parsed.success || parsed.data.targetUserId === userId) {
+          socket.emit("error", { message: "Choose a valid player to invite" });
+          return;
+        }
+        const { targetUserId } = parsed.data;
+        const target = env.OFFLINE_DEV_MODE
+          ? { id: targetUserId }
+          : await UserModel.findById(targetUserId).select("_id").lean();
+        if (!target) {
+          socket.emit("error", { message: "Player not found" });
+          return;
+        }
+        if (!env.OFFLINE_DEV_MODE) {
+          const friendship = await FriendModel.findOne({
+            status: "accepted",
+            $or: [
+              { requesterId: userId, addresseeId: targetUserId },
+              { requesterId: targetUserId, addresseeId: userId },
+            ],
+          }).select("_id").lean();
+          if (!friendship) {
+            socket.emit("error", { message: "You can invite accepted friends only" });
+            return;
+          }
+        }
+        const activeMatch = matchStore.findByUser(userId);
+        if (activeMatch && activeMatch.phase !== "complete") {
+          throw new Error("Leave your match before inviting a party member");
+        }
+        let partyId = matchmaking.getPartyIdForUser(userId);
+        if (!partyId) {
+          partyId = matchmaking.createParty({
+            userId,
+            username: socket.user!.username,
+            socketId: socket.id,
+            mmr: 0,
+          });
+          socket.emit("party:updated", { party: matchmaking.getParty(partyId) });
+        }
         io.to(`user:${targetUserId}`).emit("party:invited", {
           from: socket.user!.username,
-          partyId: activePartyId
+          partyId,
+        });
+      } catch (err) {
+        socket.emit("error", {
+          message: err instanceof Error ? err.message : "Could not send party invitation",
         });
       }
     });
 
-    socket.on("party:accept", ({ partyId }: { partyId: string }) => {
+    socket.on("party:accept", (payload: unknown) => {
       try {
-        const party = matchmaking.joinParty(partyId, {
+        const parsed = z.object({ partyId: z.string().min(1).max(128) }).safeParse(payload);
+        if (!parsed.success) throw new Error("Invalid party invitation");
+        const activeMatch = matchStore.findByUser(userId);
+        if (activeMatch && activeMatch.phase !== "complete") {
+          throw new Error("Leave your match before joining a party");
+        }
+        const party = matchmaking.joinParty(parsed.data.partyId, {
           userId,
           username: socket.user!.username,
           socketId: socket.id,
@@ -157,6 +211,10 @@ export function registerGameSockets(io: Server) {
 
     socket.on("room:create", () => {
       try {
+        const activeMatch = matchStore.findByUser(userId);
+        if (activeMatch && activeMatch.phase !== "complete") {
+          throw new Error("Finish or leave your current match first");
+        }
         const code = matchmaking.createPrivateRoom({
           userId,
           username: socket.user!.username,
@@ -176,6 +234,10 @@ export function registerGameSockets(io: Server) {
         if (!code) throw new Error("Enter a room code");
         if (code.length !== 6) throw new Error("Room code must be 6 characters");
 
+        const activeMatch = matchStore.findByUser(userId);
+        if (activeMatch && activeMatch.phase !== "complete") {
+          throw new Error("Finish or leave your current match first");
+        }
         const group = matchmaking.joinPrivateRoom(code, {
           userId,
           username: socket.user!.username,
@@ -193,6 +255,21 @@ export function registerGameSockets(io: Server) {
       }
     });
 
+    socket.on("room:leave", (payload?: unknown) => {
+      try {
+        const parsed = z.object({ code: z.string().min(1).max(6).optional() }).safeParse(payload ?? {});
+        if (!parsed.success) throw new Error("Invalid room code");
+        const left = matchmaking.leavePrivateRoom(userId, parsed.data.code);
+        if (!left) throw new Error("You are not in a private room");
+        socket.emit("room:left", { code: left.code });
+        if (left.players.length > 0) {
+          broadcastPrivateRoom(io, left.code, left.players);
+        }
+      } catch (err) {
+        socket.emit("error", { message: err instanceof Error ? err.message : "Could not leave room" });
+      }
+    });
+
     socket.on("room:startWithBots", (data?: { code?: string }) => {
       try {
         const code = typeof data?.code === "string" ? data.code.trim().toUpperCase() : "";
@@ -204,12 +281,27 @@ export function registerGameSockets(io: Server) {
       }
     });
 
-    socket.on("bot:offline", (data?: any) => {
-      const difficulty: "easy" | "medium" | "hard" = (data && data.difficulty) ? data.difficulty : "medium";
-      console.log(`[SOCKET] bot:offline received for user ${userId}, difficulty: ${difficulty}`);
-      // If user is already in a match, clean it up first
-      const existing = matchStore.findByUser(userId);
-      if (existing) matchStore.delete(existing.id);
+    socket.on("bot:offline", (payload: unknown) => {
+      const parsed = z.object({ difficulty: z.enum(["easy", "medium", "hard"]).optional() }).safeParse(payload ?? {});
+      if (!parsed.success) {
+        socket.emit("error", { message: "Choose a valid bot difficulty" });
+        return;
+      }
+      const difficulty = parsed.data.difficulty ?? "medium";
+      try {
+        const existing = matchStore.findByUser(userId);
+        if (existing && existing.phase !== "complete") {
+          throw new Error("Leave your current match before starting another");
+        }
+        if (matchmaking.isUserInRankedQueue(userId)) {
+          throw new Error("Cancel ranked matchmaking before starting a practice match");
+        }
+        if (matchmaking.getPrivateRoomCodeForUser(userId)) {
+          throw new Error("Leave your private room before starting a practice match");
+        }
+        if (matchmaking.getPartyForUser(userId)?.length) {
+          throw new Error("Leave your party before starting a practice match");
+        }
 
       const seats: PlayerSeat[] = [
         { seat: 0, userId, username: socket.user!.username, connected: true, isBot: false },
@@ -218,12 +310,15 @@ export function registerGameSockets(io: Server) {
         { seat: 3, userId: "bot-3", username: "Cipher", connected: true, isBot: true, botDifficulty: difficulty }
       ];
       startMatch(io, seats, "offline");
+      } catch (err) {
+        socket.emit("error", { message: err instanceof Error ? err.message : "Could not start practice match" });
+      }
     });
 
     socket.on("match:leave", async () => {
       matchmaking.removeFromQueue(userId);
       const state = matchStore.findByUser(userId);
-      if (state) {
+      if (state && state.phase !== "complete") {
         // Leaving an offline match should end that local table entirely instead
         // of quietly handing the player seat to a bot.
         if (state.mode === "offline") {
@@ -367,6 +462,14 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("disconnect", () => {
+      const liveSockets = activeSocketsByUser.get(userId);
+      liveSockets?.delete(socket.id);
+      if (liveSockets && liveSockets.size > 0) {
+        // Multiple tabs/devices share one user room; one closing must not
+        // mark the account offline or replace its live player's seat.
+        return;
+      }
+      activeSocketsByUser.delete(userId);
       onlineUsers.delete(userId);
       matchmaking.removeFromQueue(userId);
       for (const changedRoom of matchmaking.removeFromPrivateRooms(userId)) {
@@ -404,6 +507,17 @@ export function registerGameSockets(io: Server) {
         freshPlayer.isBot = true;
         freshPlayer.botDifficulty = "medium";
         matchStore.set(freshState);
+        if (freshState.mode === "ranked" && freshState.phase !== "complete") {
+          // Disconnect abandonment must not bypass the ranked-loss penalty.
+          void applyRankedResult(userId, currentSeason(), 0, false)
+            .then((result) => io.to(`user:${userId}`).emit("rank:updated", {
+              oldMmr: result.oldMmr,
+              newMmr: result.newMmr,
+              mmrDelta: result.mmrDelta,
+              rank: result.rankDetail,
+            }))
+            .catch((err) => console.error(`Failed to apply disconnect penalty for ${userId}:`, err));
+        }
         io.to(`match:${freshState.id}`).emit("match:playerBotReplaced", { userId, username: freshPlayer.username });
         broadcastState(io, freshState.id);
         
@@ -442,6 +556,20 @@ function broadcastPrivateRoom(
 }
 
 function startMatch(io: Server, players: PlayerSeat[], mode: MatchMode) {
+  if (players.length !== 4 || new Set(players.map((player) => player.seat)).size !== 4 ||
+      players.some((player) => !Number.isInteger(player.seat) || player.seat < 0 || player.seat > 3)) {
+    throw new Error("A match requires four unique seats from 0 to 3");
+  }
+  const humanIds = players.filter((player) => !player.isBot).map((player) => player.userId);
+  if (new Set(humanIds).size !== humanIds.length) {
+    throw new Error("A player cannot occupy more than one seat");
+  }
+  for (const player of players.filter((item) => !item.isBot)) {
+    const activeMatch = matchStore.findByUser(player.userId);
+    if (activeMatch && activeMatch.phase !== "complete") {
+      throw new Error(`${player.username} is already in an active match`);
+    }
+  }
   const state = dealFirstFive(createMatch(players, mode));
   state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
   matchStore.set(state);
@@ -459,9 +587,15 @@ function broadcastState(io: Server, matchId: string) {
   const state = requireMatch(matchId);
   console.log(`[GAME] Broadcasting state for match ${matchId}, phase: ${state.phase}`);
   for (const player of state.players) {
-    io.to(`user:${player.userId}`).emit("match:state", publicStateForSeat(state, player.seat));
+    io.to(`user:${player.userId}`).emit("match:state", {
+      ...publicStateForSeat(state, player.seat),
+      turnTimeoutMs: env.TURN_TIMEOUT_MS,
+    });
   }
-  io.to(`match:${matchId}:spectators`).emit("match:spectatorState", publicStateForSeat(state));
+  io.to(`match:${matchId}:spectators`).emit("match:spectatorState", {
+    ...publicStateForSeat(state),
+    turnTimeoutMs: env.TURN_TIMEOUT_MS,
+  });
 }
 
 function reconnectMatch(io: Server, socket: AuthedSocket) {
@@ -479,7 +613,6 @@ function reconnectMatch(io: Server, socket: AuthedSocket) {
   matchStore.set(state);
   socket.join(`match:${state.id}`);
   broadcastState(io, state.id);
-  io.to(`match:${state.id}:spectators`).emit("match:spectatorState", publicStateForSeat(state));
 }
 
 function maybeBotPowerSelect(io: Server, matchId: string) {
