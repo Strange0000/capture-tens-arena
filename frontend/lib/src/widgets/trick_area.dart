@@ -146,10 +146,18 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
       byRelativeSeats[relativeSeat] = play;
     }
 
-    final double sw = MediaQuery.of(context).size.width;
-    final double width = (sw * 0.46).clamp(180.0, 220.0);
-    final double height = (width * 0.85).clamp(150.0, 185.0);
-    final double cardWidth = (width * 0.26).clamp(48.0, 58.0);
+    final double sw = MediaQuery.sizeOf(context).width;
+    final bool isMobile = sw < 450;
+    // The four played cards need their own clear center lane on phones.
+    final double width = isMobile
+        ? (sw * 0.40).clamp(150.0, 176.0)
+        : (sw * 0.46).clamp(180.0, 220.0);
+    final double height = isMobile
+        ? (width * 0.84).clamp(128.0, 150.0)
+        : (width * 0.85).clamp(150.0, 185.0);
+    final double cardWidth = isMobile
+        ? (width * 0.25).clamp(40.0, 46.0)
+        : (width * 0.26).clamp(48.0, 58.0);
 
     return SizedBox(
       width: width,
