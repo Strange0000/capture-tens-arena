@@ -715,8 +715,7 @@ function maybeBotTurn(io: Server, matchId: string) {
 
 async function persistIfComplete(io: Server, state: ReturnType<typeof requireMatch>) {
   if (state.phase !== "complete") return;
-  if (state.mode === "offline") return;
-  
+
   const rankResults: Record<string, any> = {};
 
   // Apply ranked MMR updates BEFORE cleanup
@@ -778,7 +777,7 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
 
   // ── Update Statistics & Check Achievements ────────────────────────
   const matchDurationMs = state.startedAt ? Date.now() - state.startedAt : undefined;
-  for (const player of state.players.filter(p => !p.isBot)) {
+  for (const player of state.players.filter((player) => !player.isBot && state.mode !== "offline")) {
     const myTeam = teamForSeat(player.seat);
     const won = state.winnerTeam === myTeam;
     const teamCaptures = state.captures[myTeam];

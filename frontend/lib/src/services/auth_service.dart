@@ -242,4 +242,14 @@ class AuthService {
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     return List<Map<String, dynamic>>.from(data['achievements']);
   }
+
+  Future<List<Map<String, dynamic>>> fetchReplays(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/users/replays'),
+      headers: _authHeaders(token),
+    ).timeout(_timeout);
+    if (response.statusCode >= 400) throw Exception('Failed to fetch replays');
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return List<Map<String, dynamic>>.from(data['replays']);
+  }
 }

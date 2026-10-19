@@ -3,6 +3,8 @@ import type { Server } from "socket.io";
 import { requireAuth } from "../middleware/auth.js";
 import { RankingModel } from "../models/Ranking.js";
 import { StatisticsModel } from "../models/Statistics.js";
+import { MatchModel } from "../models/Match.js";
+import { ReplayModel } from "../models/Replay.js";
 import { FriendModel } from "../models/Friend.js";
 import { UserModel } from "../models/User.js";
 import { env } from "../config/env.js";
@@ -64,6 +66,73 @@ usersRouter.get("/rank/:userId", requireAuth, async (req, res, next) => {
 
 usersRouter.get("/tiers", (_req, res) => {
   res.json({ tiers: TIERS });
+});
+
+usersRouter.get("/replays", requireAuth, async (req, res, next) => {
+  if (env.OFFLINE_DEV_MODE) return res.json({ replays: [] });
+
+  try {
+    const userId = req.user!.id;
+    const matches = await MatchModel.find({ "players.userId": userId })
+      .sort({ completedAt: -1 })
+      .limit(50)
+      .select("mode players winnerTeam completedAt state")
+      .lean();
+
+    const matchIds = matches
+      .map((match) => (match.state as any)?.id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+    if (matchIds.length === 0) return res.json({ replays: [] });
+
+    const savedReplays = await ReplayModel.find({ matchId: { $in: matchIds } })
+      .select("matchId events powerSuit winnerTeam durationMs createdAt")
+      .lean();
+    const replayByMatchId = new Map(savedReplays.map((replay) => [replay.matchId, replay]));
+
+    const replays = matches.flatMap((match) => {
+      const state = match.state as any;
+      const matchId = typeof state?.id === "string" ? state.id : "";
+      const replay = replayByMatchId.get(matchId);
+      const players = (match.players ?? []) as Array<{
+        userId?: string;
+        seat?: number;
+        username?: string;
+        isBot?: boolean;
+      }>;
+      const me = players.find((player) => player.userId === userId);
+      if (!replay || !me || !matchId) return [];
+
+      const myTeam = (me.seat ?? -1) % 2 === 0 ? "A" : "B";
+      const completedAt = match.completedAt ?? replay.createdAt;
+      const startTime = typeof state?.startedAt === "number" ? state.startedAt : undefined;
+      const durationMs = typeof replay.durationMs === "number"
+        ? replay.durationMs
+        : startTime && completedAt
+          ? Math.max(0, new Date(completedAt).getTime() - startTime)
+          : 0;
+
+      return [{
+        matchId,
+        mode: match.mode,
+        players: players.map((player) => ({
+          seat: player.seat,
+          username: player.username ?? "Player",
+          isBot: !!player.isBot,
+        })),
+        winnerTeam: replay.winnerTeam ?? match.winnerTeam ?? null,
+        won: (replay.winnerTeam ?? match.winnerTeam) === myTeam,
+        powerSuit: replay.powerSuit ?? state?.powerSuit ?? null,
+        tricks: Array.isArray(state?.completedTricks) ? state.completedTricks.length : 0,
+        durationMs,
+        completedAt,
+        events: Array.isArray(replay.events) ? replay.events : [],
+      }];
+    });
+
+    res.json({ replays });
+  } catch (error) {
+    next(error);
+  }
 });
 
 usersRouter.get("/achievements", requireAuth, async (req, res, next) => {
