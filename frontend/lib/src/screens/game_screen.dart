@@ -247,11 +247,34 @@ class _GameScreenState extends State<GameScreen> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           toolbarHeight: isShortPhone ? 50 : kToolbarHeight,
-          leading: IconButton(
-            tooltip: 'Leave Match',
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 18),
-            onPressed: () => _confirmQuit(context, app),
-          ),
+          leadingWidth: isCompactGameControls ? 82 : 56,
+          leading: isCompactGameControls
+              ? Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: TextButton.icon(
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.redAccent,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      minimumSize: const Size(0, 44),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: () => _confirmQuit(context, app),
+                    icon: const Icon(Icons.exit_to_app_rounded, size: 17),
+                    label: Text(
+                      isVeryNarrowPhone ? 'EXIT' : 'LEAVE',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ),
+                )
+              : IconButton(
+                  tooltip: 'Leave Match',
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 18),
+                  onPressed: () => _confirmQuit(context, app),
+                ),
           centerTitle: true,
           title: Container(
             padding: EdgeInsets.symmetric(
@@ -813,6 +836,10 @@ class _HandArea extends StatelessWidget {
     final isMyTurn = match.players.any(
       (p) => p.userId == app.userId && p.seat == match.currentTurnSeat,
     );
+    // A Draggable recognizer can win the gesture arena before a tap on
+    // touchscreens. On phones, use direct card taps; keep drag-to-play on
+    // larger layouts where a mouse drag is a reliable interaction.
+    final isTouchLayout = MediaQuery.sizeOf(context).width < 600;
 
     // Prepare hand
     final hand = List<ArenaCard>.from(match.hand);
@@ -880,7 +907,7 @@ class _HandArea extends StatelessWidget {
                     child: cardWidget,
                   );
 
-                  if (canPlay) {
+                  if (canPlay && !isTouchLayout) {
                     wrappedCard = Draggable<String>(
                       data: card.id,
                       feedback: Material(
