@@ -617,20 +617,21 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("disconnect", () => {
+      const liveSockets = activeSocketsByUser.get(userId);
+      liveSockets?.delete(socket.id);
+      if (liveSockets && liveSockets.size > 0) {
+        // Multiple tabs/devices share one user room; one closing must not
+        // cancel the other tab's in-flight queue request, mark the account
+        // offline, or replace its live player's seat.
+        return;
+      }
+      activeSocketsByUser.delete(userId);
       const activePartyId = matchmaking.getPartyIdForUser(userId);
       rankedQueueRequests.set(`user:${userId}`, (rankedQueueRequests.get(`user:${userId}`) ?? 0) + 1);
       if (activePartyId) {
         const key = `party:${activePartyId}`;
         rankedQueueRequests.set(key, (rankedQueueRequests.get(key) ?? 0) + 1);
       }
-      const liveSockets = activeSocketsByUser.get(userId);
-      liveSockets?.delete(socket.id);
-      if (liveSockets && liveSockets.size > 0) {
-        // Multiple tabs/devices share one user room; one closing must not
-        // mark the account offline or replace its live player's seat.
-        return;
-      }
-      activeSocketsByUser.delete(userId);
       onlineUsers.delete(userId);
       const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
       matchmaking.removeFromQueue(userId);
