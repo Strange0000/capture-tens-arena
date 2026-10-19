@@ -112,11 +112,18 @@ class SocketService {
 
   void joinRoom(String code) => _emit('room:join', {'code': code.toUpperCase()});
 
+  void leaveRoom(String? code) => _emit(
+        'room:leave',
+        code == null ? {} : {'code': code},
+      );
+
   void startRoomWithBots(String code) => _emit('room:startWithBots', {'code': code});
 
   void inviteToParty(String targetUserId) => _emit('party:invite', {'targetUserId': targetUserId});
   
   void acceptPartyInvite(String partyId) => _emit('party:accept', {'partyId': partyId});
+
+  void declinePartyInvite(String partyId) => _emit('party:decline', {'partyId': partyId});
 
   void leaveParty() => _emit('party:leave', {});
 
@@ -139,6 +146,13 @@ class SocketService {
       return;
     }
     if (!_socket!.connected) {
+      // Never replay a stale move after reconnect: it could play a card in a
+      // later turn or apply an old suit selection to a new game.
+      const transientGameplayEvents = {'card:play', 'power:select', 'emote:send'};
+      if (transientGameplayEvents.contains(event)) {
+        print('[Socket] Dropping stale transient action while disconnected: $event');
+        return;
+      }
       print('[Socket] Socket not yet connected, buffering event: $event');
       _pendingEmits.add(_PendingEmit(event, data));
       return;

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - fix/match-leave-ranked-matchmaking
+      - fix/phase1-game-correctness
 
 permissions:
   contents: read
@@ -33,3 +34,34 @@ jobs:
       - name: Run backend tests
         working-directory: backend
         run: npm test
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.32.1"
+          cache: true
+
+      - name: Get frontend dependencies
+        working-directory: frontend
+        run: flutter pub get
+
+      - name: Analyze Flutter code
+        working-directory: frontend
+        # Keep baseline infos/deprecation notices visible without blocking CI;
+        # Dart errors and compiler failures still fail the validation.
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run Flutter tests
+        working-directory: frontend
+        run: flutter test
+
+      - name: Build Flutter web release
+        working-directory: frontend
+        run: flutter build web --release

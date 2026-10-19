@@ -12,7 +12,7 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().optional(),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX: z.coerce.number().default(120),
-  TURN_TIMEOUT_MS: z.coerce.number().default(45000),
+  TURN_TIMEOUT_MS: z.coerce.number().default(18000),
   DISCONNECT_GRACE_MS: z.coerce.number().default(60000),
   BOT_THINK_MS: z.coerce.number().default(1500),
   OFFLINE_DEV_MODE: z.string().transform((val) => val.toLowerCase() === "true").default("false")
@@ -22,5 +22,10 @@ export const env = envSchema.parse(process.env);
 
 if (env.NODE_ENV === "production" && env.JWT_SECRET === "development-secret-change-me") {
   console.error("FATAL: JWT_SECRET must be set in production!");
+  process.exit(1);
+}
+
+if (env.NODE_ENV === "production" && env.OFFLINE_DEV_MODE) {
+  console.error("FATAL: OFFLINE_DEV_MODE must be disabled in production!");
   process.exit(1);
 }

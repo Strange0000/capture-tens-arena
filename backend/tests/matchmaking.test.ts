@@ -11,6 +11,30 @@ function player(userId: string): QueuePlayer {
 }
 
 describe("private room lifecycle", () => {
+  it("allows a player to explicitly leave a room and removes an empty room", () => {
+    const matchmaking = new MatchmakingService();
+    const code = matchmaking.createPrivateRoom(player("owner"));
+    matchmaking.joinPrivateRoom(code, player("member"));
+
+    const changed = matchmaking.leavePrivateRoom("owner", code);
+    expect(changed?.players.map((member) => member.userId)).toEqual(["member"]);
+    expect(matchmaking.getPrivateRoomCodeForUser("owner")).toBeUndefined();
+    expect(matchmaking.getPrivateRoomCodeForUser("member")).toBe(code);
+
+    const emptied = matchmaking.leavePrivateRoom("member", code);
+    expect(emptied?.players).toEqual([]);
+    expect(matchmaking.getPrivateRoom(code)).toBeUndefined();
+  });
+
+  it("rejects duplicate party acceptance and joining multiple parties", () => {
+    const matchmaking = new MatchmakingService();
+    const firstId = matchmaking.createParty(player("owner"));
+    const secondId = matchmaking.createParty(player("other"));
+    matchmaking.joinParty(firstId, player("guest"));
+    expect(matchmaking.joinParty(firstId, player("guest"))).toHaveLength(2);
+    expect(() => matchmaking.joinParty(secondId, player("guest"))).toThrow("Leave your current party first");
+  });
+
   it("lets up to four different players join a case-insensitive room code", () => {
     const matchmaking = new MatchmakingService();
     const code = matchmaking.createPrivateRoom(player("owner"));
@@ -70,6 +94,29 @@ describe("private room lifecycle", () => {
     expect(changedRooms).toHaveLength(1);
     expect(changedRooms[0].code).toBe(code);
     expect(changedRooms[0].players.map((member) => member.userId)).toEqual(["owner"]);
+  });
+});
+
+describe("ranked team balancing", () => {
+  it("balances two teams using the queued players' MMR", () => {
+    const matchmaking = new MatchmakingService();
+    const ratings = [
+      ["low-a", 100],
+      ["low-b", 105],
+      ["high-a", 1000],
+      ["high-b", 1005],
+    ] as const;
+
+    let result: QueuePlayer[] | undefined;
+    for (const [userId, mmr] of ratings) {
+      result = matchmaking.enqueueRanked([{ ...player(userId), mmr }]);
+    }
+
+    expect(result).toHaveLength(4);
+    const [seat0, seat1, seat2, seat3] = result!;
+    const teamA = (seat0.mmr + seat2.mmr) / 2;
+    const teamB = (seat1.mmr + seat3.mmr) / 2;
+    expect(Math.abs(teamA - teamB)).toBeLessThanOrEqual(5);
   });
 });
 

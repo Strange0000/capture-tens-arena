@@ -16,23 +16,14 @@ class AppState extends ChangeNotifier {
   AppState() {
     String? url;
 
-    // 1. Query parameter has highest priority (web only, safe on all platforms)
-    try {
-      final queryBackend = Uri.base.queryParameters['backend'];
-      if (queryBackend != null && queryBackend.isNotEmpty) {
-        url = queryBackend;
-      }
-    } catch (_) {}
-
-    // 2. Compile-time dart-define
-    if (url == null) {
-      const envUrl = String.fromEnvironment('BACKEND_URL');
-      if (envUrl.isNotEmpty) {
-        url = envUrl;
-      }
+    // Never let a URL query parameter decide where cached JWTs and Socket.IO
+    // credentials are sent. Use BACKEND_URL as a trusted build-time override.
+    const envUrl = String.fromEnvironment('BACKEND_URL');
+    if (envUrl.isNotEmpty) {
+      url = envUrl;
     }
 
-    // 3. If running locally on web, connect to local backend
+    // If running locally on web, connect to the local development backend.
     if (url == null) {
       try {
         if (Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1') {
@@ -41,7 +32,7 @@ class AppState extends ChangeNotifier {
       } catch (_) {}
     }
 
-    // 4. Fallback to default production URL
+    // Default production backend.
     url ??= 'https://capture-tens-arena.onrender.com';
 
     backendUrl = url;
@@ -146,12 +137,22 @@ class AppState extends ChangeNotifier {
   Future<void> tryRestoreSession() async {
     final session = await auth.getCachedSession();
     if (session == null) return;
-    token = session.token;
-    userId = session.userId;
-    username = session.username;
-    _connectSocket();
-    _fetchInitialData();
-    notifyListeners();
+    try {
+      // Validate a stored token before attaching it to a socket connection.
+      await auth.fetchMe(session.token);
+      token = session.token;
+      userId = session.userId;
+      username = session.username;
+      _connectSocket();
+      _fetchInitialData();
+      notifyListeners();
+    } catch (_) {
+      await auth.clearSession();
+      token = null;
+      userId = null;
+      username = null;
+      notifyListeners();
+    }
   }
 
   Future<void> bootGuest() async {
@@ -329,9 +330,17 @@ class AppState extends ChangeNotifier {
   void _onRankUpdated(Map<String, dynamic> json) {
     lastRankUpdate = json;
     // Update local rank info with new MMR
-    final newMmr = json['newMmr'] as int?;
+    final newMmr = (json['newMmr'] as num?)?.toInt();
     if (newMmr != null) {
-      rankInfo = RankInfo.fromMmr(newMmr, peakMmr: rankInfo?.peakMmr ?? newMmr, wins: rankInfo?.wins ?? 0, losses: rankInfo?.losses ?? 0);
+      final updatedWins = (json['wins'] as num?)?.toInt() ?? rankInfo?.wins ?? 0;
+      final updatedLosses = (json['losses'] as num?)?.toInt() ?? rankInfo?.losses ?? 0;
+      final updatedPeak = (json['peakMmr'] as num?)?.toInt() ?? rankInfo?.peakMmr ?? newMmr;
+      rankInfo = RankInfo.fromMmr(
+        newMmr,
+        peakMmr: updatedPeak < newMmr ? newMmr : updatedPeak,
+        wins: updatedWins,
+        losses: updatedLosses,
+      );
     }
     notifyListeners();
   }
@@ -568,6 +577,10 @@ class AppState extends ChangeNotifier {
   }
 
   void declinePartyInvite() {
+    final invite = pendingPartyInvite;
+    if (invite != null && invite['partyId'] is String) {
+      socket.declinePartyInvite(invite['partyId'] as String);
+    }
     pendingPartyInvite = null;
     notifyListeners();
   }
@@ -575,6 +588,10 @@ class AppState extends ChangeNotifier {
   void leaveParty() {
     socket.leaveParty();
     party = null;
+    if (lobbyStatus == LobbyStatus.queuing) {
+      lobbyStatus = LobbyStatus.idle;
+      match = null;
+    }
     notifyListeners();
   }
 
@@ -606,13 +623,27 @@ class AppState extends ChangeNotifier {
 
   void startOffline(String difficulty) {
     print('[AppState] startOffline($difficulty) called, socket connected=${socket.connected}');
+    // Wait for match:created before navigating into a game. If the server
+    // rejects the request, keep the user in the lobby instead of a blank table.
+    match = null;
+    if (lobbyStatus != LobbyStatus.inRoom) lobbyStatus = LobbyStatus.idle;
     socket.startOffline(difficulty);
-    lobbyStatus = LobbyStatus.inMatch;
     notifyListeners();
   }
 
   void createRoom() {
     socket.createRoom();
+  }
+
+  void leaveRoom() {
+    final code = roomCode;
+    socket.leaveRoom(code);
+    roomCode = null;
+    roomPlayerNames = [];
+    roomPlayerCount = 1;
+    roomCapacity = 4;
+    if (lobbyStatus == LobbyStatus.inRoom) lobbyStatus = LobbyStatus.idle;
+    notifyListeners();
   }
 
   void joinRoom(String code) {

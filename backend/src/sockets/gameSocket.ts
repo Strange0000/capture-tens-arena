@@ -11,20 +11,44 @@ import { MatchModel } from "../models/Match.js";
 import { ReplayModel } from "../models/Replay.js";
 import { FriendModel } from "../models/Friend.js";
 import { UserModel } from "../models/User.js";
-import { matchmaking } from "../services/matchmakingService.js";
+import { matchmaking, QueuePlayer } from "../services/matchmakingService.js";
 import { matchStore } from "../services/matchStore.js";
 import { applyRankedResult } from "../services/rankingService.js";
 import { authenticateSocket, AuthedSocket } from "./authSocket.js";
 import { StatisticsModel } from "../models/Statistics.js";
+import { RankingModel } from "../models/Ranking.js";
+import { z } from "zod";
 import { checkAndAwardAchievements, ACHIEVEMENTS } from "../game/achievements.js";
 
 // Track online users for friend status
 const onlineUsers = new Set<string>();
+const activeSocketsByUser = new Map<string, Set<string>>();
 const disconnectGraceTimers = new Map<string, NodeJS.Timeout>();
+const rankedQueueRequests = new Map<string, number>();
+const pendingPartyInvites = new Map<string, { partyId: string; expiresAt: number }>();
 
 function currentSeason() {
   const now = new Date();
   return `${now.getUTCFullYear()}-Q${Math.floor(now.getUTCMonth() / 3) + 1}`;
+}
+
+async function opponentAverageMmr(state: ReturnType<typeof requireMatch>, userId: string, season: string): Promise<number> {
+  if (env.OFFLINE_DEV_MODE) return 0;
+  const leaver = state.players.find((player) => player.userId === userId);
+  if (!leaver) return 0;
+  // Disconnected ranked players are bot-controlled but still count toward
+  // their original team's average rating for the abandonment result.
+  const opposingIds = state.players
+    .filter((player) => !player.userId.startsWith("bot-") &&
+      teamForSeat(player.seat) !== teamForSeat(leaver.seat))
+    .map((player) => player.userId);
+  if (opposingIds.length === 0) return 0;
+  const ratings = await RankingModel.find({
+    userId: { $in: opposingIds },
+    season,
+  }).select("mmr").lean();
+  if (ratings.length === 0) return 0;
+  return ratings.reduce((sum, ranking) => sum + ranking.mmr, 0) / ratings.length;
 }
 
 export function registerGameSockets(io: Server) {
@@ -37,35 +61,127 @@ export function registerGameSockets(io: Server) {
     const userId = socket.user!.id;
     console.log(`[SOCKET] User connected: ${userId} (${socket.user?.username})`);
     socket.join(`user:${userId}`);
+    const userSockets = activeSocketsByUser.get(userId) ?? new Set<string>();
+    userSockets.add(socket.id);
+    activeSocketsByUser.set(userId, userSockets);
     onlineUsers.add(userId);
     reconnectMatch(io, socket);
     broadcastFriendStatus(io, userId, "online");
 
-    socket.on("queue:ranked", () => {
+    socket.on("queue:ranked", async () => {
+      // All requests from members of the same party share one generation, so
+      // cancelling/reshaping the party invalidates every in-flight queue read.
+      const partyIdAtRequest = matchmaking.getPartyIdForUser(userId);
+      const requestKey = partyIdAtRequest ? `party:${partyIdAtRequest}` : `user:${userId}`;
+      const requestId = (rankedQueueRequests.get(requestKey) ?? 0) + 1;
+      rankedQueueRequests.set(requestKey, requestId);
       console.log(`[SOCKET] queue:ranked from user ${userId} (${socket.user!.username})`);
-      let party = matchmaking.getPartyForUser(userId);
-      if (!party) {
-        party = [{
+      let requestUserIds = [userId];
+      try {
+        const currentParty = matchmaking.getPartyForUser(userId);
+        // Snapshot membership before awaiting the database query. The service
+        // returns its live array so it must not be retained across an await.
+        const requestedParty = currentParty ? [...currentParty] : [{
           userId,
           username: socket.user!.username,
           socketId: socket.id,
           mmr: 0,
         }];
-      }
+        requestUserIds = requestedParty.map((player) => player.userId);
 
-      const group = matchmaking.enqueueRanked(party);
-      for (const player of party) {
-        io.to("user:" + player.userId).emit("queue:joined", { mode: "ranked" });
-      }
+        for (const player of requestedParty) {
+          const activeMatch = matchStore.findByUser(player.userId);
+          if (activeMatch && activeMatch.phase !== "complete") {
+            throw new Error("Finish or leave your current match before queuing");
+          }
+        }
 
-      // Ranked matches must be human-only. Keep players queued until a real
-      // group is available; clients can cancel at any time.
-      if (group) {
-        startMatch(io, matchmaking.toSeats(group), "ranked");
+        // Ratings are server-owned; never trust a client-supplied MMR value.
+        const ratingByUser = new Map<string, number>();
+        if (!env.OFFLINE_DEV_MODE) {
+          const ratings = await RankingModel.find({
+            userId: { $in: requestedParty.map((player) => player.userId) },
+            season: currentSeason(),
+          }).select("userId mmr").lean();
+          for (const rating of ratings) {
+            ratingByUser.set(rating.userId, rating.mmr);
+          }
+        }
+        // Newer searches/cancellations own the UI state. An older request must
+        // never emit a cancellation that clears a search which began afterward.
+        if (requestId !== rankedQueueRequests.get(requestKey)) return;
+
+        const latestParty = matchmaking.getPartyForUser(userId);
+        const partyShapeChanged = partyIdAtRequest
+          ? !latestParty ||
+            latestParty.length !== requestedParty.length ||
+            latestParty.some((player) => !requestedParty.some((original) => original.userId === player.userId))
+          : latestParty !== undefined;
+        const partyChanged = matchmaking.getPartyIdForUser(userId) !== partyIdAtRequest ||
+          partyShapeChanged;
+        if (partyChanged) {
+          const notifyPlayers = new Map<string, QueuePlayer>();
+          for (const player of requestedParty) notifyPlayers.set(player.userId, player);
+          for (const player of latestParty ?? []) notifyPlayers.set(player.userId, player);
+          for (const queuedPlayer of notifyPlayers.values()) {
+            io.to(`user:${queuedPlayer.userId}`).emit("queue:cancelled", { mode: "ranked" });
+          }
+          return;
+        }
+
+        const ratedParty = requestedParty.map((player) => ({
+          ...player,
+          socketId: player.userId === userId ? socket.id : player.socketId,
+          mmr: ratingByUser.get(player.userId) ?? 0,
+        }));
+        for (const player of ratedParty) {
+          const activeMatch = matchStore.findByUser(player.userId);
+          if (activeMatch && activeMatch.phase !== "complete") {
+            throw new Error("Finish or leave your current match before queuing");
+          }
+        }
+        const group = matchmaking.enqueueRanked(ratedParty);
+
+        for (const player of ratedParty) {
+          io.to("user:" + player.userId).emit("queue:joined", { mode: "ranked" });
+        }
+        if (group) {
+          try {
+            startMatch(io, matchmaking.toSeats(group), "ranked");
+          } catch (err) {
+            // tryMatch consumes the queue groups before returning. If match
+            // startup loses a race with another state transition, release every
+            // matched client from "searching" rather than leaving ghost queues.
+            const message = err instanceof Error ? err.message : "Could not create ranked match";
+            console.error("[RankedQueue] Match creation failed:", err);
+            for (const player of group) {
+              io.to(`user:${player.userId}`).emit("queue:cancelled", { mode: "ranked" });
+              io.to(`user:${player.userId}`).emit("error", { message });
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[RankedQueue] Could not enqueue players:", err);
+        const notifyIds = new Set<string>(requestUserIds);
+        const previouslyQueued = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
+        for (const player of previouslyQueued) notifyIds.add(player.userId);
+        matchmaking.removeFromQueue(userId);
+        for (const queuedUserId of notifyIds) {
+          io.to(`user:${queuedUserId}`).emit("queue:cancelled", { mode: "ranked" });
+        }
+        socket.emit("error", {
+          message: err instanceof Error ? err.message : "Could not enter ranked matchmaking",
+        });
       }
     });
 
     socket.on("queue:cancel", () => {
+      const partyId = matchmaking.getPartyIdForUser(userId);
+      rankedQueueRequests.set(`user:${userId}`, (rankedQueueRequests.get(`user:${userId}`) ?? 0) + 1);
+      if (partyId) {
+        const key = `party:${partyId}`;
+        rankedQueueRequests.set(key, (rankedQueueRequests.get(key) ?? 0) + 1);
+      }
       const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
       const queuedIds = new Set<string>([userId, ...queuedGroup.map((player) => player.userId)]);
 
@@ -81,36 +197,101 @@ export function registerGameSockets(io: Server) {
       console.log(`[RankedQueue] Cancelled search for ${[...queuedIds].join(", ")}`);
     });
 
-    socket.on("party:invite", ({ targetUserId }: { targetUserId: string }) => {
-      let existingParty = matchmaking.getPartyForUser(userId);
-      let partyId: string | null = null;
-      if (!existingParty) {
-        partyId = matchmaking.createParty({
-          userId,
-          username: socket.user!.username,
-          socketId: socket.id,
-          mmr: 0
+    socket.on("party:invite", async (payload: unknown) => {
+      try {
+        const parsed = z.object({ targetUserId: z.string().min(1).max(128) }).safeParse(payload);
+        if (!parsed.success || parsed.data.targetUserId === userId) {
+          socket.emit("error", { message: "Choose a valid player to invite" });
+          return;
+        }
+        const { targetUserId } = parsed.data;
+        if (matchmaking.isUserInRankedQueue(userId)) {
+          throw new Error("Cancel ranked matchmaking before inviting a party member");
+        }
+        if (matchmaking.getPartyForUser(targetUserId)) {
+          throw new Error("That player is already in a party");
+        }
+        if (matchmaking.isUserInRankedQueue(targetUserId)) {
+          throw new Error("That player is already searching for a ranked match");
+        }
+        if (matchmaking.getPrivateRoomCodeForUser(targetUserId)) {
+          throw new Error("That player is already in a private room");
+        }
+        const targetMatch = matchStore.findByUser(targetUserId);
+        if (targetMatch && targetMatch.phase !== "complete") {
+          throw new Error("That player is already in a match");
+        }
+        const inviterParty = matchmaking.getPartyForUser(userId);
+        if (inviterParty && inviterParty.length >= 2) throw new Error("Your party is full");
+        const target = env.OFFLINE_DEV_MODE
+          ? { id: targetUserId }
+          : await UserModel.findById(targetUserId).select("_id").lean();
+        if (!target) {
+          socket.emit("error", { message: "Player not found" });
+          return;
+        }
+        if (!env.OFFLINE_DEV_MODE) {
+          const friendship = await FriendModel.findOne({
+            status: "accepted",
+            $or: [
+              { requesterId: userId, addresseeId: targetUserId },
+              { requesterId: targetUserId, addresseeId: userId },
+            ],
+          }).select("_id").lean();
+          if (!friendship) {
+            socket.emit("error", { message: "You can invite accepted friends only" });
+            return;
+          }
+        }
+        const activeMatch = matchStore.findByUser(userId);
+        if (activeMatch && activeMatch.phase !== "complete") {
+          throw new Error("Leave your match before inviting a party member");
+        }
+        let partyId = matchmaking.getPartyIdForUser(userId);
+        if (!partyId) {
+          partyId = matchmaking.createParty({
+            userId,
+            username: socket.user!.username,
+            socketId: socket.id,
+            mmr: 0,
+          });
+          socket.emit("party:updated", { party: matchmaking.getParty(partyId) });
+        }
+        pendingPartyInvites.set(targetUserId, {
+          partyId,
+          expiresAt: Date.now() + 2 * 60 * 1000,
         });
-        socket.emit("party:updated", { party: matchmaking.getParty(partyId) });
-      }
-      // Get the partyId from userParty map
-      const activePartyId = partyId ?? matchmaking.getPartyIdForUser(userId);
-      if (activePartyId) {
         io.to(`user:${targetUserId}`).emit("party:invited", {
           from: socket.user!.username,
-          partyId: activePartyId
+          partyId,
+        });
+      } catch (err) {
+        socket.emit("error", {
+          message: err instanceof Error ? err.message : "Could not send party invitation",
         });
       }
     });
 
-    socket.on("party:accept", ({ partyId }: { partyId: string }) => {
+    socket.on("party:accept", (payload: unknown) => {
       try {
-        const party = matchmaking.joinParty(partyId, {
+        const parsed = z.object({ partyId: z.string().min(1).max(128) }).safeParse(payload);
+        if (!parsed.success) throw new Error("Invalid party invitation");
+        const invite = pendingPartyInvites.get(userId);
+        if (!invite || invite.expiresAt < Date.now() || invite.partyId !== parsed.data.partyId) {
+          pendingPartyInvites.delete(userId);
+          throw new Error("This party invitation is invalid or has expired");
+        }
+        const activeMatch = matchStore.findByUser(userId);
+        if (activeMatch && activeMatch.phase !== "complete") {
+          throw new Error("Leave your match before joining a party");
+        }
+        const party = matchmaking.joinParty(parsed.data.partyId, {
           userId,
           username: socket.user!.username,
           socketId: socket.id,
           mmr: 0
         });
+        pendingPartyInvites.delete(userId);
         for (const p of party) {
           io.to(`user:${p.userId}`).emit("party:updated", { party });
         }
@@ -119,9 +300,36 @@ export function registerGameSockets(io: Server) {
       }
     });
 
+    socket.on("party:decline", (payload: unknown) => {
+      const parsed = z.object({ partyId: z.string().min(1).max(128) }).safeParse(payload);
+      if (!parsed.success) return;
+      const invite = pendingPartyInvites.get(userId);
+      if (invite?.partyId === parsed.data.partyId) pendingPartyInvites.delete(userId);
+    });
+
     socket.on("party:leave", () => {
+      const existingParty = matchmaking.getPartyForUser(userId) ?? [];
+      const existingPartyId = matchmaking.getPartyIdForUser(userId);
+      rankedQueueRequests.set(`user:${userId}`, (rankedQueueRequests.get(`user:${userId}`) ?? 0) + 1);
+      if (existingPartyId) {
+        const key = `party:${existingPartyId}`;
+        rankedQueueRequests.set(key, (rankedQueueRequests.get(key) ?? 0) + 1);
+      }
+      const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
+      if (queuedGroup.length > 0) matchmaking.removeFromQueue(userId);
+      const cancelIds = new Set<string>([
+        userId,
+        ...existingParty.map((player) => player.userId),
+        ...queuedGroup.map((player) => player.userId),
+      ]);
+      for (const cancelId of cancelIds) {
+        io.to(`user:${cancelId}`).emit("queue:cancelled", { mode: "ranked" });
+      }
       const partyId = matchmaking.leaveParty(userId);
       if (partyId) {
+        for (const [inviteeId, invite] of pendingPartyInvites.entries()) {
+          if (invite.partyId === partyId) pendingPartyInvites.delete(inviteeId);
+        }
         const party = matchmaking.getParty(partyId);
         if (party) {
           for (const p of party) {
@@ -134,6 +342,10 @@ export function registerGameSockets(io: Server) {
 
     socket.on("room:create", () => {
       try {
+        const activeMatch = matchStore.findByUser(userId);
+        if (activeMatch && activeMatch.phase !== "complete") {
+          throw new Error("Finish or leave your current match first");
+        }
         const code = matchmaking.createPrivateRoom({
           userId,
           username: socket.user!.username,
@@ -153,6 +365,10 @@ export function registerGameSockets(io: Server) {
         if (!code) throw new Error("Enter a room code");
         if (code.length !== 6) throw new Error("Room code must be 6 characters");
 
+        const activeMatch = matchStore.findByUser(userId);
+        if (activeMatch && activeMatch.phase !== "complete") {
+          throw new Error("Finish or leave your current match first");
+        }
         const group = matchmaking.joinPrivateRoom(code, {
           userId,
           username: socket.user!.username,
@@ -170,10 +386,29 @@ export function registerGameSockets(io: Server) {
       }
     });
 
+    socket.on("room:leave", (payload?: unknown) => {
+      try {
+        const parsed = z.object({ code: z.string().min(1).max(6).optional() }).safeParse(payload ?? {});
+        if (!parsed.success) throw new Error("Invalid room code");
+        const left = matchmaking.leavePrivateRoom(userId, parsed.data.code);
+        if (!left) throw new Error("You are not in a private room");
+        socket.emit("room:left", { code: left.code });
+        if (left.players.length > 0) {
+          broadcastPrivateRoom(io, left.code, left.players);
+        }
+      } catch (err) {
+        socket.emit("error", { message: err instanceof Error ? err.message : "Could not leave room" });
+      }
+    });
+
     socket.on("room:startWithBots", (data?: { code?: string }) => {
       try {
         const code = typeof data?.code === "string" ? data.code.trim().toUpperCase() : "";
         if (!code) throw new Error("Create or join a room first");
+        const activeMatch = matchStore.findByUser(userId);
+        if (activeMatch && activeMatch.phase !== "complete") {
+          throw new Error("Finish or leave your current match first");
+        }
         const group = matchmaking.startRoomWithBots(code, "hard", userId);
         if (group) startMatch(io, matchmaking.toSeats(group), "private");
       } catch (err: any) {
@@ -181,12 +416,27 @@ export function registerGameSockets(io: Server) {
       }
     });
 
-    socket.on("bot:offline", (data?: any) => {
-      const difficulty: "easy" | "medium" | "hard" = (data && data.difficulty) ? data.difficulty : "medium";
-      console.log(`[SOCKET] bot:offline received for user ${userId}, difficulty: ${difficulty}`);
-      // If user is already in a match, clean it up first
-      const existing = matchStore.findByUser(userId);
-      if (existing) matchStore.delete(existing.id);
+    socket.on("bot:offline", (payload: unknown) => {
+      const parsed = z.object({ difficulty: z.enum(["easy", "medium", "hard"]).optional() }).safeParse(payload ?? {});
+      if (!parsed.success) {
+        socket.emit("error", { message: "Choose a valid bot difficulty" });
+        return;
+      }
+      const difficulty = parsed.data.difficulty ?? "medium";
+      try {
+        const existing = matchStore.findByUser(userId);
+        if (existing && existing.phase !== "complete") {
+          throw new Error("Leave your current match before starting another");
+        }
+        if (matchmaking.isUserInRankedQueue(userId)) {
+          throw new Error("Cancel ranked matchmaking before starting a practice match");
+        }
+        if (matchmaking.getPrivateRoomCodeForUser(userId)) {
+          throw new Error("Leave your private room before starting a practice match");
+        }
+        if (matchmaking.getPartyForUser(userId)?.length) {
+          throw new Error("Leave your party before starting a practice match");
+        }
 
       const seats: PlayerSeat[] = [
         { seat: 0, userId, username: socket.user!.username, connected: true, isBot: false },
@@ -195,12 +445,15 @@ export function registerGameSockets(io: Server) {
         { seat: 3, userId: "bot-3", username: "Cipher", connected: true, isBot: true, botDifficulty: difficulty }
       ];
       startMatch(io, seats, "offline");
+      } catch (err) {
+        socket.emit("error", { message: err instanceof Error ? err.message : "Could not start practice match" });
+      }
     });
 
     socket.on("match:leave", async () => {
       matchmaking.removeFromQueue(userId);
       const state = matchStore.findByUser(userId);
-      if (state) {
+      if (state && state.phase !== "complete") {
         // Leaving an offline match should end that local table entirely instead
         // of quietly handing the player seat to a bot.
         if (state.mode === "offline") {
@@ -210,33 +463,67 @@ export function registerGameSockets(io: Server) {
           console.log("[GAME] Offline match " + state.id + " ended because " + userId + " left");
           return;
         }
-        if (state.mode === "ranked" && state.phase !== "complete") {
-          // Penalize quitting player
-          const result = await applyRankedResult(userId, currentSeason(), 0, false);
-          socket.emit("rank:updated", result);
-        }
-        const player = state.players.find(p => p.userId === userId);
-        if (player) {
-          player.connected = false;
-          player.isBot = true;
-          player.botDifficulty = "medium";
-        }
+        const player = state.players.find((item) => item.userId === userId);
+        if (!player) return;
+
+        // Apply the takeover synchronously before any database await. Otherwise
+        // the match could finish during a rating query and count a quitter twice.
+        player.connected = false;
+        player.isBot = true;
+        player.botDifficulty = "medium";
         socket.leave(`match:${state.id}`);
         io.to(`match:${state.id}`).emit("match:abandoned", { userLeft: userId });
         matchStore.set(state);
-        if (state.phase === "playing" && state.currentTurnSeat === player?.seat) {
+
+        if (state.phase === "power-select" && state.firstPlayerSeat === player.seat) {
+          maybeBotPowerSelect(io, state.id);
+        } else if (state.phase === "playing" && state.currentTurnSeat === player.seat) {
           maybeBotTurn(io, state.id);
+        }
+
+        if (state.mode === "ranked") {
+          const season = currentSeason();
+          try {
+            const opponentAvg = await opponentAverageMmr(state, userId, season);
+            const result = await applyRankedResult(userId, season, opponentAvg, false);
+            const totals = result.ranking as { wins?: number; losses?: number; peakMmr?: number };
+            io.to(`user:${userId}`).emit("rank:updated", {
+              oldMmr: result.oldMmr,
+              newMmr: result.newMmr,
+              mmrDelta: result.mmrDelta,
+              rank: result.rankDetail,
+              wins: totals.wins,
+              losses: totals.losses,
+              peakMmr: totals.peakMmr,
+            });
+          } catch (err) {
+            console.error(`Failed to apply ranked abandonment penalty for ${userId}:`, err);
+            socket.emit("error", { message: "Could not save ranked abandonment penalty" });
+          }
         }
       }
     });
 
-    socket.on("power:select", ({ matchId, suit }: { matchId: string; suit: Suit }) => {
+    socket.on("power:select", (payload: unknown) => {
       try {
+        const parsed = z.object({
+          matchId: z.string().min(1),
+          suit: z.enum(["hearts", "diamonds", "clubs", "spades"]),
+        }).safeParse(payload);
+        if (!parsed.success) {
+          socket.emit("error", { message: "Invalid power suit selection" });
+          return;
+        }
+        const { matchId, suit } = parsed.data;
         const state = requireMatch(matchId);
         const seat = seatForUser(state.players, userId);
+        const actor = state.players[seat];
+        if (!actor || actor.isBot || !actor.connected) {
+          throw new Error("This seat is now controlled by a bot");
+        }
         selectPowerSuit(state, seat, suit);
         dealRemainingCards(state);
-        state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+        state.turnDeadline = state.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
         matchStore.set(state);
         broadcastState(io, state.id);
         maybeBotTurn(io, state.id);
@@ -248,14 +535,27 @@ export function registerGameSockets(io: Server) {
       }
     });
 
-    socket.on("card:play", ({ matchId, cardId }: { matchId: string; cardId: string }) => {
+    socket.on("card:play", (payload: unknown) => {
       try {
+        const parsed = z.object({
+          matchId: z.string().min(1),
+          cardId: z.string().min(1).max(32),
+        }).safeParse(payload);
+        if (!parsed.success) {
+          socket.emit("error", { message: "Invalid card play request" });
+          return;
+        }
+        const { matchId, cardId } = parsed.data;
         const state = requireMatch(matchId);
         const seat = seatForUser(state.players, userId);
+        const actor = state.players[seat];
+        if (!actor || actor.isBot || !actor.connected) {
+          throw new Error("This seat is now controlled by a bot");
+        }
         const result = playCard(state, seat, cardId);
         
         // Always refresh deadline after any card play so clients show an accurate timer
-        state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+        state.turnDeadline = state.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
         
         matchStore.set(state);
         broadcastState(io, state.id);
@@ -266,7 +566,7 @@ export function registerGameSockets(io: Server) {
             const fresh = matchStore.get(matchId);
             if (fresh && fresh.phase === "trick-resolving") {
               startNextTrick(fresh);
-              fresh.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+              fresh.turnDeadline = fresh.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
               matchStore.set(fresh);
               broadcastState(io, matchId);
               maybeBotTurn(io, matchId);
@@ -286,10 +586,20 @@ export function registerGameSockets(io: Server) {
       }
     });
 
-    socket.on("spectate:join", ({ matchId }: { matchId: string }) => {
-      const state = requireMatch(matchId);
-      socket.join(`match:${matchId}:spectators`);
-      socket.emit("match:spectatorState", publicStateForSeat(state));
+    socket.on("spectate:join", (payload: unknown) => {
+      try {
+        const parsed = z.object({ matchId: z.string().min(1) }).safeParse(payload);
+        if (!parsed.success) throw new Error("Invalid match id");
+        const { matchId } = parsed.data;
+        const state = requireMatch(matchId);
+        socket.join(`match:${matchId}:spectators`);
+        socket.emit("match:spectatorState", {
+          ...publicStateForSeat(state),
+          turnTimeoutMs: env.TURN_TIMEOUT_MS,
+        });
+      } catch (err) {
+        socket.emit("error", { message: err instanceof Error ? err.message : "Could not spectate match" });
+      }
     });
 
     socket.on("friends:status", async () => {
@@ -311,19 +621,23 @@ export function registerGameSockets(io: Server) {
 
     // ── Emotes ────────────────────────────────────────────────────────
     const lastEmoteTime = new Map<string, number>();
-    socket.on("emote:send", ({ matchId, emote }: { matchId: string; emote: string }) => {
+    socket.on("emote:send", (payload: unknown) => {
+      const parsed = z.object({
+        matchId: z.string().min(1),
+        emote: z.enum(["nice", "gg", "oops", "wow", "hurry", "angry"]),
+      }).safeParse(payload);
+      if (!parsed.success) return;
+      const { matchId, emote } = parsed.data;
       const now = Date.now();
       const last = lastEmoteTime.get(userId) ?? 0;
       if (now - last < 3000) return; // Rate limit: 1 emote per 3 seconds
       lastEmoteTime.set(userId, now);
       
-      const validEmotes = ["nice", "gg", "oops", "wow", "hurry", "angry"];
-      if (!validEmotes.includes(emote)) return;
       
       const emoteState = matchStore.get(matchId);
       if (!emoteState) return;
       const emotePlayer = emoteState.players.find(p => p.userId === userId);
-      if (!emotePlayer) return;
+      if (!emotePlayer || emotePlayer.isBot || !emotePlayer.connected) return;
       
       io.to(`match:${matchId}`).emit("emote:received", {
         seat: emotePlayer.seat,
@@ -333,8 +647,29 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("disconnect", () => {
+      const liveSockets = activeSocketsByUser.get(userId);
+      liveSockets?.delete(socket.id);
+      if (liveSockets && liveSockets.size > 0) {
+        // Multiple tabs/devices share one user room; one closing must not
+        // cancel the other tab's in-flight queue request, mark the account
+        // offline, or replace its live player's seat.
+        return;
+      }
+      activeSocketsByUser.delete(userId);
+      const activePartyId = matchmaking.getPartyIdForUser(userId);
+      rankedQueueRequests.set(`user:${userId}`, (rankedQueueRequests.get(`user:${userId}`) ?? 0) + 1);
+      if (activePartyId) {
+        const key = `party:${activePartyId}`;
+        rankedQueueRequests.set(key, (rankedQueueRequests.get(key) ?? 0) + 1);
+      }
       onlineUsers.delete(userId);
+      const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
       matchmaking.removeFromQueue(userId);
+      for (const queuedPlayer of queuedGroup) {
+        if (queuedPlayer.userId !== userId) {
+          io.to(`user:${queuedPlayer.userId}`).emit("queue:cancelled", { mode: "ranked" });
+        }
+      }
       for (const changedRoom of matchmaking.removeFromPrivateRooms(userId)) {
         broadcastPrivateRoom(io, changedRoom.code, changedRoom.players);
       }
@@ -370,10 +705,31 @@ export function registerGameSockets(io: Server) {
         freshPlayer.isBot = true;
         freshPlayer.botDifficulty = "medium";
         matchStore.set(freshState);
+        if (freshState.mode === "ranked") {
+          // Disconnect abandonment must not bypass the ranked-loss penalty.
+          const season = currentSeason();
+          void opponentAverageMmr(freshState, userId, season)
+            .then((opponentAvg) => applyRankedResult(userId, season, opponentAvg, false))
+            .then((result) => {
+              const totals = result.ranking as { wins?: number; losses?: number; peakMmr?: number };
+              io.to(`user:${userId}`).emit("rank:updated", {
+                oldMmr: result.oldMmr,
+                newMmr: result.newMmr,
+                mmrDelta: result.mmrDelta,
+                rank: result.rankDetail,
+                wins: totals.wins,
+                losses: totals.losses,
+                peakMmr: totals.peakMmr,
+              });
+            })
+            .catch((err) => console.error(`Failed to apply disconnect penalty for ${userId}:`, err));
+        }
         io.to(`match:${freshState.id}`).emit("match:playerBotReplaced", { userId, username: freshPlayer.username });
         broadcastState(io, freshState.id);
         
-        if (freshState.phase === "playing" && freshState.currentTurnSeat === freshPlayer.seat) {
+        if (freshState.phase === "power-select" && freshState.firstPlayerSeat === freshPlayer.seat) {
+          maybeBotPowerSelect(io, freshState.id);
+        } else if (freshState.phase === "playing" && freshState.currentTurnSeat === freshPlayer.seat) {
           maybeBotTurn(io, freshState.id);
         }
       }, env.DISCONNECT_GRACE_MS);
@@ -406,8 +762,22 @@ function broadcastPrivateRoom(
 }
 
 function startMatch(io: Server, players: PlayerSeat[], mode: MatchMode) {
+  if (players.length !== 4 || new Set(players.map((player) => player.seat)).size !== 4 ||
+      players.some((player) => !Number.isInteger(player.seat) || player.seat < 0 || player.seat > 3)) {
+    throw new Error("A match requires four unique seats from 0 to 3");
+  }
+  const humanIds = players.filter((player) => !player.isBot).map((player) => player.userId);
+  if (new Set(humanIds).size !== humanIds.length) {
+    throw new Error("A player cannot occupy more than one seat");
+  }
+  for (const player of players.filter((item) => !item.isBot)) {
+    const activeMatch = matchStore.findByUser(player.userId);
+    if (activeMatch && activeMatch.phase !== "complete") {
+      throw new Error(`${player.username} is already in an active match`);
+    }
+  }
   const state = dealFirstFive(createMatch(players, mode));
-  state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+  state.turnDeadline = state.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
   matchStore.set(state);
   console.log(`[GAME] Starting match ${state.id} (${mode}) with players: ${players.map(p => `${p.username}(${p.userId})`).join(', ')}`);
   for (const player of players) {
@@ -423,9 +793,15 @@ function broadcastState(io: Server, matchId: string) {
   const state = requireMatch(matchId);
   console.log(`[GAME] Broadcasting state for match ${matchId}, phase: ${state.phase}`);
   for (const player of state.players) {
-    io.to(`user:${player.userId}`).emit("match:state", publicStateForSeat(state, player.seat));
+    io.to(`user:${player.userId}`).emit("match:state", {
+      ...publicStateForSeat(state, player.seat),
+      turnTimeoutMs: env.TURN_TIMEOUT_MS,
+    });
   }
-  io.to(`match:${matchId}:spectators`).emit("match:spectatorState", publicStateForSeat(state));
+  io.to(`match:${matchId}:spectators`).emit("match:spectatorState", {
+    ...publicStateForSeat(state),
+    turnTimeoutMs: env.TURN_TIMEOUT_MS,
+  });
 }
 
 function reconnectMatch(io: Server, socket: AuthedSocket) {
@@ -443,23 +819,25 @@ function reconnectMatch(io: Server, socket: AuthedSocket) {
   matchStore.set(state);
   socket.join(`match:${state.id}`);
   broadcastState(io, state.id);
-  io.to(`match:${state.id}:spectators`).emit("match:spectatorState", publicStateForSeat(state));
 }
 
 function maybeBotPowerSelect(io: Server, matchId: string) {
   const state = requireMatch(matchId);
-  const first = state.players[state.firstPlayerSeat];
+  const expectedSeat = state.firstPlayerSeat;
+  const first = state.players[expectedSeat];
   if (!first?.isBot || state.phase !== "power-select") return;
   setTimeout(() => {
     const fresh = matchStore.get(matchId);
-    if (!fresh || fresh.phase !== "power-select") return;
+    if (!fresh || fresh.phase !== "power-select" || fresh.firstPlayerSeat !== expectedSeat) return;
+    // The original player may have reconnected while the bot was thinking.
+    if (!fresh.players[expectedSeat]?.isBot) return;
     // Pick the suit the bot has the most cards of
     const botHand = fresh.hands[fresh.firstPlayerSeat] || [];
     const suitCounts: Record<string, number> = {};
     for (const c of botHand) { suitCounts[c.suit] = (suitCounts[c.suit] || 0) + 1; }
     const bestSuit = (Object.entries(suitCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "spades") as Suit;
     const stateAfterDeal = dealRemainingCards(selectPowerSuit(fresh, fresh.firstPlayerSeat, bestSuit));
-    stateAfterDeal.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+    stateAfterDeal.turnDeadline = stateAfterDeal.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
     matchStore.set(stateAfterDeal);
     broadcastState(io, matchId);
     maybeBotTurn(io, matchId);
@@ -472,11 +850,15 @@ function maybeBotPowerSelect(io: Server, matchId: string) {
 function maybeBotTurn(io: Server, matchId: string) {
   const state = matchStore.get(matchId);
   if (!state || state.phase !== "playing") return;
-  const player = state.players[state.currentTurnSeat];
+  const expectedSeat = state.currentTurnSeat;
+  const expectedGeneration = state.turnGeneration;
+  const player = state.players[expectedSeat];
   if (!player?.isBot) return;
   setTimeout(() => {
     const fresh = matchStore.get(matchId);
     if (!fresh || fresh.phase !== "playing") return;
+    // Deduplicate scheduled bot actions and ignore timers from prior turns.
+    if (fresh.currentTurnSeat !== expectedSeat || fresh.turnGeneration !== expectedGeneration) return;
     const bot = fresh.players[fresh.currentTurnSeat];
     if (!bot?.isBot) return;
     let card;
@@ -498,7 +880,7 @@ function maybeBotTurn(io: Server, matchId: string) {
         const freshAfterTrick = matchStore.get(matchId);
         if (freshAfterTrick && freshAfterTrick.phase === "trick-resolving") {
           startNextTrick(freshAfterTrick);
-          freshAfterTrick.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+          freshAfterTrick.turnDeadline = freshAfterTrick.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
           matchStore.set(freshAfterTrick);
           broadcastState(io, matchId);
           maybeBotTurn(io, matchId);
@@ -518,32 +900,84 @@ function maybeBotTurn(io: Server, matchId: string) {
 
 async function persistIfComplete(io: Server, state: ReturnType<typeof requireMatch>) {
   if (state.phase !== "complete") return;
-  if (state.mode === "offline") return;
-  
+
   const rankResults: Record<string, any> = {};
 
   // Apply ranked MMR updates BEFORE cleanup
   if (state.mode === "ranked") {
     const season = currentSeason();
-    const humanPlayers = state.players.filter(p => !p.isBot);
-    
-    // Calculate average MMR of each team for opponent average
-    const teamAPlayers = humanPlayers.filter(p => teamForSeat(p.seat) === "A");
-    const teamBPlayers = humanPlayers.filter(p => teamForSeat(p.seat) === "B");
-    
-    for (const player of humanPlayers) {
-      const myTeam = teamForSeat(player.seat);
-      const won = state.winnerTeam === myTeam;
-      // Use 0 as default opponent MMR (simple estimate for Iron III)
-      const opponentAvg = 0;
-      
+    // Only active humans receive the normal end-of-match result. A player
+    // already penalized for abandoning is excluded from that update, but their
+    // pre-match rating still belongs in their original team's average.
+    const humanPlayers = state.players.filter((player) => !player.isBot && player.connected);
+    const rankedParticipants = state.players.filter((player) => !player.userId.startsWith("bot-"));
+
+    // Snapshot this season's pre-match ratings so all players are scored
+    // against the opposing team's actual average, not a hard-coded zero.
+    const ratingByUser = new Map<string, number>();
+    if (!env.OFFLINE_DEV_MODE) {
       try {
-        const result = await applyRankedResult(player.userId, season, opponentAvg, won);
+        const ratings = await RankingModel.find({
+          userId: { $in: rankedParticipants.map((player) => player.userId) },
+          season,
+        }).select("userId mmr").lean();
+        for (const rating of ratings) ratingByUser.set(rating.userId, rating.mmr);
+      } catch (err) {
+        console.error("[RankedResult] Could not load ratings for team averages:", err);
+      }
+    }
+    const teamAPlayers = rankedParticipants.filter((player) => teamForSeat(player.seat) === "A");
+    const teamBPlayers = rankedParticipants.filter((player) => teamForSeat(player.seat) === "B");
+    const averageMmr = (team: typeof humanPlayers) => team.length === 0
+      ? 0
+      : team.reduce((sum, player) => sum + (ratingByUser.get(player.userId) ?? 0), 0) / team.length;
+    const teamAMmr = averageMmr(teamAPlayers);
+    const teamBMmr = averageMmr(teamBPlayers);
+
+    // A game may finish during the reconnect grace period. Penalize any seat
+    // still disconnected at completion here; if grace takeover already ran,
+    // isBot is true and that separate path owns the penalty.
+    const disconnectedAtCompletion = state.players.filter((player) =>
+      !player.isBot && !player.connected && !player.userId.startsWith("bot-"),
+    );
+    for (const player of disconnectedAtCompletion) {
+      const opponentAvg = teamForSeat(player.seat) === "A" ? teamBMmr : teamAMmr;
+      try {
+        const result = await applyRankedResult(player.userId, season, opponentAvg, false);
+        const rankingTotals = result.ranking as { wins?: number; losses?: number; peakMmr?: number };
         rankResults[player.userId] = {
           oldMmr: result.oldMmr,
           newMmr: result.newMmr,
           mmrDelta: result.mmrDelta,
           rank: result.rankDetail,
+          wins: rankingTotals.wins,
+          losses: rankingTotals.losses,
+          peakMmr: rankingTotals.peakMmr,
+        };
+      } catch (err) {
+        console.error(`Failed to penalize disconnected player ${player.userId}:`, err);
+      }
+    }
+
+    for (const player of humanPlayers) {
+      // A grace timer may have converted this player to a bot while ratings
+      // were being fetched; in that case its abandonment handler owns the loss.
+      if (!player.connected || player.isBot) continue;
+      const myTeam = teamForSeat(player.seat);
+      const won = state.winnerTeam === myTeam;
+      const opponentAvg = myTeam === "A" ? teamBMmr : teamAMmr;
+      
+      try {
+        const result = await applyRankedResult(player.userId, season, opponentAvg, won);
+        const rankingTotals = result.ranking as { wins?: number; losses?: number; peakMmr?: number };
+        rankResults[player.userId] = {
+          oldMmr: result.oldMmr,
+          newMmr: result.newMmr,
+          mmrDelta: result.mmrDelta,
+          rank: result.rankDetail,
+          wins: rankingTotals.wins,
+          losses: rankingTotals.losses,
+          peakMmr: rankingTotals.peakMmr,
         };
       } catch (err) {
         console.error(`Failed to update rank for ${player.userId}:`, err);
@@ -551,7 +985,7 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
     }
     
     // Send rank update to each player
-    for (const player of humanPlayers) {
+    for (const player of state.players.filter((player) => !player.userId.startsWith("bot-"))) {
       if (rankResults[player.userId]) {
         io.to(`user:${player.userId}`).emit("rank:updated", rankResults[player.userId]);
       }
@@ -560,12 +994,14 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
 
   // ── Update Statistics & Check Achievements ────────────────────────
   const matchDurationMs = state.startedAt ? Date.now() - state.startedAt : undefined;
-  for (const player of state.players.filter(p => !p.isBot)) {
+  for (const player of state.players.filter((player) =>
+    !player.isBot && player.connected && state.mode !== "offline",
+  )) {
     const myTeam = teamForSeat(player.seat);
     const won = state.winnerTeam === myTeam;
     const teamCaptures = state.captures[myTeam];
     const tensCapturedThisMatch = teamCaptures?.tens?.length ?? 0;
-    const acesCapturedThisMatch = teamCaptures?.aces ?? 0;
+    const acesCapturedThisMatch = teamCaptures?.aces?.length ?? 0;
 
     if (!env.OFFLINE_DEV_MODE) {
       try {
@@ -620,20 +1056,26 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
   }, 10000);
 
   if (env.OFFLINE_DEV_MODE) return;
-  await MatchModel.create({
-    mode: state.mode,
-    state,
-    players: state.players,
-    winnerTeam: state.winnerTeam,
-    completedAt: new Date()
-  });
-  await ReplayModel.create({
-    matchId: state.id,
-    events: state.replayEvents,
-    powerSuit: state.powerSuit,
-    winnerTeam: state.winnerTeam,
-    durationMs: matchDurationMs
-  });
+  try {
+    await MatchModel.create({
+      mode: state.mode,
+      state,
+      players: state.players,
+      winnerTeam: state.winnerTeam,
+      completedAt: new Date()
+    });
+    await ReplayModel.create({
+      matchId: state.id,
+      events: state.replayEvents,
+      powerSuit: state.powerSuit,
+      winnerTeam: state.winnerTeam,
+      durationMs: matchDurationMs
+    });
+  } catch (err) {
+    // Persistence failures should be reported rather than becoming an
+    // unhandled rejection from the fire-and-forget completion handler.
+    console.error(`Failed to persist match/replay ${state.id}:`, err);
+  }
 }
 
 function requireMatch(matchId: string) {
@@ -666,7 +1108,9 @@ async function broadcastFriendStatus(io: Server, userId: string, status: "online
   }
 }
 
-function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, deadline: number, expectedGeneration: number) {
+function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, deadline: number | undefined, expectedGeneration: number) {
+  const current = matchStore.get(matchId);
+  if (!current || current.mode === "offline" || typeof deadline !== "number") return;
   const waitMs = Math.max(0, deadline - Date.now());
   
   setTimeout(() => {
@@ -674,8 +1118,7 @@ function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, 
     if (!state || state.phase !== "playing" || state.currentTurnSeat !== expectedSeat) return;
     if (state.turnGeneration !== expectedGeneration) return; // Reject stale timeout
     
-    // Disable auto-play timer for humans in offline (bot) matches
-    if (state.mode === "offline") return;
+    // Offline matches never schedule this callback; see the guard above.
 
     const player = state.players[expectedSeat];
     if (player.isBot) return;
@@ -689,7 +1132,7 @@ function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, 
       const result = playCard(state, expectedSeat, cardToPlay.id);
       
       // Always refresh deadline after any auto-played card
-      state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+      state.turnDeadline = state.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
       
       matchStore.set(state);
       broadcastState(io, matchId);
@@ -700,7 +1143,7 @@ function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, 
           const fresh = matchStore.get(matchId);
           if (fresh && fresh.phase === "trick-resolving") {
             startNextTrick(fresh);
-            fresh.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+            fresh.turnDeadline = fresh.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
             matchStore.set(fresh);
             broadcastState(io, matchId);
             maybeBotTurn(io, matchId);

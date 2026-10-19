@@ -21,8 +21,12 @@ function hardPick(state: MatchState, seat: number, legal: Card[]): Card {
   const trick = state.currentTrick;
   const playedCards = state.completedTricks.flatMap((item) => item.plays.map((play) => play.card));
   if (trick) playedCards.push(...trick.plays.map((play) => play.card));
+  // Cards in this bot's own hand are known, not "unseen" threats.
+  const ownHand = state.hands[seat] ?? [];
   const unseenTens = ["hearts", "diamonds", "clubs", "spades"].filter((suit) => {
-    return !playedCards.some((card) => card.rank === "10" && card.suit === suit);
+    const alreadyPlayed = playedCards.some((card) => card.rank === "10" && card.suit === suit);
+    const heldByBot = ownHand.some((card) => card.rank === "10" && card.suit === suit);
+    return !alreadyPlayed && !heldByBot;
   });
 
   const sortedLow = [...legal].sort((a, b) => rankValue[a.rank] - rankValue[b.rank]);
