@@ -271,9 +271,9 @@ class _PlayerBadge extends StatelessWidget {
     final relativeSeat = (player.seat - mySeat + 4) % 4;
     return switch (relativeSeat) {
       0 => Alignment(0.0, mobileLayout ? 0.78 : 0.98),
-      1 => compactSide ? const Alignment(0.75, 0.0) : const Alignment(0.94, 0.0),
+      1 => compactSide ? const Alignment(0.78, 0.0) : const Alignment(0.94, 0.0),
       2 => Alignment(0.0, mobileLayout ? -0.78 : -0.90),
-      _ => compactSide ? const Alignment(-0.75, 0.0) : const Alignment(-0.94, 0.0),
+      _ => compactSide ? const Alignment(-0.78, 0.0) : const Alignment(-0.94, 0.0),
     };
   }
 
@@ -363,7 +363,7 @@ class _StaticBadge extends StatelessWidget {
             horizontal: compactSide ? 6 : 12,
             vertical: compactSide ? 5 : 7,
           ),
-          constraints: compactSide ? const BoxConstraints.tightFor(width: 100) : null,
+          constraints: compactSide ? const BoxConstraints.tightFor(width: 76) : null,
           decoration: BoxDecoration(
             color: active
                 ? accentColor.withOpacity(0.25)
@@ -467,7 +467,7 @@ class _TimedBadgeState extends State<_TimedBadge> {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
             child: Container(
-              width: widget.compactSide ? 100 : null,
+              width: widget.compactSide ? 76 : null,
               padding: EdgeInsets.symmetric(
                 horizontal: widget.compactSide ? 6 : 12,
                 vertical: widget.compactSide ? 5 : 7,
@@ -504,7 +504,7 @@ class _TimedBadgeState extends State<_TimedBadge> {
         ),
         const SizedBox(height: 4),
         SizedBox(
-          width: widget.compactSide ? 72 : 90,
+          width: widget.compactSide ? 68 : 90,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
