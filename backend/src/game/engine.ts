@@ -13,7 +13,7 @@ export function createMatch(players: PlayerSeat[], mode: MatchMode = "casual", s
     throw new Error("Capture Tens requires exactly four players");
   }
 
-  const deck = shuffleDeck(createDeck(), seed);
+  const deck = shuffleDeck(createDeck());
     const humanSeats = players.filter(p => !p.isBot).map(p => p.seat);
     const firstPlayerSeat = humanSeats.length > 0 ? humanSeats[(seed >>> 0) % humanSeats.length] : ((seed >>> 0) % 4);
     return {
