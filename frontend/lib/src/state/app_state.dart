@@ -606,6 +606,17 @@ class AppState extends ChangeNotifier {
     socket.createRoom();
   }
 
+  void leaveRoom() {
+    final code = roomCode;
+    socket.leaveRoom(code);
+    roomCode = null;
+    roomPlayerNames = [];
+    roomPlayerCount = 1;
+    roomCapacity = 4;
+    if (lobbyStatus == LobbyStatus.inRoom) lobbyStatus = LobbyStatus.idle;
+    notifyListeners();
+  }
+
   void joinRoom(String code) {
     socket.joinRoom(code);
   }
