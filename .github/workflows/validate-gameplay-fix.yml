@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - fix/match-leave-ranked-matchmaking
+      - fix/phase1-game-correctness
 
 permissions:
   contents: read
