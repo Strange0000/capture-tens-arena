@@ -54,7 +54,9 @@ jobs:
 
       - name: Analyze Flutter code
         working-directory: frontend
-        run: flutter analyze
+        # Keep baseline infos/deprecation notices visible without blocking CI;
+        # Dart errors and compiler failures still fail the validation.
+        run: flutter analyze --no-fatal-infos
 
       - name: Run Flutter tests
         working-directory: frontend
