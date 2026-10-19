@@ -24,6 +24,7 @@ import { checkAndAwardAchievements, ACHIEVEMENTS } from "../game/achievements.js
 const onlineUsers = new Set<string>();
 const activeSocketsByUser = new Map<string, Set<string>>();
 const disconnectGraceTimers = new Map<string, NodeJS.Timeout>();
+const rankedQueueRequests = new Map<string, number>();
 
 function currentSeason() {
   const now = new Date();
@@ -47,9 +48,9 @@ export function registerGameSockets(io: Server) {
     reconnectMatch(io, socket);
     broadcastFriendStatus(io, userId, "online");
 
-    let rankedQueueRequestId = 0;
     socket.on("queue:ranked", async () => {
-      const requestId = ++rankedQueueRequestId;
+      const requestId = (rankedQueueRequests.get(userId) ?? 0) + 1;
+      rankedQueueRequests.set(userId, requestId);
       console.log(`[SOCKET] queue:ranked from user ${userId} (${socket.user!.username})`);
       try {
         const requestedParty = matchmaking.getPartyForUser(userId) ?? [{
@@ -77,7 +78,7 @@ export function registerGameSockets(io: Server) {
             ratingByUser.set(rating.userId, rating.mmr);
           }
         }
-        if (requestId !== rankedQueueRequestId) return;
+        if (requestId !== rankedQueueRequests.get(userId)) return;
 
         const ratedParty = requestedParty.map((player) => ({
           ...player,
@@ -105,7 +106,7 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("queue:cancel", () => {
-      rankedQueueRequestId += 1;
+      rankedQueueRequests.set(userId, (rankedQueueRequests.get(userId) ?? 0) + 1);
       const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
       const queuedIds = new Set<string>([userId, ...queuedGroup.map((player) => player.userId)]);
 
@@ -281,6 +282,10 @@ export function registerGameSockets(io: Server) {
       try {
         const code = typeof data?.code === "string" ? data.code.trim().toUpperCase() : "";
         if (!code) throw new Error("Create or join a room first");
+        const activeMatch = matchStore.findByUser(userId);
+        if (activeMatch && activeMatch.phase !== "complete") {
+          throw new Error("Finish or leave your current match first");
+        }
         const group = matchmaking.startRoomWithBots(code, "hard", userId);
         if (group) startMatch(io, matchmaking.toSeats(group), "private");
       } catch (err: any) {
@@ -393,8 +398,17 @@ export function registerGameSockets(io: Server) {
       }
     });
 
-    socket.on("card:play", ({ matchId, cardId }: { matchId: string; cardId: string }) => {
+    socket.on("card:play", (payload: unknown) => {
       try {
+        const parsed = z.object({
+          matchId: z.string().min(1),
+          cardId: z.string().min(1).max(32),
+        }).safeParse(payload);
+        if (!parsed.success) {
+          socket.emit("error", { message: "Invalid card play request" });
+          return;
+        }
+        const { matchId, cardId } = parsed.data;
         const state = requireMatch(matchId);
         const seat = seatForUser(state.players, userId);
         const result = playCard(state, seat, cardId);
@@ -431,10 +445,20 @@ export function registerGameSockets(io: Server) {
       }
     });
 
-    socket.on("spectate:join", ({ matchId }: { matchId: string }) => {
-      const state = requireMatch(matchId);
-      socket.join(`match:${matchId}:spectators`);
-      socket.emit("match:spectatorState", publicStateForSeat(state));
+    socket.on("spectate:join", (payload: unknown) => {
+      try {
+        const parsed = z.object({ matchId: z.string().min(1) }).safeParse(payload);
+        if (!parsed.success) throw new Error("Invalid match id");
+        const { matchId } = parsed.data;
+        const state = requireMatch(matchId);
+        socket.join(`match:${matchId}:spectators`);
+        socket.emit("match:spectatorState", {
+          ...publicStateForSeat(state),
+          turnTimeoutMs: env.TURN_TIMEOUT_MS,
+        });
+      } catch (err) {
+        socket.emit("error", { message: err instanceof Error ? err.message : "Could not spectate match" });
+      }
     });
 
     socket.on("friends:status", async () => {
@@ -456,14 +480,18 @@ export function registerGameSockets(io: Server) {
 
     // ── Emotes ────────────────────────────────────────────────────────
     const lastEmoteTime = new Map<string, number>();
-    socket.on("emote:send", ({ matchId, emote }: { matchId: string; emote: string }) => {
+    socket.on("emote:send", (payload: unknown) => {
+      const parsed = z.object({
+        matchId: z.string().min(1),
+        emote: z.enum(["nice", "gg", "oops", "wow", "hurry", "angry"]),
+      }).safeParse(payload);
+      if (!parsed.success) return;
+      const { matchId, emote } = parsed.data;
       const now = Date.now();
       const last = lastEmoteTime.get(userId) ?? 0;
       if (now - last < 3000) return; // Rate limit: 1 emote per 3 seconds
       lastEmoteTime.set(userId, now);
       
-      const validEmotes = ["nice", "gg", "oops", "wow", "hurry", "angry"];
-      if (!validEmotes.includes(emote)) return;
       
       const emoteState = matchStore.get(matchId);
       if (!emoteState) return;
@@ -478,6 +506,7 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("disconnect", () => {
+      rankedQueueRequests.set(userId, (rankedQueueRequests.get(userId) ?? 0) + 1);
       const liveSockets = activeSocketsByUser.get(userId);
       liveSockets?.delete(socket.id);
       if (liveSockets && liveSockets.size > 0) {

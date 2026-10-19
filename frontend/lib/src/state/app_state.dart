@@ -137,12 +137,22 @@ class AppState extends ChangeNotifier {
   Future<void> tryRestoreSession() async {
     final session = await auth.getCachedSession();
     if (session == null) return;
-    token = session.token;
-    userId = session.userId;
-    username = session.username;
-    _connectSocket();
-    _fetchInitialData();
-    notifyListeners();
+    try {
+      // Validate a stored token before attaching it to a socket connection.
+      await auth.fetchMe(session.token);
+      token = session.token;
+      userId = session.userId;
+      username = session.username;
+      _connectSocket();
+      _fetchInitialData();
+      notifyListeners();
+    } catch (_) {
+      await auth.clearSession();
+      token = null;
+      userId = null;
+      username = null;
+      notifyListeners();
+    }
   }
 
   Future<void> bootGuest() async {

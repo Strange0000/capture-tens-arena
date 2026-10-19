@@ -144,6 +144,13 @@ class SocketService {
       return;
     }
     if (!_socket!.connected) {
+      // Never replay a stale move after reconnect: it could play a card in a
+      // later turn or apply an old suit selection to a new game.
+      const transientGameplayEvents = {'card:play', 'power:select', 'emote:send'};
+      if (transientGameplayEvents.contains(event)) {
+        print('[Socket] Dropping stale transient action while disconnected: $event');
+        return;
+      }
       print('[Socket] Socket not yet connected, buffering event: $event');
       _pendingEmits.add(_PendingEmit(event, data));
       return;
