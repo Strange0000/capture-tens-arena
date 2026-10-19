@@ -24,27 +24,88 @@ export class MatchmakingService {
     return this.tryMatch();
   }
 
+  private averageMmr(group: QueuePlayer[]): number {
+    if (group.length === 0) return 0;
+    return group.reduce((sum, player) => {
+      const mmr = Number.isFinite(player.mmr) ? Math.max(0, player.mmr) : 0;
+      return sum + mmr;
+    }, 0) / group.length;
+  }
+
+  private removeQueuedGroups(groups: QueuePlayer[][]): void {
+    const consumed = new Set(groups);
+    this.rankedQueue = this.rankedQueue.filter((group) => !consumed.has(group));
+  }
+
   private tryMatch(): QueuePlayer[] | undefined {
-    const twos = this.rankedQueue.filter(p => p.length === 2);
-    const ones = this.rankedQueue.filter(p => p.length === 1);
-    
+    const twos = this.rankedQueue.filter((group) => group.length === 2);
+    const ones = this.rankedQueue.filter((group) => group.length === 1);
+
+    // Keep premade duos together and choose the closest-rated pair of duos.
     if (twos.length >= 2) {
-      const matchTwos = [twos[0], twos[1]];
-      this.rankedQueue = this.rankedQueue.filter(p => p !== matchTwos[0] && p !== matchTwos[1]);
-      return [matchTwos[0][0], matchTwos[1][0], matchTwos[0][1], matchTwos[1][1]];
+      let best: { first: QueuePlayer[]; second: QueuePlayer[]; gap: number } | undefined;
+      for (let i = 0; i < twos.length; i += 1) {
+        for (let j = i + 1; j < twos.length; j += 1) {
+          const gap = Math.abs(this.averageMmr(twos[i]) - this.averageMmr(twos[j]));
+          if (!best || gap < best.gap) best = { first: twos[i], second: twos[j], gap };
+        }
+      }
+      if (best) {
+        this.removeQueuedGroups([best.first, best.second]);
+        return [best.first[0], best.second[0], best.first[1], best.second[1]];
+      }
     }
-    
+
+    // Choose solo opponents whose average rating most closely matches a duo.
     if (twos.length >= 1 && ones.length >= 2) {
-      const matchTwo = twos[0];
-      const matchOnes = [ones[0], ones[1]];
-      this.rankedQueue = this.rankedQueue.filter(p => p !== matchTwo && p !== matchOnes[0] && p !== matchOnes[1]);
-      return [matchTwo[0], matchOnes[0][0], matchTwo[1], matchOnes[1][0]];
+      let best: { duo: QueuePlayer[]; first: QueuePlayer[]; second: QueuePlayer[]; gap: number } | undefined;
+      for (const duo of twos) {
+        for (let i = 0; i < ones.length; i += 1) {
+          for (let j = i + 1; j < ones.length; j += 1) {
+            const soloAverage = (this.averageMmr(ones[i]) + this.averageMmr(ones[j])) / 2;
+            const gap = Math.abs(this.averageMmr(duo) - soloAverage);
+            if (!best || gap < best.gap) {
+              best = { duo, first: ones[i], second: ones[j], gap };
+            }
+          }
+        }
+      }
+      if (best) {
+        this.removeQueuedGroups([best.duo, best.first, best.second]);
+        return [best.duo[0], best.first[0], best.duo[1], best.second[0]];
+      }
     }
-    
+
+    // For solo queues, take a close-rated group of four and balance the two teams.
     if (ones.length >= 4) {
-      const matchOnes = [ones[0], ones[1], ones[2], ones[3]];
-      this.rankedQueue = this.rankedQueue.filter(p => !matchOnes.includes(p));
-      return [matchOnes[0][0], matchOnes[1][0], matchOnes[2][0], matchOnes[3][0]];
+      const sorted = [...ones].sort((a, b) => this.averageMmr(a) - this.averageMmr(b));
+      let selected = sorted.slice(0, 4);
+      let smallestRange = Number.POSITIVE_INFINITY;
+      for (let i = 0; i <= sorted.length - 4; i += 1) {
+        const window = sorted.slice(i, i + 4);
+        const range = this.averageMmr(window[3]) - this.averageMmr(window[0]);
+        if (range < smallestRange) {
+          selected = window;
+          smallestRange = range;
+        }
+      }
+
+      const players = selected.map((group) => group[0]);
+      const [a, b, c, d] = players;
+      const partitions: Array<{ teamA: QueuePlayer[]; teamB: QueuePlayer[] }> = [
+        { teamA: [a, b], teamB: [c, d] },
+        { teamA: [a, c], teamB: [b, d] },
+        { teamA: [a, d], teamB: [b, c] },
+      ];
+      const teamGap = (team: QueuePlayer[]) => {
+        const otherTeam = players.filter((player) => !team.includes(player));
+        return Math.abs(this.averageMmr(team) - this.averageMmr(otherTeam));
+      };
+      partitions.sort((left, right) => teamGap(left.teamA) - teamGap(right.teamA));
+      const best = partitions[0];
+      this.removeQueuedGroups(selected);
+      // Teams are seats 0+2 and 1+3.
+      return [best.teamA[0], best.teamB[0], best.teamA[1], best.teamB[1]];
     }
     return undefined;
   }
