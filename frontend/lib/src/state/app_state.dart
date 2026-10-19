@@ -16,23 +16,14 @@ class AppState extends ChangeNotifier {
   AppState() {
     String? url;
 
-    // 1. Query parameter has highest priority (web only, safe on all platforms)
-    try {
-      final queryBackend = Uri.base.queryParameters['backend'];
-      if (queryBackend != null && queryBackend.isNotEmpty) {
-        url = queryBackend;
-      }
-    } catch (_) {}
-
-    // 2. Compile-time dart-define
-    if (url == null) {
-      const envUrl = String.fromEnvironment('BACKEND_URL');
-      if (envUrl.isNotEmpty) {
-        url = envUrl;
-      }
+    // Never let a URL query parameter decide where cached JWTs and Socket.IO
+    // credentials are sent. Use BACKEND_URL as a trusted build-time override.
+    const envUrl = String.fromEnvironment('BACKEND_URL');
+    if (envUrl.isNotEmpty) {
+      url = envUrl;
     }
 
-    // 3. If running locally on web, connect to local backend
+    // If running locally on web, connect to the local development backend.
     if (url == null) {
       try {
         if (Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1') {
@@ -41,7 +32,7 @@ class AppState extends ChangeNotifier {
       } catch (_) {}
     }
 
-    // 4. Fallback to default production URL
+    // Default production backend.
     url ??= 'https://capture-tens-arena.onrender.com';
 
     backendUrl = url;
