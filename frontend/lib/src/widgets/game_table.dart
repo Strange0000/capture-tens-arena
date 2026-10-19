@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -25,10 +26,26 @@ class GameTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mobileLayout = MediaQuery.sizeOf(context).width < 450;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Stack(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final mobileLayout = constraints.maxWidth < 450;
+        final availableWidth = (constraints.maxWidth - (mobileLayout ? 12.0 : 32.0))
+            .clamp(100.0, double.infinity)
+            .toDouble();
+        final availableHeight = (constraints.maxHeight - (mobileLayout ? 8.0 : 16.0))
+            .clamp(100.0, double.infinity)
+            .toDouble();
+        final tableDiameter = math.min(
+          210.0,
+          math.min(availableWidth, availableHeight * 0.84),
+        ).toDouble();
+
+        return Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: mobileLayout ? 6 : 16,
+            vertical: mobileLayout ? 4 : 8,
+          ),
+          child: Stack(
         children: [
           // Center Trick Area & Drag-and-Drop Drop Zone
           Center(
@@ -41,6 +58,9 @@ class GameTable extends StatelessWidget {
               },
               builder: (context, candidateData, rejectedData) {
                 final isHoveredWithCard = candidateData.isNotEmpty;
+                final ringSize = isHoveredWithCard
+                    ? tableDiameter * 0.94
+                    : tableDiameter * (mobileLayout ? 0.86 : 1.0);
 
                 return Stack(
                   alignment: Alignment.center,
@@ -48,12 +68,8 @@ class GameTable extends StatelessWidget {
                     // Illuminated drop zone ring when dragging a card
                     AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
-                      width: isHoveredWithCard
-                          ? (mobileLayout ? 198 : 260)
-                          : 210,
-                      height: isHoveredWithCard
-                          ? (mobileLayout ? 198 : 260)
-                          : 210,
+                      width: ringSize,
+                      height: ringSize,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: isHoveredWithCard
@@ -143,6 +159,8 @@ class GameTable extends StatelessWidget {
             ),
         ],
       ),
+    );
+      },
     );
   }
 }
