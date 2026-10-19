@@ -24,3 +24,8 @@ if (env.NODE_ENV === "production" && env.JWT_SECRET === "development-secret-chan
   console.error("FATAL: JWT_SECRET must be set in production!");
   process.exit(1);
 }
+
+if (env.NODE_ENV === "production" && env.OFFLINE_DEV_MODE) {
+  console.error("FATAL: OFFLINE_DEV_MODE must be disabled in production!");
+  process.exit(1);
+}
