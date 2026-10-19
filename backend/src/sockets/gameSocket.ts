@@ -338,7 +338,16 @@ export function registerGameSockets(io: Server) {
         if (state.mode === "ranked") {
           // Penalize quitting player
           const result = await applyRankedResult(userId, currentSeason(), 0, false);
-          socket.emit("rank:updated", result);
+          const totals = result.ranking as { wins?: number; losses?: number; peakMmr?: number };
+          socket.emit("rank:updated", {
+            oldMmr: result.oldMmr,
+            newMmr: result.newMmr,
+            mmrDelta: result.mmrDelta,
+            rank: result.rankDetail,
+            wins: totals.wins,
+            losses: totals.losses,
+            peakMmr: totals.peakMmr,
+          });
         }
         const player = state.players.find(p => p.userId === userId);
         if (player) {
@@ -523,12 +532,18 @@ export function registerGameSockets(io: Server) {
         if (freshState.mode === "ranked") {
           // Disconnect abandonment must not bypass the ranked-loss penalty.
           void applyRankedResult(userId, currentSeason(), 0, false)
-            .then((result) => io.to(`user:${userId}`).emit("rank:updated", {
-              oldMmr: result.oldMmr,
-              newMmr: result.newMmr,
-              mmrDelta: result.mmrDelta,
-              rank: result.rankDetail,
-            }))
+            .then((result) => {
+              const totals = result.ranking as { wins?: number; losses?: number; peakMmr?: number };
+              io.to(`user:${userId}`).emit("rank:updated", {
+                oldMmr: result.oldMmr,
+                newMmr: result.newMmr,
+                mmrDelta: result.mmrDelta,
+                rank: result.rankDetail,
+                wins: totals.wins,
+                losses: totals.losses,
+                peakMmr: totals.peakMmr,
+              });
+            })
             .catch((err) => console.error(`Failed to apply disconnect penalty for ${userId}:`, err));
         }
         io.to(`match:${freshState.id}`).emit("match:playerBotReplaced", { userId, username: freshPlayer.username });
