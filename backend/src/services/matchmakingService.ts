@@ -158,6 +158,10 @@ export class MatchmakingService {
   }
 
   createParty(owner: QueuePlayer) {
+    const existingPartyId = this.userParty.get(owner.userId);
+    if (existingPartyId) {
+      throw new Error("Leave your current party before creating another one");
+    }
     const id = nanoid(8);
     this.parties.set(id, [owner]);
     this.userParty.set(owner.userId, id);
@@ -167,7 +171,17 @@ export class MatchmakingService {
   joinParty(id: string, player: QueuePlayer): QueuePlayer[] {
     const party = this.parties.get(id);
     if (!party) throw new Error("Party not found");
+
+    const currentPartyId = this.userParty.get(player.userId);
+    if (currentPartyId === id) {
+      // Re-accepting an invite or reconnecting must not duplicate a party seat.
+      const existingMember = party.find((member) => member.userId === player.userId);
+      if (existingMember) Object.assign(existingMember, player);
+      return party;
+    }
+    if (currentPartyId) throw new Error("Leave your current party before joining another one");
     if (party.length >= 2) throw new Error("Party is full");
+
     party.push(player);
     this.userParty.set(player.userId, id);
     return party;

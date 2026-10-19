@@ -11,7 +11,7 @@ import { MatchModel } from "../models/Match.js";
 import { ReplayModel } from "../models/Replay.js";
 import { FriendModel } from "../models/Friend.js";
 import { UserModel } from "../models/User.js";
-import { matchmaking } from "../services/matchmakingService.js";
+import { matchmaking, type QueuePlayer } from "../services/matchmakingService.js";
 import { matchStore } from "../services/matchStore.js";
 import { applyRankedResult } from "../services/rankingService.js";
 import { authenticateSocket, AuthedSocket } from "./authSocket.js";
@@ -81,30 +81,146 @@ export function registerGameSockets(io: Server) {
       console.log(`[RankedQueue] Cancelled search for ${[...queuedIds].join(", ")}`);
     });
 
-    socket.on("party:invite", ({ targetUserId }: { targetUserId: string }) => {
-      let existingParty = matchmaking.getPartyForUser(userId);
-      let partyId: string | null = null;
-      if (!existingParty) {
-        partyId = matchmaking.createParty({
-          userId,
-          username: socket.user!.username,
-          socketId: socket.id,
-          mmr: 0
-        });
-        socket.emit("party:updated", { party: matchmaking.getParty(partyId) });
-      }
-      // Get the partyId from userParty map
-      const activePartyId = partyId ?? matchmaking.getPartyIdForUser(userId);
-      if (activePartyId) {
+    socket.on("party:invite", async ({ targetUserId }: { targetUserId: string }) => {
+      try {
+        if (typeof targetUserId !== "string" || !targetUserId.trim() || targetUserId === userId) {
+          throw new Error("Choose a valid friend to invite");
+        }
+        if (!env.OFFLINE_DEV_MODE) {
+          const friendship = await FriendModel.findOne({
+            status: "accepted",
+            $or: [
+              { requesterId: userId, addresseeId: targetUserId },
+              { requesterId: targetUserId, addresseeId: userId },
+            ],
+          });
+          if (!friendship) throw new Error("You can only invite accepted friends");
+        }
+
+        const existingParty = matchmaking.getPartyForUser(userId);
+        if (existingParty && existingParty.length >= 2) {
+          throw new Error("Your party is full");
+        }
+        if (matchmaking.getPartyForUser(targetUserId)) {
+          throw new Error("That friend is already in a party");
+        }
+
+        // Leaving ranked search before making a duo prevents the old solo
+        // fallback timer from launching a match after the invite is sent.
+        const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
+        const queuedIds = new Set<string>([userId, ...queuedGroup.map((player) => player.userId)]);
+        for (const queuedUserId of queuedIds) clearQueueTimeout(queuedUserId);
+        if (queuedGroup.length > 0) {
+          matchmaking.removeFromQueue(userId);
+          for (const queuedUserId of queuedIds) {
+            io.to(`user:${queuedUserId}`).emit("queue:cancelled", { mode: "ranked", reason: "party-invite" });
+          }
+        }
+
+        let partyId: string | null = null;
+        if (!existingParty) {
+          partyId = matchmaking.createParty({
+            userId,
+            username: socket.user!.username,
+            socketId: socket.id,
+            mmr: 0
+          });
+          socket.emit("party:updated", { party: matchmaking.getParty(partyId) });
+        }
+        const activePartyId = partyId ?? matchmaking.getPartyIdForUser(userId);
+        if (!activePartyId) throw new Error("Could not create a party");
         io.to(`user:${targetUserId}`).emit("party:invited", {
           from: socket.user!.username,
-          partyId: activePartyId
+          partyId: activePartyId,
         });
+      } catch (err: any) {
+        socket.emit("error", { message: err?.message ?? "Could not invite friend" });
+      }
+    });
+
+    socket.on("room:invite", async ({ targetUserId, code }: { targetUserId: string; code: string }) => {
+      try {
+        if (typeof targetUserId !== "string" || !targetUserId.trim() || targetUserId === userId) {
+          throw new Error("Choose a valid friend to invite");
+        }
+        const normalizedCode = typeof code === "string" ? code.trim().toUpperCase() : "";
+        if (normalizedCode.length !== 6) throw new Error("Invalid room code");
+        const room = matchmaking.getPrivateRoom(normalizedCode);
+        if (!room) throw new Error("This private room is no longer available");
+        if (!room.some((player) => player.userId === userId)) {
+          throw new Error("You must be in the room to invite friends");
+        }
+        if (room.some((player) => player.userId === targetUserId)) {
+          throw new Error("That friend is already in this room");
+        }
+        if (room.length >= 4) throw new Error("This room is full");
+        if (!env.OFFLINE_DEV_MODE) {
+          const friendship = await FriendModel.findOne({
+            status: "accepted",
+            $or: [
+              { requesterId: userId, addresseeId: targetUserId },
+              { requesterId: targetUserId, addresseeId: userId },
+            ],
+          });
+          if (!friendship) throw new Error("You can only invite accepted friends");
+        }
+        // The room may have filled or been removed while the friendship query
+        // was in flight; never send an invitation to a stale room code.
+        const currentRoom = matchmaking.getPrivateRoom(normalizedCode);
+        if (!currentRoom || !currentRoom.some((player) => player.userId === userId)) {
+          throw new Error("This private room is no longer available");
+        }
+        if (currentRoom.some((player) => player.userId === targetUserId)) {
+          throw new Error("That friend is already in this room");
+        }
+        if (currentRoom.length >= 4) throw new Error("This room is full");
+        io.to(`user:${targetUserId}`).emit("room:invited", {
+          from: socket.user!.username,
+          code: normalizedCode,
+        });
+      } catch (err: any) {
+        socket.emit("error", { message: err?.message ?? "Could not invite friend to room" });
       }
     });
 
     socket.on("party:accept", ({ partyId }: { partyId: string }) => {
       try {
+        const invitedParty = matchmaking.getParty(partyId);
+        if (!invitedParty) throw new Error("Party not found");
+        const currentPartyId = matchmaking.getPartyIdForUser(userId);
+        if (currentPartyId && currentPartyId !== partyId) {
+          throw new Error("Leave your current party before joining another one");
+        }
+        if (currentPartyId !== partyId && invitedParty.length >= 2) {
+          throw new Error("Party is full");
+        }
+
+        // A player may have started a fresh solo search while their invite
+        // was pending. Cancel stale queues for both the invitee and the host
+        // before the party becomes a duo, so they can't be matched separately.
+        if (currentPartyId !== partyId) {
+          const queueMembers = new Map<string, QueuePlayer>();
+          const partyMemberIds = new Set<string>([
+            userId,
+            ...invitedParty.map((member) => member.userId),
+          ]);
+          for (const memberId of partyMemberIds) {
+            const queuedGroup = matchmaking.getRankedQueueGroupForUser(memberId) ?? [];
+            for (const queuedPlayer of queuedGroup) {
+              queueMembers.set(queuedPlayer.userId, queuedPlayer);
+            }
+          }
+          for (const queuedUserId of queueMembers.keys()) {
+            clearQueueTimeout(queuedUserId);
+            matchmaking.removeFromQueue(queuedUserId);
+          }
+          for (const queuedUserId of queueMembers.keys()) {
+            io.to(`user:${queuedUserId}`).emit("queue:cancelled", {
+              mode: "ranked",
+              reason: "party-joined",
+            });
+          }
+        }
         const party = matchmaking.joinParty(partyId, {
           userId,
           username: socket.user!.username,
@@ -153,12 +269,27 @@ export function registerGameSockets(io: Server) {
         if (!code) throw new Error("Enter a room code");
         if (code.length !== 6) throw new Error("Room code must be 6 characters");
 
+        // Validate and reserve the room seat before cancelling an active queue.
+        // An invalid/full room code must not silently cancel ranked matchmaking.
         const group = matchmaking.joinPrivateRoom(code, {
           userId,
           username: socket.user!.username,
           socketId: socket.id,
           mmr: 0,
         });
+
+        const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
+        const queuedIds = new Set<string>([userId, ...queuedGroup.map((player) => player.userId)]);
+        for (const queuedUserId of queuedIds) clearQueueTimeout(queuedUserId);
+        if (queuedGroup.length > 0) {
+          matchmaking.removeFromQueue(userId);
+          for (const queuedUserId of queuedIds) {
+            if (queuedUserId !== userId) {
+              io.to(`user:${queuedUserId}`).emit("queue:cancelled", { mode: "ranked", reason: "private-room" });
+            }
+          }
+        }
+
         socket.emit("room:joined", { code });
         if (group) {
           startMatch(io, matchmaking.toSeats(group), "private");
@@ -168,6 +299,14 @@ export function registerGameSockets(io: Server) {
       } catch (err: any) {
         socket.emit("error", { message: err?.message ?? "Could not join room" });
       }
+    });
+
+    socket.on("room:leave", () => {
+      const changedRooms = matchmaking.removeFromPrivateRooms(userId);
+      for (const changedRoom of changedRooms) {
+        broadcastPrivateRoom(io, changedRoom.code, changedRoom.players);
+      }
+      socket.emit("room:left", {});
     });
 
     socket.on("room:startWithBots", (data?: { code?: string }) => {
