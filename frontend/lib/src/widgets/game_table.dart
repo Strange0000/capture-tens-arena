@@ -149,6 +149,7 @@ class GameTable extends StatelessWidget {
               mySeat: mySeat,
               active: player.seat == match.currentTurnSeat,
               deadline: player.seat == match.currentTurnSeat ? match.turnDeadline : null,
+              turnTimeoutMs: match.turnTimeoutMs,
               isLead: match.currentTrick != null &&
                   match.currentTrick!.plays.isEmpty &&
                   player.seat == match.currentTurnSeat,
@@ -272,6 +273,7 @@ class _PlayerBadge extends StatelessWidget {
     required this.mySeat,
     required this.active,
     this.deadline,
+    required this.turnTimeoutMs,
     this.isLead = false,
     this.mobileLayout = false,
     this.compactSide = false,
@@ -281,6 +283,7 @@ class _PlayerBadge extends StatelessWidget {
   final int mySeat;
   final bool active;
   final int? deadline;
+  final int turnTimeoutMs;
   final bool isLead;
   final bool mobileLayout;
   final bool compactSide;
@@ -323,6 +326,7 @@ class _PlayerBadge extends StatelessWidget {
           ? _TimedBadge(
               player: player,
               deadline: deadline!,
+              turnTimeoutMs: turnTimeoutMs,
               role: role,
               accentColor: accent,
               isLead: isLead,
@@ -422,6 +426,7 @@ class _TimedBadge extends StatefulWidget {
   const _TimedBadge({
     required this.player,
     required this.deadline,
+    required this.turnTimeoutMs,
     required this.role,
     required this.accentColor,
     required this.isLead,
@@ -431,6 +436,7 @@ class _TimedBadge extends StatefulWidget {
 
   final MatchPlayer player;
   final int deadline;
+  final int turnTimeoutMs;
   final String role;
   final Color accentColor;
   final bool isLead;
@@ -455,11 +461,12 @@ class _TimedBadgeState extends State<_TimedBadge> {
 
   void _tick() {
     final remainingMs = widget.deadline - DateTime.now().millisecondsSinceEpoch;
-    const totalMs = 18000;
+    final totalMs = widget.turnTimeoutMs.clamp(1, 600000);
+    final maxSeconds = (totalMs / 1000).ceil();
     if (!mounted) return;
     setState(() {
       _progress = (remainingMs / totalMs).clamp(0.0, 1.0);
-      _secondsLeft = (remainingMs / 1000).ceil().clamp(0, 18);
+      _secondsLeft = (remainingMs / 1000).ceil().clamp(0, maxSeconds);
     });
   }
 
