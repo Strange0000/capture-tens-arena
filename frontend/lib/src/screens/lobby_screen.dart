@@ -183,6 +183,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                                   );
                                 },
                                 onStartWithBots: app.startRoomWithBots,
+                                onLeaveRoom: app.leaveRoom,
                               ),
                               const SizedBox(height: 16),
                             ],
@@ -1296,6 +1297,7 @@ class _RoomBanner extends StatelessWidget {
     required this.capacity,
     required this.onCopyCode,
     required this.onStartWithBots,
+    required this.onLeaveRoom,
   });
 
   final String code;
@@ -1304,6 +1306,7 @@ class _RoomBanner extends StatelessWidget {
   final int capacity;
   final VoidCallback onCopyCode;
   final VoidCallback onStartWithBots;
+  final VoidCallback onLeaveRoom;
 
   Widget _roomDetails() {
     return Column(
@@ -1392,6 +1395,18 @@ class _RoomBanner extends StatelessWidget {
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: onLeaveRoom,
+                  icon: const Icon(Icons.logout_rounded, size: 18),
+                  label: const Text('Leave Room'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white70,
+                    side: const BorderSide(color: Colors.white24),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
               ],
             )
           : Row(
@@ -1423,6 +1438,18 @@ class _RoomBanner extends StatelessWidget {
                   label: const Text(
                     'Start with Bots',
                     style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: onLeaveRoom,
+                  icon: const Icon(Icons.logout_rounded, size: 18),
+                  label: const Text('Leave'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white70,
+                    side: const BorderSide(color: Colors.white24),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
               ],
