@@ -936,7 +936,7 @@ async function broadcastFriendStatus(io: Server, userId: string, status: "online
   }
 }
 
-function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, deadline: number, expectedGeneration: number) {
+function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, deadline: number | undefined, expectedGeneration: number) {
   const current = matchStore.get(matchId);
   if (!current || current.mode === "offline" || typeof deadline !== "number") return;
   const waitMs = Math.max(0, deadline - Date.now());
