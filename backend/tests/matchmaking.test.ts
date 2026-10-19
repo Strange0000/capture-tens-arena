@@ -73,6 +73,29 @@ describe("private room lifecycle", () => {
   });
 });
 
+describe("ranked team balancing", () => {
+  it("balances two teams using the queued players' MMR", () => {
+    const matchmaking = new MatchmakingService();
+    const ratings = [
+      ["low-a", 100],
+      ["low-b", 105],
+      ["high-a", 1000],
+      ["high-b", 1005],
+    ] as const;
+
+    let result: QueuePlayer[] | undefined;
+    for (const [userId, mmr] of ratings) {
+      result = matchmaking.enqueueRanked([{ ...player(userId), mmr }]);
+    }
+
+    expect(result).toHaveLength(4);
+    const [seat0, seat1, seat2, seat3] = result!;
+    const teamA = (seat0.mmr + seat2.mmr) / 2;
+    const teamB = (seat1.mmr + seat3.mmr) / 2;
+    expect(Math.abs(teamA - teamB)).toBeLessThanOrEqual(5);
+  });
+});
+
 describe("ranked queue cancellation", () => {
   it("exposes and removes a queued solo player so a fallback cannot start after cancel", () => {
     const matchmaking = new MatchmakingService();
