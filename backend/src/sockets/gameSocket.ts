@@ -946,20 +946,26 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
   }, 10000);
 
   if (env.OFFLINE_DEV_MODE) return;
-  await MatchModel.create({
-    mode: state.mode,
-    state,
-    players: state.players,
-    winnerTeam: state.winnerTeam,
-    completedAt: new Date()
-  });
-  await ReplayModel.create({
-    matchId: state.id,
-    events: state.replayEvents,
-    powerSuit: state.powerSuit,
-    winnerTeam: state.winnerTeam,
-    durationMs: matchDurationMs
-  });
+  try {
+    await MatchModel.create({
+      mode: state.mode,
+      state,
+      players: state.players,
+      winnerTeam: state.winnerTeam,
+      completedAt: new Date()
+    });
+    await ReplayModel.create({
+      matchId: state.id,
+      events: state.replayEvents,
+      powerSuit: state.powerSuit,
+      winnerTeam: state.winnerTeam,
+      durationMs: matchDurationMs
+    });
+  } catch (err) {
+    // Persistence failures should be reported rather than becoming an
+    // unhandled rejection from the fire-and-forget completion handler.
+    console.error(`Failed to persist match/replay ${state.id}:`, err);
+  }
 }
 
 function requireMatch(matchId: string) {
