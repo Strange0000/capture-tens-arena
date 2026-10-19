@@ -25,6 +25,7 @@ class GameTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mobileLayout = MediaQuery.sizeOf(context).width < 450;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Stack(
@@ -47,8 +48,12 @@ class GameTable extends StatelessWidget {
                     // Illuminated drop zone ring when dragging a card
                     AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
-                      width: isHoveredWithCard ? 260 : 210,
-                      height: isHoveredWithCard ? 260 : 210,
+                      width: isHoveredWithCard
+                          ? (mobileLayout ? 198 : 260)
+                          : 210,
+                      height: isHoveredWithCard
+                          ? (mobileLayout ? 198 : 260)
+                          : 210,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: isHoveredWithCard
@@ -131,6 +136,10 @@ class GameTable extends StatelessWidget {
               isLead: match.currentTrick != null &&
                   match.currentTrick!.plays.isEmpty &&
                   player.seat == match.currentTurnSeat,
+              mobileLayout: mobileLayout,
+              compactSide: mobileLayout &&
+                  ((player.seat - mySeat + 4) % 4 == 1 ||
+                      (player.seat - mySeat + 4) % 4 == 3),
             ),
         ],
       ),
@@ -246,6 +255,8 @@ class _PlayerBadge extends StatelessWidget {
     required this.active,
     this.deadline,
     this.isLead = false,
+    this.mobileLayout = false,
+    this.compactSide = false,
   });
 
   final MatchPlayer player;
@@ -253,14 +264,16 @@ class _PlayerBadge extends StatelessWidget {
   final bool active;
   final int? deadline;
   final bool isLead;
+  final bool mobileLayout;
+  final bool compactSide;
 
   Alignment get _alignment {
     final relativeSeat = (player.seat - mySeat + 4) % 4;
     return switch (relativeSeat) {
-      0 => const Alignment(0.0, 0.98),   // Bottom (You) - lowered down to bottom rail
-      1 => const Alignment(0.94, 0.0),   // Right (Opponent 2)
-      2 => const Alignment(0.0, -0.90),  // Top (Partner) - moved up to top rail
-      _ => const Alignment(-0.94, 0.0),  // Left (Opponent 1)
+      0 => Alignment(0.0, mobileLayout ? 0.78 : 0.98),
+      1 => compactSide ? const Alignment(0.78, 0.0) : const Alignment(0.94, 0.0),
+      2 => Alignment(0.0, mobileLayout ? -0.78 : -0.90),
+      _ => compactSide ? const Alignment(-0.78, 0.0) : const Alignment(-0.94, 0.0),
     };
   }
 
@@ -296,6 +309,7 @@ class _PlayerBadge extends StatelessWidget {
               accentColor: accent,
               isLead: isLead,
               isSelf: relativeSeat == 0,
+              compactSide: compactSide,
             )
           : _StaticBadge(
               player: player,
@@ -304,6 +318,7 @@ class _PlayerBadge extends StatelessWidget {
               accentColor: accent,
               isLead: isLead,
               isSelf: relativeSeat == 0,
+              compactSide: compactSide,
             ),
     );
   }
@@ -319,6 +334,7 @@ class _StaticBadge extends StatelessWidget {
     required this.accentColor,
     required this.isLead,
     required this.isSelf,
+    this.compactSide = false,
   });
 
   final MatchPlayer player;
@@ -327,6 +343,7 @@ class _StaticBadge extends StatelessWidget {
   final Color accentColor;
   final bool isLead;
   final bool isSelf;
+  final bool compactSide;
 
   @override
   Widget build(BuildContext context) {
@@ -342,7 +359,11 @@ class _StaticBadge extends StatelessWidget {
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 250),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          padding: EdgeInsets.symmetric(
+            horizontal: compactSide ? 6 : 12,
+            vertical: compactSide ? 5 : 7,
+          ),
+          constraints: compactSide ? const BoxConstraints.tightFor(width: 76) : null,
           decoration: BoxDecoration(
             color: active
                 ? accentColor.withOpacity(0.25)
@@ -361,14 +382,16 @@ class _StaticBadge extends StatelessWidget {
                     BoxShadow(color: Colors.black.withOpacity(0.35), blurRadius: 8),
                   ],
           ),
-          child: _BadgeRow(
-            player: player,
-            role: role,
-            accentColor: accentColor,
-            active: active,
-            isLead: isLead,
-            isSelf: isSelf,
-          ),
+          child: compactSide
+              ? _CompactBadgeRow(player: player, accentColor: accentColor)
+              : _BadgeRow(
+                  player: player,
+                  role: role,
+                  accentColor: accentColor,
+                  active: active,
+                  isLead: isLead,
+                  isSelf: isSelf,
+                ),
         ),
       ),
     );
@@ -385,6 +408,7 @@ class _TimedBadge extends StatefulWidget {
     required this.accentColor,
     required this.isLead,
     required this.isSelf,
+    this.compactSide = false,
   });
 
   final MatchPlayer player;
@@ -393,6 +417,7 @@ class _TimedBadge extends StatefulWidget {
   final Color accentColor;
   final bool isLead;
   final bool isSelf;
+  final bool compactSide;
 
   @override
   State<_TimedBadge> createState() => _TimedBadgeState();
@@ -442,7 +467,11 @@ class _TimedBadgeState extends State<_TimedBadge> {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              width: widget.compactSide ? 76 : null,
+              padding: EdgeInsets.symmetric(
+                horizontal: widget.compactSide ? 6 : 12,
+                vertical: widget.compactSide ? 5 : 7,
+              ),
               decoration: BoxDecoration(
                 color: timerColor.withOpacity(0.24),
                 borderRadius: BorderRadius.circular(16),
@@ -455,21 +484,27 @@ class _TimedBadgeState extends State<_TimedBadge> {
                   ),
                 ],
               ),
-              child: _BadgeRow(
-                player: widget.player,
-                role: widget.role,
-                accentColor: widget.accentColor,
-                active: true,
-                isLead: widget.isLead,
-                isSelf: widget.isSelf,
-                secondsLeft: _secondsLeft,
-              ),
+              child: widget.compactSide
+                  ? _CompactBadgeRow(
+                      player: widget.player,
+                      accentColor: widget.accentColor,
+                      secondsLeft: _secondsLeft,
+                    )
+                  : _BadgeRow(
+                      player: widget.player,
+                      role: widget.role,
+                      accentColor: widget.accentColor,
+                      active: true,
+                      isLead: widget.isLead,
+                      isSelf: widget.isSelf,
+                      secondsLeft: _secondsLeft,
+                    ),
             ),
           ),
         ),
         const SizedBox(height: 4),
         SizedBox(
-          width: 90,
+          width: widget.compactSide ? 68 : 90,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
@@ -479,6 +514,79 @@ class _TimedBadgeState extends State<_TimedBadge> {
               valueColor: AlwaysStoppedAnimation<Color>(timerColor),
             ),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+
+/// Small side-seat chip used on portrait phones so names never cover trick cards.
+class _CompactBadgeRow extends StatelessWidget {
+  const _CompactBadgeRow({
+    required this.player,
+    required this.accentColor,
+    this.secondsLeft,
+  });
+
+  final MatchPlayer player;
+  final Color accentColor;
+  final int? secondsLeft;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            if (player.isBot)
+              Icon(Icons.smart_toy_rounded, size: 11, color: accentColor)
+            else
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(color: accentColor, shape: BoxShape.circle),
+              ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                player.username,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 3),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              '🂠 ${player.cardCount}',
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 9,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            if (secondsLeft != null)
+              Text(
+                '${secondsLeft}s',
+                style: TextStyle(
+                  color: accentColor,
+                  fontSize: 9,
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+          ],
         ),
       ],
     );

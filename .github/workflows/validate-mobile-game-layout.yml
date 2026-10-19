@@ -1,0 +1,72 @@
+name: Validate responsive mobile game layout
+
+on:
+  push:
+    branches:
+      - fix/mobile-game-layout
+    paths-ignore:
+      - "frontend/build/web/**"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mobile-game-layout-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: fix/mobile-game-layout
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Build backend
+        working-directory: backend
+        run: npm run build
+
+      - name: Run backend tests
+        working-directory: backend
+        run: npm test
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.32.1"
+          cache: true
+
+      - name: Get Flutter dependencies
+        working-directory: frontend
+        run: flutter pub get
+
+      - name: Build responsive web app
+        working-directory: frontend
+        run: flutter build web --release
+
+      - name: Commit rebuilt web bundle
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/build/web
+          if git diff --cached --quiet; then
+            echo "Build output unchanged; nothing to commit."
+            exit 0
+          fi
+          git commit -m "build(web): ship responsive mobile game layout"
+          git push origin HEAD:fix/mobile-game-layout

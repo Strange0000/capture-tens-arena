@@ -416,8 +416,12 @@ class _GameScreenState extends State<GameScreen> {
                   // Player Hand Area
                   Builder(
                     builder: (context) {
-                      final sw = MediaQuery.of(context).size.width;
-                      final cw = (sw / 8).clamp(52.0, 92.0);
+                      final sw = MediaQuery.sizeOf(context).width;
+                      final cw = sw < 375
+                          ? 40.0
+                          : sw < 450
+                              ? 44.0
+                              : (sw / 8).clamp(52.0, 92.0);
                       return SizedBox(
                         height: (cw * 1.428) + 38,
                         child: _showDealAnimation
