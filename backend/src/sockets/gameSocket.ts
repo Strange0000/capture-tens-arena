@@ -946,8 +946,7 @@ function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, 
     if (!state || state.phase !== "playing" || state.currentTurnSeat !== expectedSeat) return;
     if (state.turnGeneration !== expectedGeneration) return; // Reject stale timeout
     
-    // Disable auto-play timer for humans in offline (bot) matches
-    if (state.mode === "offline") return;
+    // Offline matches never schedule this callback; see the guard above.
 
     const player = state.players[expectedSeat];
     if (player.isBot) return;
