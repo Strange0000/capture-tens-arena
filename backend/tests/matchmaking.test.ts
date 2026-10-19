@@ -11,6 +11,30 @@ function player(userId: string): QueuePlayer {
 }
 
 describe("private room lifecycle", () => {
+  it("allows a player to explicitly leave a room and removes an empty room", () => {
+    const matchmaking = new MatchmakingService();
+    const code = matchmaking.createPrivateRoom(player("owner"));
+    matchmaking.joinPrivateRoom(code, player("member"));
+
+    const changed = matchmaking.leavePrivateRoom("owner", code);
+    expect(changed?.players.map((member) => member.userId)).toEqual(["member"]);
+    expect(matchmaking.getPrivateRoomCodeForUser("owner")).toBeUndefined();
+    expect(matchmaking.getPrivateRoomCodeForUser("member")).toBe(code);
+
+    const emptied = matchmaking.leavePrivateRoom("member", code);
+    expect(emptied?.players).toEqual([]);
+    expect(matchmaking.getPrivateRoom(code)).toBeUndefined();
+  });
+
+  it("rejects duplicate party acceptance and joining multiple parties", () => {
+    const matchmaking = new MatchmakingService();
+    const firstId = matchmaking.createParty(player("owner"));
+    const secondId = matchmaking.createParty(player("other"));
+    matchmaking.joinParty(firstId, player("guest"));
+    expect(matchmaking.joinParty(firstId, player("guest"))).toHaveLength(2);
+    expect(() => matchmaking.joinParty(secondId, player("guest"))).toThrow("Leave your current party first");
+  });
+
   it("lets up to four different players join a case-insensitive room code", () => {
     const matchmaking = new MatchmakingService();
     const code = matchmaking.createPrivateRoom(player("owner"));
