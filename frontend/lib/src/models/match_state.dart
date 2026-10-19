@@ -119,6 +119,7 @@ class MatchState {
     this.turnDeadline,
     this.lastTrickWinner,
     required this.mode,
+    this.turnTimeoutMs = 18000,
   });
 
   final String id;
@@ -134,6 +135,7 @@ class MatchState {
   final int completedTricksCount;
   final int firstPlayerSeat;
   final int? turnDeadline;
+  final int turnTimeoutMs;
   final String? lastTrickWinner;
 
   factory MatchState.fromJson(Map<String, dynamic> json) {
@@ -214,6 +216,7 @@ class MatchState {
       completedTricksCount: tricks.length,
       firstPlayerSeat: json['firstPlayerSeat'] as int? ?? 0,
       turnDeadline: json['turnDeadline'] as int?,
+      turnTimeoutMs: (json['turnTimeoutMs'] as num?)?.toInt() ?? 18000,
       lastTrickWinner: lastWinner,
     );
   }
