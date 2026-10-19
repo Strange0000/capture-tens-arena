@@ -121,7 +121,7 @@ export function registerGameSockets(io: Server) {
       console.log(`[RankedQueue] Cancelled search for ${[...queuedIds].join(", ")}`);
     });
 
-    socket.on("party:invite", (payload: unknown) => {
+    socket.on("party:invite", async (payload: unknown) => {
       try {
         const parsed = z.object({ targetUserId: z.string().min(1).max(128) }).safeParse(payload);
         if (!parsed.success || parsed.data.targetUserId === userId) {
@@ -328,7 +328,7 @@ export function registerGameSockets(io: Server) {
           console.log("[GAME] Offline match " + state.id + " ended because " + userId + " left");
           return;
         }
-        if (state.mode === "ranked" && state.phase !== "complete") {
+        if (state.mode === "ranked") {
           // Penalize quitting player
           const result = await applyRankedResult(userId, currentSeason(), 0, false);
           socket.emit("rank:updated", result);
@@ -507,7 +507,7 @@ export function registerGameSockets(io: Server) {
         freshPlayer.isBot = true;
         freshPlayer.botDifficulty = "medium";
         matchStore.set(freshState);
-        if (freshState.mode === "ranked" && freshState.phase !== "complete") {
+        if (freshState.mode === "ranked") {
           // Disconnect abandonment must not bypass the ranked-loss penalty.
           void applyRankedResult(userId, currentSeason(), 0, false)
             .then((result) => io.to(`user:${userId}`).emit("rank:updated", {
