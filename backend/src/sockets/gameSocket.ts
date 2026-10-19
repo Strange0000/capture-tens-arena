@@ -5,7 +5,7 @@ import { redisPub, redisSub } from "../db/redis.js";
 import { chooseBotCard } from "../game/bot.js";
 import { createMatch, dealFirstFive, dealRemainingCards, playCard, publicStateForSeat, selectPowerSuit, startNextTrick } from "../game/engine.js";
 import { legalCardsForSeat } from "../game/rules.js";
-import { MatchMode, PlayerSeat, Suit } from "../game/types.js";
+import { MatchMode, PlayerSeat } from "../game/types.js";
 import { teamForSeat } from "../game/deck.js";
 import { MatchModel } from "../models/Match.js";
 import { ReplayModel } from "../models/Replay.js";
@@ -16,6 +16,8 @@ import { matchStore } from "../services/matchStore.js";
 import { applyRankedResult } from "../services/rankingService.js";
 import { authenticateSocket, AuthedSocket } from "./authSocket.js";
 import { StatisticsModel } from "../models/Statistics.js";
+import { RankingModel } from "../models/Ranking.js";
+import { z } from "zod";
 import { checkAndAwardAchievements, ACHIEVEMENTS } from "../game/achievements.js";
 
 // Track online users for friend status
@@ -41,31 +43,52 @@ export function registerGameSockets(io: Server) {
     reconnectMatch(io, socket);
     broadcastFriendStatus(io, userId, "online");
 
-    socket.on("queue:ranked", () => {
+    let rankedQueueRequestId = 0;
+    socket.on("queue:ranked", async () => {
+      const requestId = ++rankedQueueRequestId;
       console.log(`[SOCKET] queue:ranked from user ${userId} (${socket.user!.username})`);
-      let party = matchmaking.getPartyForUser(userId);
-      if (!party) {
-        party = [{
+      try {
+        const party = matchmaking.getPartyForUser(userId) ?? [{
           userId,
           username: socket.user!.username,
           socketId: socket.id,
           mmr: 0,
         }];
-      }
 
-      const group = matchmaking.enqueueRanked(party);
-      for (const player of party) {
-        io.to("user:" + player.userId).emit("queue:joined", { mode: "ranked" });
-      }
+        // Ratings are server-owned; never trust a client-supplied MMR value.
+        const ratingByUser = new Map<string, number>();
+        if (!env.OFFLINE_DEV_MODE) {
+          const ratings = await RankingModel.find({
+            userId: { $in: party.map((player) => player.userId) },
+            season: currentSeason(),
+          }).select("userId mmr").lean();
+          for (const rating of ratings) {
+            ratingByUser.set(rating.userId, rating.mmr);
+          }
+        }
+        if (requestId !== rankedQueueRequestId) return;
 
-      // Ranked matches must be human-only. Keep players queued until a real
-      // group is available; clients can cancel at any time.
-      if (group) {
-        startMatch(io, matchmaking.toSeats(group), "ranked");
+        const ratedParty = party.map((player) => ({
+          ...player,
+          socketId: player.userId === userId ? socket.id : player.socketId,
+          mmr: ratingByUser.get(player.userId) ?? 0,
+        }));
+        const group = matchmaking.enqueueRanked(ratedParty);
+
+        for (const player of ratedParty) {
+          io.to("user:" + player.userId).emit("queue:joined", { mode: "ranked" });
+        }
+        if (group) startMatch(io, matchmaking.toSeats(group), "ranked");
+      } catch (err) {
+        console.error("[RankedQueue] Could not enqueue players:", err);
+        socket.emit("error", {
+          message: err instanceof Error ? err.message : "Could not enter ranked matchmaking",
+        });
       }
     });
 
     socket.on("queue:cancel", () => {
+      rankedQueueRequestId += 1;
       const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
       const queuedIds = new Set<string>([userId, ...queuedGroup.map((player) => player.userId)]);
 
@@ -224,14 +247,25 @@ export function registerGameSockets(io: Server) {
         socket.leave(`match:${state.id}`);
         io.to(`match:${state.id}`).emit("match:abandoned", { userLeft: userId });
         matchStore.set(state);
-        if (state.phase === "playing" && state.currentTurnSeat === player?.seat) {
+        if (state.phase === "power-select" && state.firstPlayerSeat === player?.seat) {
+          maybeBotPowerSelect(io, state.id);
+        } else if (state.phase === "playing" && state.currentTurnSeat === player?.seat) {
           maybeBotTurn(io, state.id);
         }
       }
     });
 
-    socket.on("power:select", ({ matchId, suit }: { matchId: string; suit: Suit }) => {
+    socket.on("power:select", (payload: unknown) => {
       try {
+        const parsed = z.object({
+          matchId: z.string().min(1),
+          suit: z.enum(["hearts", "diamonds", "clubs", "spades"]),
+        }).safeParse(payload);
+        if (!parsed.success) {
+          socket.emit("error", { message: "Invalid power suit selection" });
+          return;
+        }
+        const { matchId, suit } = parsed.data;
         const state = requireMatch(matchId);
         const seat = seatForUser(state.players, userId);
         selectPowerSuit(state, seat, suit);
@@ -373,7 +407,9 @@ export function registerGameSockets(io: Server) {
         io.to(`match:${freshState.id}`).emit("match:playerBotReplaced", { userId, username: freshPlayer.username });
         broadcastState(io, freshState.id);
         
-        if (freshState.phase === "playing" && freshState.currentTurnSeat === freshPlayer.seat) {
+        if (freshState.phase === "power-select" && freshState.firstPlayerSeat === freshPlayer.seat) {
+          maybeBotPowerSelect(io, freshState.id);
+        } else if (freshState.phase === "playing" && freshState.currentTurnSeat === freshPlayer.seat) {
           maybeBotTurn(io, freshState.id);
         }
       }, env.DISCONNECT_GRACE_MS);
@@ -527,15 +563,32 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
     const season = currentSeason();
     const humanPlayers = state.players.filter(p => !p.isBot);
     
-    // Calculate average MMR of each team for opponent average
-    const teamAPlayers = humanPlayers.filter(p => teamForSeat(p.seat) === "A");
-    const teamBPlayers = humanPlayers.filter(p => teamForSeat(p.seat) === "B");
-    
+    // Snapshot this season's pre-match ratings so all players are scored
+    // against the opposing team's actual average, not a hard-coded zero.
+    const ratingByUser = new Map<string, number>();
+    if (!env.OFFLINE_DEV_MODE) {
+      try {
+        const ratings = await RankingModel.find({
+          userId: { $in: humanPlayers.map((player) => player.userId) },
+          season,
+        }).select("userId mmr").lean();
+        for (const rating of ratings) ratingByUser.set(rating.userId, rating.mmr);
+      } catch (err) {
+        console.error("[RankedResult] Could not load ratings for team averages:", err);
+      }
+    }
+    const teamAPlayers = humanPlayers.filter((player) => teamForSeat(player.seat) === "A");
+    const teamBPlayers = humanPlayers.filter((player) => teamForSeat(player.seat) === "B");
+    const averageMmr = (team: typeof humanPlayers) => team.length === 0
+      ? 0
+      : team.reduce((sum, player) => sum + (ratingByUser.get(player.userId) ?? 0), 0) / team.length;
+    const teamAMmr = averageMmr(teamAPlayers);
+    const teamBMmr = averageMmr(teamBPlayers);
+
     for (const player of humanPlayers) {
       const myTeam = teamForSeat(player.seat);
       const won = state.winnerTeam === myTeam;
-      // Use 0 as default opponent MMR (simple estimate for Iron III)
-      const opponentAvg = 0;
+      const opponentAvg = myTeam === "A" ? teamBMmr : teamAMmr;
       
       try {
         const result = await applyRankedResult(player.userId, season, opponentAvg, won);
@@ -565,7 +618,7 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
     const won = state.winnerTeam === myTeam;
     const teamCaptures = state.captures[myTeam];
     const tensCapturedThisMatch = teamCaptures?.tens?.length ?? 0;
-    const acesCapturedThisMatch = teamCaptures?.aces ?? 0;
+    const acesCapturedThisMatch = teamCaptures?.aces?.length ?? 0;
 
     if (!env.OFFLINE_DEV_MODE) {
       try {
