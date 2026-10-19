@@ -17,8 +17,19 @@ export class MatchmakingService {
   private userParty = new Map<string, string>();
 
   enqueueRanked(party: QueuePlayer[]): QueuePlayer[] | undefined {
-    if (party.length > 2) throw new Error("Ranked parties max 2 players");
-    const userIds = party.map(p => p.userId);
+    if (party.length < 1 || party.length > 2) throw new Error("Ranked parties must have one or two players");
+    const userIds = party.map((player) => player.userId);
+    if (new Set(userIds).size !== userIds.length) throw new Error("A player cannot occupy two ranked seats");
+    for (const player of party) {
+      const roomCode = this.getPrivateRoomCodeForUser(player.userId);
+      if (roomCode) throw new Error(`Leave room ${roomCode} before joining ranked matchmaking`);
+      const partyId = this.userParty.get(player.userId);
+      if (partyId && !party.some((member) => member.userId !== player.userId && this.userParty.get(member.userId) === partyId)) {
+        // Solo members of a party must queue with their party, not as a solo.
+        const members = this.parties.get(partyId) ?? [];
+        if (members.length > 1) throw new Error("Queue with your party or leave it first");
+      }
+    }
     this.rankedQueue = this.rankedQueue.filter(p => !p.some(u => userIds.includes(u.userId)));
     this.rankedQueue.push(party);
     return this.tryMatch();
@@ -145,7 +156,33 @@ export class MatchmakingService {
     return group ? [...group] : undefined;
   }
 
+  getPrivateRoomCodeForUser(userId: string): string | undefined {
+    for (const [code, members] of this.rooms.entries()) {
+      if (members.some((member) => member.userId === userId)) return code;
+    }
+    return undefined;
+  }
+
+  leavePrivateRoom(userId: string, code?: string): { code: string; players: QueuePlayer[] } | undefined {
+    const normalizedCode = code?.trim().toUpperCase();
+    const target = normalizedCode
+      ? ([normalizedCode, this.rooms.get(normalizedCode)] as const)
+      : [...this.rooms.entries()].find(([, members]) => members.some((member) => member.userId === userId));
+    if (!target || !target[1]) return undefined;
+    const [roomCode, room] = target;
+    if (!room.some((member) => member.userId === userId)) throw new Error("You are not a player in this room");
+    const filtered = room.filter((member) => member.userId !== userId);
+    if (filtered.length === 0) {
+      this.rooms.delete(roomCode);
+      return { code: roomCode, players: [] };
+    }
+    this.rooms.set(roomCode, filtered);
+    return { code: roomCode, players: [...filtered] };
+  }
+
   createPrivateRoom(owner: QueuePlayer) {
+    if (this.isUserInRankedQueue(owner.userId)) throw new Error("Cancel ranked matchmaking before creating a room");
+    if (this.userParty.has(owner.userId)) throw new Error("Leave your party before creating a private room");
     // A player must not silently create multiple active rooms.
     for (const [existingCode, members] of this.rooms.entries()) {
       if (members.some((member) => member.userId === owner.userId)) {
@@ -163,6 +200,8 @@ export class MatchmakingService {
   }
 
   joinPrivateRoom(code: string, player: QueuePlayer): QueuePlayer[] | undefined {
+    if (this.isUserInRankedQueue(player.userId)) throw new Error("Cancel ranked matchmaking before joining a room");
+    if (this.userParty.has(player.userId)) throw new Error("Leave your party before joining a private room");
     const normalizedCode = code.trim().toUpperCase();
     const room = this.rooms.get(normalizedCode);
     if (!room) throw new Error("Room not found");
@@ -219,6 +258,9 @@ export class MatchmakingService {
   }
 
   createParty(owner: QueuePlayer) {
+    if (this.userParty.has(owner.userId)) throw new Error("You are already in a party");
+    if (this.isUserInRankedQueue(owner.userId)) throw new Error("Cancel ranked matchmaking before creating a party");
+    if (this.getPrivateRoomCodeForUser(owner.userId)) throw new Error("Leave your private room before creating a party");
     const id = nanoid(8);
     this.parties.set(id, [owner]);
     this.userParty.set(owner.userId, id);
@@ -228,14 +270,25 @@ export class MatchmakingService {
   joinParty(id: string, player: QueuePlayer): QueuePlayer[] {
     const party = this.parties.get(id);
     if (!party) throw new Error("Party not found");
+    const existingPartyId = this.userParty.get(player.userId);
+    if (existingPartyId && existingPartyId !== id) throw new Error("Leave your current party first");
+    const existingMember = party.find((member) => member.userId === player.userId);
+    if (existingMember) {
+      existingMember.socketId = player.socketId;
+      existingMember.username = player.username;
+      return [...party];
+    }
+    if (this.isUserInRankedQueue(player.userId)) throw new Error("Cancel ranked matchmaking before joining a party");
+    if (this.getPrivateRoomCodeForUser(player.userId)) throw new Error("Leave your private room before joining a party");
     if (party.length >= 2) throw new Error("Party is full");
     party.push(player);
     this.userParty.set(player.userId, id);
-    return party;
+    return [...party];
   }
 
   leaveParty(userId: string) {
     const partyId = this.userParty.get(userId);
+    this.removeFromQueue(userId);
     if (!partyId) return null;
     let party = this.parties.get(partyId);
     if (party) {
