@@ -76,6 +76,7 @@ export function registerGameSockets(io: Server) {
       const requestId = (rankedQueueRequests.get(requestKey) ?? 0) + 1;
       rankedQueueRequests.set(requestKey, requestId);
       console.log(`[SOCKET] queue:ranked from user ${userId} (${socket.user!.username})`);
+      let requestUserIds = [userId];
       try {
         const currentParty = matchmaking.getPartyForUser(userId);
         // Snapshot membership before awaiting the database query. The service
@@ -86,6 +87,7 @@ export function registerGameSockets(io: Server) {
           socketId: socket.id,
           mmr: 0,
         }];
+        requestUserIds = requestedParty.map((player) => player.userId);
 
         for (const player of requestedParty) {
           const activeMatch = matchStore.findByUser(player.userId);
@@ -142,6 +144,13 @@ export function registerGameSockets(io: Server) {
         if (group) startMatch(io, matchmaking.toSeats(group), "ranked");
       } catch (err) {
         console.error("[RankedQueue] Could not enqueue players:", err);
+        const notifyIds = new Set<string>(requestUserIds);
+        const previouslyQueued = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
+        for (const player of previouslyQueued) notifyIds.add(player.userId);
+        matchmaking.removeFromQueue(userId);
+        for (const queuedUserId of notifyIds) {
+          io.to(`user:${queuedUserId}`).emit("queue:cancelled", { mode: "ranked" });
+        }
         socket.emit("error", {
           message: err instanceof Error ? err.message : "Could not enter ranked matchmaking",
         });

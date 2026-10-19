@@ -619,8 +619,11 @@ class AppState extends ChangeNotifier {
 
   void startOffline(String difficulty) {
     print('[AppState] startOffline($difficulty) called, socket connected=${socket.connected}');
+    // Wait for match:created before navigating into a game. If the server
+    // rejects the request, keep the user in the lobby instead of a blank table.
+    match = null;
+    if (lobbyStatus != LobbyStatus.inRoom) lobbyStatus = LobbyStatus.idle;
     socket.startOffline(difficulty);
-    lobbyStatus = LobbyStatus.inMatch;
     notifyListeners();
   }
 
