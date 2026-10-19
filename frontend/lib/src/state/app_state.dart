@@ -577,6 +577,10 @@ class AppState extends ChangeNotifier {
   }
 
   void declinePartyInvite() {
+    final invite = pendingPartyInvite;
+    if (invite != null && invite['partyId'] is String) {
+      socket.declinePartyInvite(invite['partyId'] as String);
+    }
     pendingPartyInvite = null;
     notifyListeners();
   }

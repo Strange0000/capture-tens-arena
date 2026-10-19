@@ -123,6 +123,8 @@ class SocketService {
   
   void acceptPartyInvite(String partyId) => _emit('party:accept', {'partyId': partyId});
 
+  void declinePartyInvite(String partyId) => _emit('party:decline', {'partyId': partyId});
+
   void leaveParty() => _emit('party:leave', {});
 
   void selectPower(String matchId, String suit) =>

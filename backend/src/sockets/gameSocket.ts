@@ -25,6 +25,7 @@ const onlineUsers = new Set<string>();
 const activeSocketsByUser = new Map<string, Set<string>>();
 const disconnectGraceTimers = new Map<string, NodeJS.Timeout>();
 const rankedQueueRequests = new Map<string, number>();
+const pendingPartyInvites = new Map<string, { partyId: string; expiresAt: number }>();
 
 function currentSeason() {
   const now = new Date();
@@ -146,6 +147,24 @@ export function registerGameSockets(io: Server) {
           return;
         }
         const { targetUserId } = parsed.data;
+        if (matchmaking.isUserInRankedQueue(userId)) {
+          throw new Error("Cancel ranked matchmaking before inviting a party member");
+        }
+        if (matchmaking.getPartyForUser(targetUserId)) {
+          throw new Error("That player is already in a party");
+        }
+        if (matchmaking.isUserInRankedQueue(targetUserId)) {
+          throw new Error("That player is already searching for a ranked match");
+        }
+        if (matchmaking.getPrivateRoomCodeForUser(targetUserId)) {
+          throw new Error("That player is already in a private room");
+        }
+        const targetMatch = matchStore.findByUser(targetUserId);
+        if (targetMatch && targetMatch.phase !== "complete") {
+          throw new Error("That player is already in a match");
+        }
+        const inviterParty = matchmaking.getPartyForUser(userId);
+        if (inviterParty && inviterParty.length >= 2) throw new Error("Your party is full");
         const target = env.OFFLINE_DEV_MODE
           ? { id: targetUserId }
           : await UserModel.findById(targetUserId).select("_id").lean();
@@ -180,6 +199,10 @@ export function registerGameSockets(io: Server) {
           });
           socket.emit("party:updated", { party: matchmaking.getParty(partyId) });
         }
+        pendingPartyInvites.set(targetUserId, {
+          partyId,
+          expiresAt: Date.now() + 2 * 60 * 1000,
+        });
         io.to(`user:${targetUserId}`).emit("party:invited", {
           from: socket.user!.username,
           partyId,
@@ -195,6 +218,11 @@ export function registerGameSockets(io: Server) {
       try {
         const parsed = z.object({ partyId: z.string().min(1).max(128) }).safeParse(payload);
         if (!parsed.success) throw new Error("Invalid party invitation");
+        const invite = pendingPartyInvites.get(userId);
+        if (!invite || invite.expiresAt < Date.now() || invite.partyId !== parsed.data.partyId) {
+          pendingPartyInvites.delete(userId);
+          throw new Error("This party invitation is invalid or has expired");
+        }
         const activeMatch = matchStore.findByUser(userId);
         if (activeMatch && activeMatch.phase !== "complete") {
           throw new Error("Leave your match before joining a party");
@@ -205,12 +233,20 @@ export function registerGameSockets(io: Server) {
           socketId: socket.id,
           mmr: 0
         });
+        pendingPartyInvites.delete(userId);
         for (const p of party) {
           io.to(`user:${p.userId}`).emit("party:updated", { party });
         }
       } catch (err: any) {
         socket.emit("error", { message: err.message });
       }
+    });
+
+    socket.on("party:decline", (payload: unknown) => {
+      const parsed = z.object({ partyId: z.string().min(1).max(128) }).safeParse(payload);
+      if (!parsed.success) return;
+      const invite = pendingPartyInvites.get(userId);
+      if (invite?.partyId === parsed.data.partyId) pendingPartyInvites.delete(userId);
     });
 
     socket.on("party:leave", () => {
@@ -223,6 +259,9 @@ export function registerGameSockets(io: Server) {
       }
       const partyId = matchmaking.leaveParty(userId);
       if (partyId) {
+        for (const [inviteeId, invite] of pendingPartyInvites.entries()) {
+          if (invite.partyId === partyId) pendingPartyInvites.delete(inviteeId);
+        }
         const party = matchmaking.getParty(partyId);
         if (party) {
           for (const p of party) {
