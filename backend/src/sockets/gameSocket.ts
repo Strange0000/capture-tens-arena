@@ -31,6 +31,22 @@ function currentSeason() {
   return `${now.getUTCFullYear()}-Q${Math.floor(now.getUTCMonth() / 3) + 1}`;
 }
 
+async function opponentAverageMmr(state: ReturnType<typeof requireMatch>, userId: string, season: string): Promise<number> {
+  if (env.OFFLINE_DEV_MODE) return 0;
+  const leaver = state.players.find((player) => player.userId === userId);
+  if (!leaver) return 0;
+  const opposingIds = state.players
+    .filter((player) => !player.isBot && teamForSeat(player.seat) !== teamForSeat(leaver.seat))
+    .map((player) => player.userId);
+  if (opposingIds.length === 0) return 0;
+  const ratings = await RankingModel.find({
+    userId: { $in: opposingIds },
+    season,
+  }).select("mmr").lean();
+  if (ratings.length === 0) return 0;
+  return ratings.reduce((sum, ranking) => sum + ranking.mmr, 0) / ratings.length;
+}
+
 export function registerGameSockets(io: Server) {
   if (!env.OFFLINE_DEV_MODE) {
     io.adapter(createAdapter(redisPub, redisSub));
@@ -342,7 +358,9 @@ export function registerGameSockets(io: Server) {
         }
         if (state.mode === "ranked") {
           // Penalize quitting player
-          const result = await applyRankedResult(userId, currentSeason(), 0, false);
+          const season = currentSeason();
+          const opponentAvg = await opponentAverageMmr(state, userId, season);
+          const result = await applyRankedResult(userId, season, opponentAvg, false);
           const totals = result.ranking as { wins?: number; losses?: number; peakMmr?: number };
           socket.emit("rank:updated", {
             oldMmr: result.oldMmr,
@@ -386,7 +404,7 @@ export function registerGameSockets(io: Server) {
         const seat = seatForUser(state.players, userId);
         selectPowerSuit(state, seat, suit);
         dealRemainingCards(state);
-        state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+        state.turnDeadline = state.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
         matchStore.set(state);
         broadcastState(io, state.id);
         maybeBotTurn(io, state.id);
@@ -414,7 +432,7 @@ export function registerGameSockets(io: Server) {
         const result = playCard(state, seat, cardId);
         
         // Always refresh deadline after any card play so clients show an accurate timer
-        state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+        state.turnDeadline = state.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
         
         matchStore.set(state);
         broadcastState(io, state.id);
@@ -425,7 +443,7 @@ export function registerGameSockets(io: Server) {
             const fresh = matchStore.get(matchId);
             if (fresh && fresh.phase === "trick-resolving") {
               startNextTrick(fresh);
-              fresh.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+              fresh.turnDeadline = fresh.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
               matchStore.set(fresh);
               broadcastState(io, matchId);
               maybeBotTurn(io, matchId);
@@ -560,7 +578,9 @@ export function registerGameSockets(io: Server) {
         matchStore.set(freshState);
         if (freshState.mode === "ranked") {
           // Disconnect abandonment must not bypass the ranked-loss penalty.
-          void applyRankedResult(userId, currentSeason(), 0, false)
+          const season = currentSeason();
+          void opponentAverageMmr(freshState, userId, season)
+            .then((opponentAvg) => applyRankedResult(userId, season, opponentAvg, false))
             .then((result) => {
               const totals = result.ranking as { wins?: number; losses?: number; peakMmr?: number };
               io.to(`user:${userId}`).emit("rank:updated", {
@@ -628,7 +648,7 @@ function startMatch(io: Server, players: PlayerSeat[], mode: MatchMode) {
     }
   }
   const state = dealFirstFive(createMatch(players, mode));
-  state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+  state.turnDeadline = state.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
   matchStore.set(state);
   console.log(`[GAME] Starting match ${state.id} (${mode}) with players: ${players.map(p => `${p.username}(${p.userId})`).join(', ')}`);
   for (const player of players) {
@@ -685,7 +705,7 @@ function maybeBotPowerSelect(io: Server, matchId: string) {
     for (const c of botHand) { suitCounts[c.suit] = (suitCounts[c.suit] || 0) + 1; }
     const bestSuit = (Object.entries(suitCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "spades") as Suit;
     const stateAfterDeal = dealRemainingCards(selectPowerSuit(fresh, fresh.firstPlayerSeat, bestSuit));
-    stateAfterDeal.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+    stateAfterDeal.turnDeadline = stateAfterDeal.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
     matchStore.set(stateAfterDeal);
     broadcastState(io, matchId);
     maybeBotTurn(io, matchId);
@@ -698,11 +718,15 @@ function maybeBotPowerSelect(io: Server, matchId: string) {
 function maybeBotTurn(io: Server, matchId: string) {
   const state = matchStore.get(matchId);
   if (!state || state.phase !== "playing") return;
-  const player = state.players[state.currentTurnSeat];
+  const expectedSeat = state.currentTurnSeat;
+  const expectedGeneration = state.turnGeneration;
+  const player = state.players[expectedSeat];
   if (!player?.isBot) return;
   setTimeout(() => {
     const fresh = matchStore.get(matchId);
     if (!fresh || fresh.phase !== "playing") return;
+    // Deduplicate scheduled bot actions and ignore timers from prior turns.
+    if (fresh.currentTurnSeat !== expectedSeat || fresh.turnGeneration !== expectedGeneration) return;
     const bot = fresh.players[fresh.currentTurnSeat];
     if (!bot?.isBot) return;
     let card;
@@ -724,7 +748,7 @@ function maybeBotTurn(io: Server, matchId: string) {
         const freshAfterTrick = matchStore.get(matchId);
         if (freshAfterTrick && freshAfterTrick.phase === "trick-resolving") {
           startNextTrick(freshAfterTrick);
-          freshAfterTrick.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+          freshAfterTrick.turnDeadline = freshAfterTrick.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
           matchStore.set(freshAfterTrick);
           broadcastState(io, matchId);
           maybeBotTurn(io, matchId);
@@ -913,6 +937,8 @@ async function broadcastFriendStatus(io: Server, userId: string, status: "online
 }
 
 function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, deadline: number, expectedGeneration: number) {
+  const current = matchStore.get(matchId);
+  if (!current || current.mode === "offline" || typeof deadline !== "number") return;
   const waitMs = Math.max(0, deadline - Date.now());
   
   setTimeout(() => {
@@ -935,7 +961,7 @@ function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, 
       const result = playCard(state, expectedSeat, cardToPlay.id);
       
       // Always refresh deadline after any auto-played card
-      state.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+      state.turnDeadline = state.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
       
       matchStore.set(state);
       broadcastState(io, matchId);
@@ -946,7 +972,7 @@ function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, 
           const fresh = matchStore.get(matchId);
           if (fresh && fresh.phase === "trick-resolving") {
             startNextTrick(fresh);
-            fresh.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+            fresh.turnDeadline = fresh.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
             matchStore.set(fresh);
             broadcastState(io, matchId);
             maybeBotTurn(io, matchId);
