@@ -36,8 +36,11 @@ async function opponentAverageMmr(state: ReturnType<typeof requireMatch>, userId
   if (env.OFFLINE_DEV_MODE) return 0;
   const leaver = state.players.find((player) => player.userId === userId);
   if (!leaver) return 0;
+  // Disconnected ranked players are bot-controlled but still count toward
+  // their original team's average rating for the abandonment result.
   const opposingIds = state.players
-    .filter((player) => !player.isBot && teamForSeat(player.seat) !== teamForSeat(leaver.seat))
+    .filter((player) => !player.userId.startsWith("bot-") &&
+      teamForSeat(player.seat) !== teamForSeat(leaver.seat))
     .map((player) => player.userId);
   if (opposingIds.length === 0) return 0;
   const ratings = await RankingModel.find({
@@ -830,15 +833,19 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
   // Apply ranked MMR updates BEFORE cleanup
   if (state.mode === "ranked") {
     const season = currentSeason();
-    const humanPlayers = state.players.filter(p => !p.isBot);
-    
+    // Only active humans receive the normal end-of-match result. A player
+    // already penalized for abandoning is excluded from that update, but their
+    // pre-match rating still belongs in their original team's average.
+    const humanPlayers = state.players.filter((player) => !player.isBot);
+    const rankedParticipants = state.players.filter((player) => !player.userId.startsWith("bot-"));
+
     // Snapshot this season's pre-match ratings so all players are scored
     // against the opposing team's actual average, not a hard-coded zero.
     const ratingByUser = new Map<string, number>();
     if (!env.OFFLINE_DEV_MODE) {
       try {
         const ratings = await RankingModel.find({
-          userId: { $in: humanPlayers.map((player) => player.userId) },
+          userId: { $in: rankedParticipants.map((player) => player.userId) },
           season,
         }).select("userId mmr").lean();
         for (const rating of ratings) ratingByUser.set(rating.userId, rating.mmr);
@@ -846,8 +853,8 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
         console.error("[RankedResult] Could not load ratings for team averages:", err);
       }
     }
-    const teamAPlayers = humanPlayers.filter((player) => teamForSeat(player.seat) === "A");
-    const teamBPlayers = humanPlayers.filter((player) => teamForSeat(player.seat) === "B");
+    const teamAPlayers = rankedParticipants.filter((player) => teamForSeat(player.seat) === "A");
+    const teamBPlayers = rankedParticipants.filter((player) => teamForSeat(player.seat) === "B");
     const averageMmr = (team: typeof humanPlayers) => team.length === 0
       ? 0
       : team.reduce((sum, player) => sum + (ratingByUser.get(player.userId) ?? 0), 0) / team.length;
