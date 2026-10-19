@@ -197,6 +197,13 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("party:leave", () => {
+      const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
+      if (queuedGroup.length > 0) {
+        matchmaking.removeFromQueue(userId);
+        for (const queuedPlayer of queuedGroup) {
+          io.to(`user:${queuedPlayer.userId}`).emit("queue:cancelled", { mode: "ranked" });
+        }
+      }
       const partyId = matchmaking.leaveParty(userId);
       if (partyId) {
         const party = matchmaking.getParty(partyId);
@@ -471,7 +478,13 @@ export function registerGameSockets(io: Server) {
       }
       activeSocketsByUser.delete(userId);
       onlineUsers.delete(userId);
+      const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
       matchmaking.removeFromQueue(userId);
+      for (const queuedPlayer of queuedGroup) {
+        if (queuedPlayer.userId !== userId) {
+          io.to(`user:${queuedPlayer.userId}`).emit("queue:cancelled", { mode: "ranked" });
+        }
+      }
       for (const changedRoom of matchmaking.removeFromPrivateRooms(userId)) {
         broadcastPrivateRoom(io, changedRoom.code, changedRoom.players);
       }
@@ -730,6 +743,9 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
           newMmr: result.newMmr,
           mmrDelta: result.mmrDelta,
           rank: result.rankDetail,
+          wins: result.ranking?.wins,
+          losses: result.ranking?.losses,
+          peakMmr: result.ranking?.peakMmr,
         };
       } catch (err) {
         console.error(`Failed to update rank for ${player.userId}:`, err);
