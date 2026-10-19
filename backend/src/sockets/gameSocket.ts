@@ -107,15 +107,19 @@ export function registerGameSockets(io: Server) {
             ratingByUser.set(rating.userId, rating.mmr);
           }
         }
+        // Newer searches/cancellations own the UI state. An older request must
+        // never emit a cancellation that clears a search which began afterward.
+        if (requestId !== rankedQueueRequests.get(requestKey)) return;
+
         const latestParty = matchmaking.getPartyForUser(userId);
         const partyShapeChanged = partyIdAtRequest
           ? !latestParty ||
             latestParty.length !== requestedParty.length ||
             latestParty.some((player) => !requestedParty.some((original) => original.userId === player.userId))
           : latestParty !== undefined;
-        if (requestId !== rankedQueueRequests.get(requestKey) ||
-            matchmaking.getPartyIdForUser(userId) !== partyIdAtRequest ||
-            partyShapeChanged) {
+        const partyChanged = matchmaking.getPartyIdForUser(userId) !== partyIdAtRequest ||
+          partyShapeChanged;
+        if (partyChanged) {
           const notifyPlayers = new Map<string, QueuePlayer>();
           for (const player of requestedParty) notifyPlayers.set(player.userId, player);
           for (const player of latestParty ?? []) notifyPlayers.set(player.userId, player);
@@ -304,6 +308,7 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("party:leave", () => {
+      const existingParty = matchmaking.getPartyForUser(userId) ?? [];
       const existingPartyId = matchmaking.getPartyIdForUser(userId);
       rankedQueueRequests.set(`user:${userId}`, (rankedQueueRequests.get(`user:${userId}`) ?? 0) + 1);
       if (existingPartyId) {
@@ -311,11 +316,14 @@ export function registerGameSockets(io: Server) {
         rankedQueueRequests.set(key, (rankedQueueRequests.get(key) ?? 0) + 1);
       }
       const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
-      if (queuedGroup.length > 0) {
-        matchmaking.removeFromQueue(userId);
-        for (const queuedPlayer of queuedGroup) {
-          io.to(`user:${queuedPlayer.userId}`).emit("queue:cancelled", { mode: "ranked" });
-        }
+      if (queuedGroup.length > 0) matchmaking.removeFromQueue(userId);
+      const cancelIds = new Set<string>([
+        userId,
+        ...existingParty.map((player) => player.userId),
+        ...queuedGroup.map((player) => player.userId),
+      ]);
+      for (const cancelId of cancelIds) {
+        io.to(`user:${cancelId}`).emit("queue:cancelled", { mode: "ranked" });
       }
       const partyId = matchmaking.leaveParty(userId);
       if (partyId) {

@@ -588,6 +588,10 @@ class AppState extends ChangeNotifier {
   void leaveParty() {
     socket.leaveParty();
     party = null;
+    if (lobbyStatus == LobbyStatus.queuing) {
+      lobbyStatus = LobbyStatus.idle;
+      match = null;
+    }
     notifyListeners();
   }
 
