@@ -49,6 +49,8 @@ export function dealFirstFive(state: MatchState): MatchState {
 export function selectPowerSuit(state: MatchState, seat: number, suit: Suit): MatchState {
   if (state.phase !== "power-select") throw new Error("Power suit cannot be selected now");
   if (seat !== state.firstPlayerSeat) throw new Error("Only first player may select power suit");
+  const validSuits: Suit[] = ["hearts", "diamonds", "clubs", "spades"];
+  if (!validSuits.includes(suit)) throw new Error("Invalid power suit");
   state.powerSuit = suit;
   state.phase = "deal-rest";
   record(state, "power.selected", { seat, suit });
