@@ -517,6 +517,10 @@ export function registerGameSockets(io: Server) {
         const { matchId, suit } = parsed.data;
         const state = requireMatch(matchId);
         const seat = seatForUser(state.players, userId);
+        const actor = state.players[seat];
+        if (!actor || actor.isBot || !actor.connected) {
+          throw new Error("This seat is now controlled by a bot");
+        }
         selectPowerSuit(state, seat, suit);
         dealRemainingCards(state);
         state.turnDeadline = state.mode === "offline" ? undefined : Date.now() + env.TURN_TIMEOUT_MS;
@@ -544,6 +548,10 @@ export function registerGameSockets(io: Server) {
         const { matchId, cardId } = parsed.data;
         const state = requireMatch(matchId);
         const seat = seatForUser(state.players, userId);
+        const actor = state.players[seat];
+        if (!actor || actor.isBot || !actor.connected) {
+          throw new Error("This seat is now controlled by a bot");
+        }
         const result = playCard(state, seat, cardId);
         
         // Always refresh deadline after any card play so clients show an accurate timer
@@ -629,7 +637,7 @@ export function registerGameSockets(io: Server) {
       const emoteState = matchStore.get(matchId);
       if (!emoteState) return;
       const emotePlayer = emoteState.players.find(p => p.userId === userId);
-      if (!emotePlayer) return;
+      if (!emotePlayer || emotePlayer.isBot || !emotePlayer.connected) return;
       
       io.to(`match:${matchId}`).emit("emote:received", {
         seat: emotePlayer.seat,
