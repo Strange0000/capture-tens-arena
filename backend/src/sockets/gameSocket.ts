@@ -141,7 +141,21 @@ export function registerGameSockets(io: Server) {
         for (const player of ratedParty) {
           io.to("user:" + player.userId).emit("queue:joined", { mode: "ranked" });
         }
-        if (group) startMatch(io, matchmaking.toSeats(group), "ranked");
+        if (group) {
+          try {
+            startMatch(io, matchmaking.toSeats(group), "ranked");
+          } catch (err) {
+            // tryMatch consumes the queue groups before returning. If match
+            // startup loses a race with another state transition, release every
+            // matched client from "searching" rather than leaving ghost queues.
+            const message = err instanceof Error ? err.message : "Could not create ranked match";
+            console.error("[RankedQueue] Match creation failed:", err);
+            for (const player of group) {
+              io.to(`user:${player.userId}`).emit("queue:cancelled", { mode: "ranked" });
+              io.to(`user:${player.userId}`).emit("error", { message });
+            }
+          }
+        }
       } catch (err) {
         console.error("[RankedQueue] Could not enqueue players:", err);
         const notifyIds = new Set<string>(requestUserIds);
