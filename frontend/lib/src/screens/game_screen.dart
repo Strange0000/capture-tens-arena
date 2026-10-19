@@ -100,6 +100,10 @@ class _GameScreenState extends State<GameScreen> {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final viewport = MediaQuery.sizeOf(context);
+    final isVeryNarrowPhone = viewport.width < 360;
+    final isCompactGameControls = viewport.width < 400;
+    final isShortPhone = viewport.height < 700;
 
     // Auto-redirect to login if not logged in
     if (!app.isLoggedIn) {
@@ -224,6 +228,11 @@ class _GameScreenState extends State<GameScreen> {
       });
     }
     _lastPowerSuit = match.powerSuit;
+    final modeLabel = match.mode == 'ranked'
+        ? (isVeryNarrowPhone ? 'RANKED' : 'RANKED ARENA')
+        : match.mode == 'private'
+            ? (isVeryNarrowPhone ? 'CUSTOM' : 'CUSTOM SALON')
+            : (isVeryNarrowPhone ? 'BOT MATCH' : 'BOT COMBAT');
 
     return Container(
       decoration: const BoxDecoration(
@@ -237,6 +246,7 @@ class _GameScreenState extends State<GameScreen> {
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
+          toolbarHeight: isShortPhone ? 50 : kToolbarHeight,
           leading: IconButton(
             tooltip: 'Leave Match',
             icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 18),
@@ -244,7 +254,10 @@ class _GameScreenState extends State<GameScreen> {
           ),
           centerTitle: true,
           title: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+            padding: EdgeInsets.symmetric(
+              horizontal: isVeryNarrowPhone ? 7 : (isCompactGameControls ? 10 : 14),
+              vertical: 5,
+            ),
             decoration: BoxDecoration(
               color: (match.mode == 'ranked'
                       ? const Color(0xFFFFD166)
@@ -280,11 +293,7 @@ class _GameScreenState extends State<GameScreen> {
                 ),
                 const SizedBox(width: 7),
                 Text(
-                  match.mode == 'ranked'
-                      ? 'RANKED ARENA'
-                      : match.mode == 'private'
-                          ? 'CUSTOM SALON'
-                          : 'BOT COMBAT',
+                  modeLabel,
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w900,
@@ -300,33 +309,87 @@ class _GameScreenState extends State<GameScreen> {
             ),
           ),
           actions: [
-            if (match.players.any((p) => p.isBot) && match.mode != 'ranked')
+            if (isCompactGameControls)
+              PopupMenuButton<String>(
+                tooltip: 'Game options',
+                icon: const Icon(Icons.more_vert_rounded, color: Colors.white70, size: 22),
+                color: const Color(0xFF10192A),
+                onSelected: (action) {
+                  if (action == 'restart') {
+                    _confirmRestart(context, app);
+                  } else if (action == 'sound') {
+                    setState(() {
+                      final next = !AudioService.instance.soundEnabled;
+                      AudioService.instance.setSoundEnabled(next);
+                      AudioService.instance.setMusicEnabled(next);
+                    });
+                  } else if (action == 'rules') {
+                    _showQuickRules(context);
+                  }
+                },
+                itemBuilder: (context) => [
+                  if (match.players.any((p) => p.isBot) && match.mode != 'ranked')
+                    const PopupMenuItem(
+                      value: 'restart',
+                      child: Row(children: [
+                        Icon(Icons.refresh_rounded, color: Color(0xFFFFD166), size: 18),
+                        SizedBox(width: 10),
+                        Text('Restart Match'),
+                      ]),
+                    ),
+                  PopupMenuItem(
+                    value: 'sound',
+                    child: Row(children: [
+                      Icon(
+                        AudioService.instance.soundEnabled
+                            ? Icons.volume_up_rounded
+                            : Icons.volume_off_rounded,
+                        color: const Color(0xFF48E5C2),
+                        size: 18,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(AudioService.instance.soundEnabled ? 'Mute Sound' : 'Unmute Sound'),
+                    ]),
+                  ),
+                  const PopupMenuItem(
+                    value: 'rules',
+                    child: Row(children: [
+                      Icon(Icons.menu_book_rounded, color: Colors.white70, size: 18),
+                      SizedBox(width: 10),
+                      Text('Game Rules'),
+                    ]),
+                  ),
+                ],
+              )
+            else ...[
+              if (match.players.any((p) => p.isBot) && match.mode != 'ranked')
+                IconButton(
+                  tooltip: 'Restart Match',
+                  icon: const Icon(Icons.refresh_rounded, color: Color(0xFFFFD166), size: 20),
+                  onPressed: () => _confirmRestart(context, app),
+                ),
               IconButton(
-                tooltip: 'Restart Match',
-                icon: const Icon(Icons.refresh_rounded, color: Color(0xFFFFD166), size: 20),
-                onPressed: () => _confirmRestart(context, app),
+                tooltip: AudioService.instance.soundEnabled ? 'Mute Sound' : 'Unmute Sound',
+                icon: Icon(
+                  AudioService.instance.soundEnabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+                  color: AudioService.instance.soundEnabled ? const Color(0xFF48E5C2) : Colors.white38,
+                  size: 20,
+                ),
+                onPressed: () {
+                  setState(() {
+                    final next = !AudioService.instance.soundEnabled;
+                    AudioService.instance.setSoundEnabled(next);
+                    AudioService.instance.setMusicEnabled(next);
+                  });
+                },
               ),
-            IconButton(
-              tooltip: AudioService.instance.soundEnabled ? 'Mute Sound' : 'Unmute Sound',
-              icon: Icon(
-                AudioService.instance.soundEnabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
-                color: AudioService.instance.soundEnabled ? const Color(0xFF48E5C2) : Colors.white38,
-                size: 20,
+              IconButton(
+                tooltip: 'Game Rules',
+                icon: const Icon(Icons.menu_book_rounded, color: Colors.white70, size: 20),
+                onPressed: () => _showQuickRules(context),
               ),
-              onPressed: () {
-                setState(() {
-                  final next = !AudioService.instance.soundEnabled;
-                  AudioService.instance.setSoundEnabled(next);
-                  AudioService.instance.setMusicEnabled(next);
-                });
-              },
-            ),
-            IconButton(
-              tooltip: 'Game Rules',
-              icon: const Icon(Icons.menu_book_rounded, color: Colors.white70, size: 20),
-              onPressed: () => _showQuickRules(context),
-            ),
-            const SizedBox(width: 6),
+              const SizedBox(width: 6),
+            ],
           ],
         ),
         body: SafeArea(
@@ -423,7 +486,7 @@ class _GameScreenState extends State<GameScreen> {
                               ? 44.0
                               : (sw / 8).clamp(52.0, 92.0);
                       return SizedBox(
-                        height: (cw * 1.428) + 38,
+                        height: (cw * 1.428) + (isShortPhone ? 24 : 38),
                         child: _showDealAnimation
                             ? const SizedBox.shrink()
                             : _HandArea(
@@ -772,7 +835,7 @@ class _HandArea extends StatelessWidget {
         double widthFactor = 1.0;
         if (N > 1) {
           final maxOverlap = (aw - cardWidth) / (N - 1);
-          final overlapWidth = maxOverlap.clamp(24.0, cardWidth + 4.0);
+          final overlapWidth = maxOverlap.clamp(16.0, cardWidth + 4.0);
           widthFactor = overlapWidth / cardWidth;
         }
 
