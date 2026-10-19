@@ -69,8 +69,12 @@ export function registerGameSockets(io: Server) {
     broadcastFriendStatus(io, userId, "online");
 
     socket.on("queue:ranked", async () => {
-      const requestId = (rankedQueueRequests.get(userId) ?? 0) + 1;
-      rankedQueueRequests.set(userId, requestId);
+      // All requests from members of the same party share one generation, so
+      // cancelling/reshaping the party invalidates every in-flight queue read.
+      const partyIdAtRequest = matchmaking.getPartyIdForUser(userId);
+      const requestKey = partyIdAtRequest ? `party:${partyIdAtRequest}` : `user:${userId}`;
+      const requestId = (rankedQueueRequests.get(requestKey) ?? 0) + 1;
+      rankedQueueRequests.set(requestKey, requestId);
       console.log(`[SOCKET] queue:ranked from user ${userId} (${socket.user!.username})`);
       try {
         const requestedParty = matchmaking.getPartyForUser(userId) ?? [{
@@ -98,7 +102,8 @@ export function registerGameSockets(io: Server) {
             ratingByUser.set(rating.userId, rating.mmr);
           }
         }
-        if (requestId !== rankedQueueRequests.get(userId)) return;
+        if (requestId !== rankedQueueRequests.get(requestKey) ||
+            matchmaking.getPartyIdForUser(userId) !== partyIdAtRequest) return;
 
         const ratedParty = requestedParty.map((player) => ({
           ...player,
@@ -126,7 +131,12 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("queue:cancel", () => {
-      rankedQueueRequests.set(userId, (rankedQueueRequests.get(userId) ?? 0) + 1);
+      const partyId = matchmaking.getPartyIdForUser(userId);
+      rankedQueueRequests.set(`user:${userId}`, (rankedQueueRequests.get(`user:${userId}`) ?? 0) + 1);
+      if (partyId) {
+        const key = `party:${partyId}`;
+        rankedQueueRequests.set(key, (rankedQueueRequests.get(key) ?? 0) + 1);
+      }
       const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
       const queuedIds = new Set<string>([userId, ...queuedGroup.map((player) => player.userId)]);
 
@@ -253,6 +263,12 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("party:leave", () => {
+      const existingPartyId = matchmaking.getPartyIdForUser(userId);
+      rankedQueueRequests.set(`user:${userId}`, (rankedQueueRequests.get(`user:${userId}`) ?? 0) + 1);
+      if (existingPartyId) {
+        const key = `party:${existingPartyId}`;
+        rankedQueueRequests.set(key, (rankedQueueRequests.get(key) ?? 0) + 1);
+      }
       const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
       if (queuedGroup.length > 0) {
         matchmaking.removeFromQueue(userId);
@@ -574,7 +590,12 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("disconnect", () => {
-      rankedQueueRequests.set(userId, (rankedQueueRequests.get(userId) ?? 0) + 1);
+      const activePartyId = matchmaking.getPartyIdForUser(userId);
+      rankedQueueRequests.set(`user:${userId}`, (rankedQueueRequests.get(`user:${userId}`) ?? 0) + 1);
+      if (activePartyId) {
+        const key = `party:${activePartyId}`;
+        rankedQueueRequests.set(key, (rankedQueueRequests.get(key) ?? 0) + 1);
+      }
       const liveSockets = activeSocketsByUser.get(userId);
       liveSockets?.delete(socket.id);
       if (liveSockets && liveSockets.size > 0) {
