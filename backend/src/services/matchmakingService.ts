@@ -24,10 +24,14 @@ export class MatchmakingService {
       const roomCode = this.getPrivateRoomCodeForUser(player.userId);
       if (roomCode) throw new Error(`Leave room ${roomCode} before joining ranked matchmaking`);
       const partyId = this.userParty.get(player.userId);
-      if (partyId && !party.some((member) => member.userId !== player.userId && this.userParty.get(member.userId) === partyId)) {
-        // Solo members of a party must queue with their party, not as a solo.
+      if (partyId) {
         const members = this.parties.get(partyId) ?? [];
-        if (members.length > 1) throw new Error("Queue with your party or leave it first");
+        if (members.length > 1) {
+          const queuedIds = new Set(userIds);
+          if (members.some((member) => !queuedIds.has(member.userId)) || userIds.length !== members.length) {
+            throw new Error("Queue with your party or leave it first");
+          }
+        }
       }
     }
     this.rankedQueue = this.rankedQueue.filter(p => !p.some(u => userIds.includes(u.userId)));
@@ -279,6 +283,9 @@ export class MatchmakingService {
       return [...party];
     }
     if (this.isUserInRankedQueue(player.userId)) throw new Error("Cancel ranked matchmaking before joining a party");
+    if (party.some((member) => this.isUserInRankedQueue(member.userId))) {
+      throw new Error("The party is already searching for a ranked match");
+    }
     if (this.getPrivateRoomCodeForUser(player.userId)) throw new Error("Leave your private room before joining a party");
     if (party.length >= 2) throw new Error("Party is full");
     party.push(player);
