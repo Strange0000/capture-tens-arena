@@ -686,7 +686,13 @@ function reconnectMatch(io: Server, socket: AuthedSocket) {
   const state = matchStore.findByUser(socket.user!.id);
   if (!state) return;
   const player = state.players.find((item) => item.userId === socket.user!.id);
-  if (player) player.connected = true;
+  if (player) {
+    // If this account reconnects after the grace period, return its seat from
+    // bot takeover instead of leaving a human permanently marked as a bot.
+    player.connected = true;
+    player.isBot = false;
+    delete player.botDifficulty;
+  }
   matchStore.set(state);
   socket.join(`match:${state.id}`);
   broadcastState(io, state.id);
@@ -694,11 +700,14 @@ function reconnectMatch(io: Server, socket: AuthedSocket) {
 
 function maybeBotPowerSelect(io: Server, matchId: string) {
   const state = requireMatch(matchId);
-  const first = state.players[state.firstPlayerSeat];
+  const expectedSeat = state.firstPlayerSeat;
+  const first = state.players[expectedSeat];
   if (!first?.isBot || state.phase !== "power-select") return;
   setTimeout(() => {
     const fresh = matchStore.get(matchId);
-    if (!fresh || fresh.phase !== "power-select") return;
+    if (!fresh || fresh.phase !== "power-select" || fresh.firstPlayerSeat !== expectedSeat) return;
+    // The original player may have reconnected while the bot was thinking.
+    if (!fresh.players[expectedSeat]?.isBot) return;
     // Pick the suit the bot has the most cards of
     const botHand = fresh.hands[fresh.firstPlayerSeat] || [];
     const suitCounts: Record<string, number> = {};
