@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { Card, Rank, Suit } from "./types.js";
 
 export const suits: Suit[] = ["hearts", "diamonds", "clubs", "spades"];
@@ -23,11 +24,12 @@ export function createDeck(): Card[] {
   return suits.flatMap((suit) => ranks.map((rank) => ({ suit, rank, id: `${rank}-${suit}` })));
 }
 
-export function shuffleDeck(deck: Card[], _seed?: number): Card[] {
+export function shuffleDeck(deck: Card[]): Card[] {
   const copy = [...deck];
-  // Use crypto.getRandomValues for secure shuffling (Fisher-Yates)
+  // Ranked card order must use a cryptographically secure random source.
+  // Fisher–Yates with randomInt also avoids modulo-reduction bias.
   for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = randomInt(i + 1);
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
   return copy;
