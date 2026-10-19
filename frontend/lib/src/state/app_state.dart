@@ -320,9 +320,17 @@ class AppState extends ChangeNotifier {
   void _onRankUpdated(Map<String, dynamic> json) {
     lastRankUpdate = json;
     // Update local rank info with new MMR
-    final newMmr = json['newMmr'] as int?;
+    final newMmr = (json['newMmr'] as num?)?.toInt();
     if (newMmr != null) {
-      rankInfo = RankInfo.fromMmr(newMmr, peakMmr: rankInfo?.peakMmr ?? newMmr, wins: rankInfo?.wins ?? 0, losses: rankInfo?.losses ?? 0);
+      final updatedWins = (json['wins'] as num?)?.toInt() ?? rankInfo?.wins ?? 0;
+      final updatedLosses = (json['losses'] as num?)?.toInt() ?? rankInfo?.losses ?? 0;
+      final updatedPeak = (json['peakMmr'] as num?)?.toInt() ?? rankInfo?.peakMmr ?? newMmr;
+      rankInfo = RankInfo.fromMmr(
+        newMmr,
+        peakMmr: updatedPeak < newMmr ? newMmr : updatedPeak,
+        wins: updatedWins,
+        losses: updatedLosses,
+      );
     }
     notifyListeners();
   }
