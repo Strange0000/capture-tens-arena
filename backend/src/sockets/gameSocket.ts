@@ -77,7 +77,10 @@ export function registerGameSockets(io: Server) {
       rankedQueueRequests.set(requestKey, requestId);
       console.log(`[SOCKET] queue:ranked from user ${userId} (${socket.user!.username})`);
       try {
-        const requestedParty = matchmaking.getPartyForUser(userId) ?? [{
+        const currentParty = matchmaking.getPartyForUser(userId);
+        // Snapshot membership before awaiting the database query. The service
+        // returns its live array so it must not be retained across an await.
+        const requestedParty = currentParty ? [...currentParty] : [{
           userId,
           username: socket.user!.username,
           socketId: socket.id,
@@ -102,8 +105,23 @@ export function registerGameSockets(io: Server) {
             ratingByUser.set(rating.userId, rating.mmr);
           }
         }
+        const latestParty = matchmaking.getPartyForUser(userId);
+        const partyShapeChanged = partyIdAtRequest
+          ? !latestParty ||
+            latestParty.length !== requestedParty.length ||
+            latestParty.some((player) => !requestedParty.some((original) => original.userId === player.userId))
+          : latestParty !== undefined;
         if (requestId !== rankedQueueRequests.get(requestKey) ||
-            matchmaking.getPartyIdForUser(userId) !== partyIdAtRequest) return;
+            matchmaking.getPartyIdForUser(userId) !== partyIdAtRequest ||
+            partyShapeChanged) {
+          const notifyPlayers = new Map<string, QueuePlayer>();
+          for (const player of requestedParty) notifyPlayers.set(player.userId, player);
+          for (const player of latestParty ?? []) notifyPlayers.set(player.userId, player);
+          for (const queuedPlayer of notifyPlayers.values()) {
+            io.to(`user:${queuedPlayer.userId}`).emit("queue:cancelled", { mode: "ranked" });
+          }
+          return;
+        }
 
         const ratedParty = requestedParty.map((player) => ({
           ...player,
