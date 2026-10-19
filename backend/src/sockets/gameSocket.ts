@@ -784,13 +784,7 @@ function reconnectMatch(io: Server, socket: AuthedSocket) {
   const state = matchStore.findByUser(socket.user!.id);
   if (!state) return;
   const player = state.players.find((item) => item.userId === socket.user!.id);
-  if (player) {
-    // If this account reconnects after the grace period, return its seat from
-    // bot takeover instead of leaving a human permanently marked as a bot.
-    player.connected = true;
-    player.isBot = false;
-    delete player.botDifficulty;
-  }
+  if (player) player.connected = true;
   matchStore.set(state);
   socket.join(`match:${state.id}`);
   broadcastState(io, state.id);
