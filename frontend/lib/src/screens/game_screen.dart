@@ -59,6 +59,9 @@ class _GameScreenState extends State<GameScreen> {
   /// the player's turn starts (or they play a legal card), instead of
   /// auto-clearing after 3s.
   bool _bannerSticky = false;
+  /// When the current banner was shown — a sticky hint must stay
+  /// readable for at least 1.5s (see the turn-change clear in build).
+  DateTime? _bannerShownAt;
   /// Turn state on the previous build — a sticky hint clears only when
   /// the turn CHANGES to the player, not on every build during their
   /// own turn (an illegal tap on their own turn, e.g. wrong suit, must
@@ -96,6 +99,7 @@ class _GameScreenState extends State<GameScreen> {
       _bannerIcon = icon;
       _bannerColor = color;
       _bannerSticky = sticky;
+      _bannerShownAt = DateTime.now();
     });
     if (sticky) return; // Cleared when the player can act again (below).
     Future.delayed(const Duration(milliseconds: 3000), () {
@@ -242,9 +246,26 @@ class _GameScreenState extends State<GameScreen> {
       (pl) => pl.userId == app.userId && pl.seat == match.currentTurnSeat,
     );
     if (_bannerSticky && isMyTurnNow && !_wasMyTurn) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() { _bannerAlert = null; _bannerSticky = false; });
-      });
+      // Round 10: a hint the player only just tapped ("Wait — it's
+      // not your turn yet.") must stay readable for at least 1.5s.
+      // The turn can change a frame after the tap, and clearing
+      // instantly made the tap look like a silent no-op (Round 9:
+      // the first 9♥ tap showed nothing; the second played it).
+      const minShow = Duration(milliseconds: 1500);
+      final shownFor =
+          DateTime.now().difference(_bannerShownAt ?? DateTime.now());
+      if (shownFor >= minShow) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() { _bannerAlert = null; _bannerSticky = false; });
+        });
+      } else {
+        final shownMessage = _bannerAlert;
+        Future.delayed(minShow - shownFor, () {
+          if (mounted && _bannerSticky && _bannerAlert == shownMessage) {
+            setState(() { _bannerAlert = null; _bannerSticky = false; });
+          }
+        });
+      }
     }
     _wasMyTurn = isMyTurnNow;
 
@@ -275,7 +296,11 @@ class _GameScreenState extends State<GameScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted) return;
         app.clearError();
-        _showBannerAlert(msg, Icons.error_outline_rounded, Colors.redAccent);
+        // Round 10: sticky, so a server rejection (e.g. a card the
+        // UI wrongly showed as playable) stays visible in plain
+        // words until the player acts — it must never flash past
+        // unnoticed and leave only a hidden error behind.
+        _showBannerAlert(msg, Icons.error_outline_rounded, Colors.redAccent, sticky: true);
       });
     }
 
@@ -497,7 +522,35 @@ class _GameScreenState extends State<GameScreen> {
                           child: GameTable(
                             match: match,
                             mySeat: app.mySeat,
-                            onCardPlayed: app.playCard,
+                            // Round 10: a dropped card goes through
+                            // the same tap-time legality check as a
+                            // tap — the drag path used to call
+                            // app.playCard directly, so an illegal
+                            // drop was sent straight to the server.
+                            onCardPlayed: (cardId) {
+                              final card = match.hand
+                                  .where((c) => c.id == cardId)
+                                  .firstOrNull;
+                              if (card == null) return;
+                              _tryPlayCard(
+                                app: app,
+                                card: card,
+                                onIllegalTap: (reason) => _showBannerAlert(
+                                  reason,
+                                  Icons.info_outline_rounded,
+                                  const Color(0xFFFFD166),
+                                  sticky: true,
+                                ),
+                                onLegalPlay: () {
+                                  if (_bannerSticky) {
+                                    setState(() {
+                                      _bannerAlert = null;
+                                      _bannerSticky = false;
+                                    });
+                                  }
+                                },
+                              );
+                            },
                             tilt3d: _tableTilt3d,
                           ),
                         ),
@@ -540,7 +593,10 @@ class _GameScreenState extends State<GameScreen> {
                   // Power Suit Picker Section
                   if (match.phase == 'power-select')
                     SizedBox(
-                      height: 160,
+                      // Round 10: the picker content needs ~134px;
+                      // 144px on short screens leaves the table room
+                      // (160px starved it — see the hand budget below).
+                      height: isShortPhone ? 144.0 : 160.0,
                       child: (match.players.firstWhere((p) => p.userId == app.userId, orElse: () => match.players.first).seat == match.firstPlayerSeat)
                           ? PowerSuitPicker(onSelect: app.selectPower)
                           : Center(
@@ -585,12 +641,35 @@ class _GameScreenState extends State<GameScreen> {
                       // Reserve room for those plus a minimum table
                       // height, and shrink the cards to fit what is
                       // left — the hand can never be clipped again.
-                      final reserved = 56.0 + 120.0 +
-                          (match.phase == 'power-select' ? 160.0 : 0.0) +
-                          100.0;
+                      // Round 10: the picker height above must match
+                      // this budget, and the table minimum is smaller
+                      // on short screens so the table still gets room.
+                      final pickerHeight = match.phase == 'power-select'
+                          ? (sh < 700 ? 144.0 : 160.0)
+                          : 0.0;
+                      final reserved = 56.0 + 120.0 + pickerHeight +
+                          (sh < 700 ? 80.0 : 100.0);
                       final handBudget =
                           (sh - reserved).clamp(64.0, 220.0).toDouble();
-                      cw = cw.clamp(36.0, ((handBudget - 28) / 1.428)).toDouble();
+                      // Round 10 — the blank power-suit phase: during
+                      // 'power-select' at 506px height, handBudget was
+                      // 70, so the upper bound here was (70-28)/1.428
+                      // ≈ 29.4 — LESS than the 36.0 lower bound — and
+                      // num.clamp throws ArgumentError when lower >
+                      // upper (verified against the Dart SDK). In
+                      // release mode the failed hand subtree becomes a
+                      // light-grey RenderErrorBox (0xF0C0C0C0, sized
+                      // by parent) that eats the Column's remaining
+                      // height and starves the Expanded table to zero
+                      // — exactly the blank grey lower ~45% (only the
+                      // faint background suit glyphs showing) in the
+                      // Round 9 test and Sumit's screenshot. The
+                      // bounds must never invert.
+                      final maxCw = math.max(
+                        36.0,
+                        (handBudget - 28) / 1.428,
+                      );
+                      cw = cw.clamp(36.0, maxCw).toDouble();
                       return SizedBox(
                         height: (cw * 1.428) + 28,
                         child: _showDealAnimation
@@ -930,6 +1009,185 @@ class _QuickRule extends StatelessWidget {
   }
 }
 
+const _rankValues = {
+  'A': 14, 'K': 13, 'Q': 12, 'J': 11, '10': 10,
+  '9': 9, '8': 8, '7': 7, '6': 6, '5': 5, '4': 4, '3': 3, '2': 2,
+};
+
+/// The cards the local player may legally play RIGHT NOW, mirroring
+/// backend/src/game/rules.ts legalCardsForSeat exactly. Round 10:
+/// the frontend used to implement only follow-suit, so cards the UI
+/// showed as playable were rejected by the server (must-play-higher,
+/// off-suit-10 discard, first-trick "unless forced"), and taps during
+/// the 2s trick-resolving window were judged against the just-
+/// completed trick — whose lead suit and currentTurnSeat (the winner)
+/// made a legal lead-suit card look illegal. Returns [] unless the
+/// match is in 'playing' phase, it is the player's turn, and a power
+/// suit is chosen.
+List<ArenaCard> _legalCardsFor(
+  MatchState match,
+  List<ArenaCard> hand,
+  String myTeam,
+  bool isMyTurn,
+) {
+  if (match.phase != 'playing' || !isMyTurn || match.powerSuit == null) {
+    return const [];
+  }
+  final trick = match.currentTrick;
+  final leadSuit = trick?.leadSuit;
+  var candidates = List<ArenaCard>.from(hand);
+  if (leadSuit != null && hand.any((c) => c.suit == leadSuit)) {
+    candidates = hand.where((c) => c.suit == leadSuit).toList();
+    // Must play higher — but only after the first trick, and only
+    // when the teammate is not currently winning the trick.
+    if (trick != null &&
+        trick.plays.isNotEmpty &&
+        match.completedTricksCount > 0) {
+      if (!_teammateCurrentlyWinning(trick, match.powerSuit!, myTeam)) {
+        final highest = _highestRankInSuit(trick.plays, leadSuit);
+        if (highest > 0) {
+          final higher = candidates
+              .where((c) => (_rankValues[c.rank] ?? 0) > highest)
+              .toList();
+          if (higher.isNotEmpty) candidates = higher;
+        }
+      }
+    }
+  }
+  // Cannot discard off-suit 10s while holding more than 3 cards.
+  if (leadSuit != null && hand.length > 3) {
+    final restricted = candidates.where((c) {
+      if (c.rank != '10') return true;
+      if (c.suit == match.powerSuit) return true;
+      if (c.suit == leadSuit) return true;
+      return false;
+    }).toList();
+    if (restricted.isNotEmpty) candidates = restricted;
+  }
+  // First trick: no Power Suit cards and no 10s — unless forced
+  // (every card in hand is restricted).
+  if (match.completedTricksCount == 0) {
+    final unrestricted = candidates.where((c) {
+      return c.suit != match.powerSuit && c.rank != '10';
+    }).toList();
+    if (unrestricted.isNotEmpty) return unrestricted;
+  }
+  return candidates;
+}
+
+/// Is the local player's teammate currently winning this trick?
+/// Mirrors backend rules.ts currentWinner: a power-suit play beats
+/// any non-power play; otherwise the highest card of the lead suit
+/// wins. Teams are seats 0,2 = A and 1,3 = B.
+bool _teammateCurrentlyWinning(
+  CurrentTrick trick,
+  String powerSuit,
+  String myTeam,
+) {
+  if (trick.plays.isEmpty || trick.leadSuit == null) return false;
+  final powerPlays =
+      trick.plays.where((p) => p.card.suit == powerSuit).toList();
+  final pool = powerPlays.isNotEmpty
+      ? powerPlays
+      : trick.plays.where((p) => p.card.suit == trick.leadSuit).toList();
+  TrickPlay best = pool.first;
+  for (final p in pool) {
+    if ((_rankValues[p.card.rank] ?? 0) > (_rankValues[best.card.rank] ?? 0)) {
+      best = p;
+    }
+  }
+  final winnerTeam = best.seat % 2 == 0 ? 'A' : 'B';
+  return winnerTeam == myTeam;
+}
+
+int _highestRankInSuit(List<TrickPlay> plays, String suit) {
+  var highest = 0;
+  for (final p in plays) {
+    if (p.card.suit == suit) {
+      final v = _rankValues[p.card.rank] ?? 0;
+      if (v > highest) highest = v;
+    }
+  }
+  return highest;
+}
+
+/// Plain-words reason a card cannot be played right now, in the same
+/// order the backend's assertLegalMove raises its errors — so the
+/// message can never blame the wrong rule. Round 10: this used to
+/// return the follow-suit message whenever the hand held a lead-suit
+/// card, WITHOUT checking the tapped card's suit — so a diamond
+/// tapped on a diamond lead was "rejected" with "You must follow
+/// the lead suit (diamonds)".
+String? _illegalReasonFor(
+  ArenaCard card,
+  MatchState match,
+  List<ArenaCard> hand,
+  bool isMyTurn,
+  String myTeam,
+) {
+  // Not in a playable phase (trick being collected, power-select,
+  // dealing): the tap landed between tricks, not on a real turn.
+  if (match.phase != 'playing') {
+    return 'Wait — the trick is being collected. Play when your turn starts.';
+  }
+  if (!isMyTurn) return "Wait — it's not your turn yet.";
+  final leadSuit = match.currentTrick?.leadSuit;
+  // Follow suit — only when the tapped card is actually OFF-suit.
+  if (leadSuit != null &&
+      card.suit != leadSuit &&
+      hand.any((c) => c.suit == leadSuit)) {
+    return 'You must follow the lead suit ($leadSuit) — play a $leadSuit card.';
+  }
+  if (match.completedTricksCount == 0 &&
+      (card.rank == '10' ||
+          (match.powerSuit != null && card.suit == match.powerSuit))) {
+    return 'No Power Suit cards or 10s on the first trick.';
+  }
+  if (card.rank == '10' &&
+      leadSuit != null &&
+      card.suit != leadSuit &&
+      card.suit != match.powerSuit &&
+      hand.length > 3) {
+    return "You can't throw away a 10 of another suit while you have more than 3 cards.";
+  }
+  // Every other rejection the server can raise is the higher rule:
+  // the card follows suit but a higher card of the lead suit is
+  // available and the teammate is not winning.
+  return 'You must play a higher card if possible.';
+}
+
+/// Tap-time play decision, made from the CURRENT match state — not
+/// the state at build time. Round 8 fixed the stale-build-time check;
+/// Round 10 fixes what that check was judging: the old legality only
+/// knew follow-suit, and it never checked the phase, so a tap during
+/// the 2s trick-resolving window was judged against the completed
+/// trick (wrong lead suit, winner as current turn). Now a legal card
+/// always plays on the first tap, and the reason always names the
+/// rule that actually blocks the card. Returns true when played.
+/// Shared by the tap path and the drag path (GameTable.onCardPlayed).
+bool _tryPlayCard({
+  required AppState app,
+  required ArenaCard card,
+  required void Function(String reason) onIllegalTap,
+  required VoidCallback onLegalPlay,
+}) {
+  final m = app.match;
+  if (m == null) return false;
+  final nowMyTurn = m.players.any(
+    (p) => p.userId == app.userId && p.seat == m.currentTurnSeat,
+  );
+  final legalIds =
+      _legalCardsFor(m, m.hand, app.myTeam, nowMyTurn).map((c) => c.id).toSet();
+  if (nowMyTurn && m.phase == 'playing' && legalIds.contains(card.id)) {
+    onLegalPlay();
+    app.playCard(card.id);
+    return true;
+  }
+  final reason = _illegalReasonFor(card, m, m.hand, nowMyTurn, app.myTeam);
+  if (reason != null) onIllegalTap(reason);
+  return false;
+}
+
 // ── Hand Area with Auto-Sort & Legal Move Highlighting ───────────────────────
 
 class _HandArea extends StatelessWidget {
@@ -954,11 +1212,6 @@ class _HandArea extends StatelessWidget {
   /// follow the lead suit") cannot linger after the player complied.
   final VoidCallback? onLegalPlay;
 
-  static const _rankValues = {
-    'A': 14, 'K': 13, 'Q': 12, 'J': 11, '10': 10,
-    '9': 9, '8': 8, '7': 7, '6': 6, '5': 5, '4': 4, '3': 3, '2': 2,
-  };
-
   static const _suitValues = {
     'spades': 4,
     'hearts': 3,
@@ -966,84 +1219,21 @@ class _HandArea extends StatelessWidget {
     'clubs': 1,
   };
 
-  bool _isCardLegal(
-    ArenaCard card,
-    CurrentTrick? trick,
-    List<ArenaCard> hand, {
-    MatchState? match,
-  }) {
-    if (trick == null || trick.plays.isEmpty) {
-      // First trick of the match: no Power Suit cards and no 10s
-      // (backend rules.ts enforces the same rule).
-      if (match != null &&
-          match.completedTricksCount == 0 &&
-          match.currentTrick?.plays.isEmpty == true) {
-        if (card.rank == '10') return false;
-        if (match.powerSuit != null && card.suit == match.powerSuit) {
-          return false;
-        }
-      }
-      return true;
-    }
-    final leadSuit = trick.leadSuit;
-    if (leadSuit == null) return true;
-
-    final hasLeadSuit = hand.any((c) => c.suit == leadSuit);
-    if (hasLeadSuit) {
-      return card.suit == leadSuit;
-    }
-    return true;
-  }
-
-  /// Plain-words reason a card cannot be played right now. Shared by
-  /// the tap handler below so the message is identical wherever a
-  /// card is tapped.
-  static String? _illegalReasonFor(
-    ArenaCard card,
-    MatchState match,
-    List<ArenaCard> hand,
-    bool isMyTurn,
-  ) {
-    if (!isMyTurn) return "Wait — it's not your turn yet.";
-    if (match.completedTricksCount == 0 &&
-        match.currentTrick?.plays.isEmpty == true &&
-        (card.rank == '10' ||
-            (match.powerSuit != null && card.suit == match.powerSuit))) {
-      return "No Power Suit cards or 10s on the first trick.";
-    }
-    if (match.currentTrick?.leadSuit != null &&
-        hand.any((c) => c.suit == match.currentTrick!.leadSuit)) {
-      return 'You must follow the lead suit (${match.currentTrick!.leadSuit}) — play a ${match.currentTrick!.leadSuit} card.';
-    }
-    return 'You cannot play that card right now.';
-  }
-
-  /// Tap-time play decision, made from the CURRENT match state — not
-  /// the state at build time. Round 8: a tap that landed exactly as
-  /// the turn changed was judged against the stale build-time state
-  /// and silently did nothing (the Round 7 "flaky 9♠ tap" — the
-  /// first tap never registered, the second played it). The visuals
-  /// still use build-time values, but a tap always re-checks right
-  /// now: if the card is playable at tap time it plays, otherwise
-  /// the player gets the plain-words reason instead of silence.
-  /// (Checked against the SDK: the Draggable wrapper only claims the
-  /// gesture after the pointer moves past the slop, so a still tap
-  /// is not stolen by drag — the stale-turn check was the cause.)
+  /// One tap path for both outcomes: _tryPlayCard re-checks
+  /// playability at tap time against the CURRENT match state with
+  /// the faithful legality (Round 10) — if the card is playable it
+  /// plays, otherwise the player gets the plain-words reason
+  /// instead of silence. Sound/haptics only on a real play.
   void _handleCardTap(AppState app, ArenaCard card) {
-    final m = app.match;
-    if (m == null) return;
-    final nowMyTurn = m.players.any(
-      (p) => p.userId == app.userId && p.seat == m.currentTurnSeat,
+    final played = _tryPlayCard(
+      app: app,
+      card: card,
+      onIllegalTap: (reason) => onIllegalTap?.call(reason),
+      onLegalPlay: () => onLegalPlay?.call(),
     );
-    final legalNow = _isCardLegal(card, m.currentTrick, m.hand, match: m);
-    if (nowMyTurn && legalNow) {
+    if (played) {
       AudioService.instance.playCardPlace();
       AudioService.instance.hapticLight();
-      onLegalPlay?.call();
-      app.playCard(card.id);
-    } else {
-      final reason = _illegalReasonFor(card, m, m.hand, nowMyTurn);
-      if (reason != null) onIllegalTap?.call(reason);
     }
   }
 
@@ -1072,6 +1262,17 @@ class _HandArea extends StatelessWidget {
     }
 
     final N = hand.length;
+
+    // Round 10: the dim/highlight state uses the same faithful
+    // legality as the tap handler, so a card the UI shows as
+    // playable can never be rejected by the server. Outside
+    // 'playing' (power-select, trick being collected) there is
+    // nothing to highlight — every card looks normal.
+    final legalIds = match.phase == 'playing'
+        ? _legalCardsFor(match, match.hand, app.myTeam, isMyTurn)
+            .map((c) => c.id)
+            .toSet()
+        : <String>{};
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1110,8 +1311,11 @@ class _HandArea extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(N, (index) {
                   final card = hand[index];
-                  final isLegal = _isCardLegal(card, match.currentTrick, match.hand, match: match);
-                  final canPlay = isMyTurn && isLegal;
+                  final isLegal = match.phase == 'playing'
+                      ? legalIds.contains(card.id)
+                      : true;
+                  final canPlay =
+                      isMyTurn && match.phase == 'playing' && isLegal;
 
                   // 3D fan arc — shallow, so the outer cards don't
                   // ride up over the table.

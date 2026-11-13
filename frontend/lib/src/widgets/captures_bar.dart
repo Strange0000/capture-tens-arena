@@ -21,13 +21,14 @@ import '../theme.dart';
 ///     + a plain-words status pill: "Tied 2–2" or "Team A leads"
 ///     + Trump chip ("Trump: ♦ Diamonds")
 ///     + Trick progress ("Trick 13 of 13" + a small progress bar)
-///   Row 2 — small secondary line, only what matters right now:
-///     "Last trick won by Cipher · Team B"
-///     + the tiebreaker, ONLY when tens are tied, in plain words:
-///       "Cards: Team A 16, Team B 32" (and aces too, only if the
-///       cards are also tied — aces only decide when cards tie).
-///     When tens are not tied, cards/aces are hidden: they do not
-///     decide anything, so showing them only adds confusion.
+///   Row 2 — small secondary line, ALWAYS visible now (Round 10):
+///     "Last trick won by Cipher · Team B" (or "No tricks played
+///     yet" before the first trick) + the cards/aces count in plain
+///     words: "Cards: Team A 16, Team B 32" (and aces too, only if
+///     the cards are also tied — aces only decide when cards tie).
+///     It used to appear only while the tens were tied / right after
+///     a trick, so the pill kept collapsing to two lines mid-trick
+///     and the Cards/Aces score was invisible most of the game.
 /// Tiebreaker order (unchanged rules): most tens, then most cards,
 /// then most aces.
 class CapturesBar extends StatelessWidget {
@@ -131,7 +132,7 @@ class CapturesBar extends StatelessWidget {
     );
   }
 
-  /// Tiebreaker in plain words, only called when tens are tied.
+  /// Cards/aces count in plain words, always shown (Round 10).
   /// Cards decide first; aces only matter if the cards are tied too,
   /// so aces are shown only in that case.
   String _tiebreakerText() {
@@ -292,46 +293,44 @@ class _ScoreRows extends StatelessWidget {
             ),
           ],
         ),
-        // 4) Secondary line — only what matters now. Last trick, plus
-        // the tiebreaker in plain words, ONLY when tens are tied.
-        if (lastTrickWinnerLabel != null || tensTied) ...[
-          const SizedBox(height: 5),
-          Container(height: 1, color: Colors.white10),
-          const SizedBox(height: 4),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (lastTrickWinnerLabel != null)
-                Flexible(
-                  child: Text(
-                    'Last trick won by $lastTrickWinnerLabel',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: ArenaColors.goldSoft,
-                    ),
-                  ),
+        // 4) Secondary line — always visible (Round 10). Before the
+        // first trick there is no last trick yet, so that half says
+        // so instead of vanishing and collapsing the pill.
+        const SizedBox(height: 5),
+        Container(height: 1, color: Colors.white10),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                lastTrickWinnerLabel != null
+                    ? 'Last trick won by $lastTrickWinnerLabel'
+                    : 'No tricks played yet',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: ArenaColors.goldSoft,
                 ),
-              if (lastTrickWinnerLabel != null && tensTied)
-                const SizedBox(width: 8),
-              if (tensTied)
-                Flexible(
-                  child: Text(
-                    tiebreakerText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white54,
-                    ),
-                  ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                tiebreakerText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white54,
                 ),
-            ],
-          ),
-        ],
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }

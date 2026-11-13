@@ -17,6 +17,10 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
   late final AnimationController _searchCtrl;
   int _elapsedSeconds = 0;
   bool _navigationTriggered = false;
+  /// Round 10: true once this screen has started leaving (a pop is
+  /// already in progress or was requested). The auto-pop branch below
+  /// must never fire during its own pop transition — see build().
+  bool _leaving = false;
 
   @override
   void initState() {
@@ -91,10 +95,22 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
     } else if (!_navigationTriggered &&
         app.lobbyStatus == LobbyStatus.idle &&
         app.match == null) {
-      _navigationTriggered = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) Navigator.of(context).pop();
-      });
+      // Round 10 — the black screen on browser Back: Back pops this
+      // route, then PopScope (below) cancels the queue, which sets
+      // lobbyStatus = idle and rebuilds THIS screen while its pop
+      // transition is still running. The unguarded post-frame pop
+      // below then fired a SECOND pop — popping the lobby route (or
+      // stalling the transition) and leaving this near-black
+      // Scaffold on screen with the URL already at #/lobby. Only
+      // auto-pop when this route is still current AND no leave is
+      // already in progress.
+      if (ModalRoute.of(context)?.isCurrent == true && !_leaving) {
+        _navigationTriggered = true;
+        _leaving = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (context.mounted) Navigator.of(context).pop();
+        });
+      }
     }
 
     // Round 8: leaving this screen must always cancel the queue.
@@ -108,6 +124,10 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
     return PopScope(
       canPop: true,
       onPopInvokedWithResult: (didPop, _) {
+        // Round 10: mark the leave FIRST — the cancel below rebuilds
+        // this screen mid-pop with lobbyStatus == idle, and the
+        // auto-pop branch in build() must not fire a second pop.
+        if (didPop) _leaving = true;
         if (didPop &&
             app.match == null &&
             app.lobbyStatus == LobbyStatus.queuing) {

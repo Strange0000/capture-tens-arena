@@ -190,8 +190,16 @@ class _LobbyScreenState extends State<LobbyScreen>
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       final isWide = constraints.maxWidth >= 900;
+                      // Round 10: at 506px height the wide layout's
+                      // How to Play / Tutorial buttons sat ~48px below
+                      // the fold. Compact mode trims paddings/gaps and
+                      // shrinks the centre table so everything fits in
+                      // the initial view (scrolling still works).
+                      final isShort =
+                          MediaQuery.sizeOf(context).height < 560;
                       return SingleChildScrollView(
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 24, vertical: isShort ? 10 : 16),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
@@ -205,7 +213,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                               onSettings: () => Navigator.pushNamed(context, '/settings'),
                               onProfile: () => Navigator.pushNamed(context, '/profile'),
                             ),
-                            const SizedBox(height: 24),
+                            SizedBox(height: isShort ? 12 : 24),
 
                             // ── Active Matchmaking / Room Banners ────────────
                             if (app.lobbyStatus == LobbyStatus.queuing) ...[
@@ -232,11 +240,11 @@ class _LobbyScreenState extends State<LobbyScreen>
 
                             // ── Dynamic Responsive Body ──────────────────────
                             if (isWide)
-                              _buildWideLayout(context, app)
+                              _buildWideLayout(context, app, compact: isShort)
                             else
                               _buildNarrowLayout(context, app),
 
-                            const SizedBox(height: 24),
+                            SizedBox(height: isShort ? 12 : 24),
                           ],
                         ),
                       );
@@ -255,7 +263,8 @@ class _LobbyScreenState extends State<LobbyScreen>
   // rim, a small career plaque at the TOP LEFT, and the Friends panel
   // as a slim vertical strip on the RIGHT. The old structure (tall
   // rank card on the left + stacked mode rows in the middle) is gone.
-  Widget _buildWideLayout(BuildContext context, AppState app) {
+  Widget _buildWideLayout(BuildContext context, AppState app,
+      {bool compact = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -283,7 +292,7 @@ class _LobbyScreenState extends State<LobbyScreen>
             ),
             const SizedBox(width: 16),
             // Centre: the oval table with the mode chips on its rim.
-            Expanded(child: _LobbyTable(context: context, app: app, showRoomPanel: _showRoomPanel, onToggleRoomPanel: () => setState(() => _showRoomPanel = !_showRoomPanel), roomController: _roomCodeController)),
+            Expanded(child: _LobbyTable(context: context, app: app, compact: compact, showRoomPanel: _showRoomPanel, onToggleRoomPanel: () => setState(() => _showRoomPanel = !_showRoomPanel), roomController: _roomCodeController)),
             const SizedBox(width: 16),
             // Right: slim Friends strip.
             SizedBox(
@@ -296,7 +305,7 @@ class _LobbyScreenState extends State<LobbyScreen>
             ),
           ],
         ),
-        const SizedBox(height: 14),
+        SizedBox(height: compact ? 8 : 14),
         // How to Play / Tutorial — under the table, centred.
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -310,7 +319,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.white,
                   side: const BorderSide(color: Color(0xFFFFC857), width: 1.2),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: EdgeInsets.symmetric(vertical: compact ? 8 : 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
               ),
@@ -325,7 +334,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.white,
                   side: BorderSide(color: Colors.white.withOpacity(0.2)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: EdgeInsets.symmetric(vertical: compact ? 8 : 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
               ),
@@ -347,12 +356,19 @@ class _LobbyScreenState extends State<LobbyScreen>
     required bool showRoomPanel,
     required VoidCallback onToggleRoomPanel,
     required TextEditingController roomController,
+    bool compact = false,
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final tableW = constraints.maxWidth.clamp(320.0, 640.0);
+        // Round 10: compact mode (short viewports) shrinks the table
+        // so the How to Play / Tutorial buttons fit in the initial
+        // view — the table is decoration here, the chips are the nav.
+        final tableW = constraints.maxWidth.clamp(
+          320.0,
+          compact ? 380.0 : 640.0,
+        );
         final tableH = tableW * 0.58;
-        const chipD = 118.0;
+        final chipD = compact ? 96.0 : 118.0;
         return Column(
           children: [
             SizedBox(
