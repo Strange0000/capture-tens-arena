@@ -40,6 +40,7 @@ class CapturesBar extends StatelessWidget {
     this.trickWinnerMessage,
     this.lastTrickWinnerLabel,
     this.vertical = false,
+    this.compact = false,
   });
 
   final MatchCaptures captures;
@@ -56,6 +57,11 @@ class CapturesBar extends StatelessWidget {
   /// panel on the left of the game screen instead of a pill on top.
   final bool vertical;
 
+  /// Round 8: on short desktop windows (e.g. 1024×506) the side
+  /// panel must shrink instead of overflowing — smaller score text
+  /// and tighter spacing so the whole panel fits in ~300px of height.
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
     final sw = MediaQuery.of(context).size.width;
@@ -63,8 +69,8 @@ class CapturesBar extends StatelessWidget {
 
     if (vertical) {
       return Container(
-        width: 208,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        width: compact ? 184 : 208,
+        padding: EdgeInsets.symmetric(horizontal: 14, vertical: compact ? 8 : 12),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             begin: Alignment.topCenter,
@@ -95,6 +101,7 @@ class CapturesBar extends StatelessWidget {
               lastTrickWinnerLabel: lastTrickWinnerLabel,
               tiebreakerText: _tiebreakerText(),
               vertical: true,
+              compact: compact,
             ),
             if (trickWinnerMessage != null) ...[
               const SizedBox(height: 8),
@@ -226,6 +233,7 @@ class _ScoreRows extends StatelessWidget {
     required this.lastTrickWinnerLabel,
     required this.tiebreakerText,
     this.vertical = false,
+    this.compact = false,
   });
 
   final MatchCaptures captures;
@@ -235,6 +243,7 @@ class _ScoreRows extends StatelessWidget {
   final String? lastTrickWinnerLabel;
   final String tiebreakerText;
   final bool vertical;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -251,6 +260,9 @@ class _ScoreRows extends StatelessWidget {
 
     if (vertical) {
       // Side panel: same groups, stacked top to bottom.
+      // Compact (short screens): tighter gaps, smaller score.
+      final gap = compact ? 5.0 : 10.0;
+      final scoreSize = compact ? 20.0 : 26.0;
       return Column(
         key: const ValueKey('score_card_vertical'),
         mainAxisSize: MainAxisSize.min,
@@ -273,7 +285,7 @@ class _ScoreRows extends StatelessWidget {
               Text(
                 'A ${captures.a.tens}',
                 style: TextStyle(
-                  fontSize: 26,
+                  fontSize: scoreSize,
                   fontWeight: FontWeight.w900,
                   color: aLeads ? ArenaColors.gold : Colors.white,
                 ),
@@ -285,18 +297,18 @@ class _ScoreRows extends StatelessWidget {
               Text(
                 '${captures.b.tens} B',
                 style: TextStyle(
-                  fontSize: 26,
+                  fontSize: scoreSize,
                   fontWeight: FontWeight.w900,
                   color: bLeads ? ArenaColors.gold : Colors.white,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: gap),
           Center(child: _StatusPill(text: statusText, isTie: tensTied)),
-          const SizedBox(height: 10),
+          SizedBox(height: gap),
           Container(height: 1, color: Colors.white10),
-          const SizedBox(height: 10),
+          SizedBox(height: gap),
           Center(
             child: powerSuit != null
                 ? _TrumpChip(suit: powerSuit!)
@@ -311,9 +323,9 @@ class _ScoreRows extends StatelessWidget {
                     ),
                   ),
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: gap),
           Container(height: 1, color: Colors.white10),
-          const SizedBox(height: 10),
+          SizedBox(height: gap),
           Text(
             'Trick $trickNumber of 13',
             textAlign: TextAlign.center,
@@ -342,9 +354,9 @@ class _ScoreRows extends StatelessWidget {
             ),
           ),
           if (lastTrickWinnerLabel != null || tensTied) ...[
-            const SizedBox(height: 10),
+            SizedBox(height: gap),
             Container(height: 1, color: Colors.white10),
-            const SizedBox(height: 8),
+            SizedBox(height: gap - 2),
             if (lastTrickWinnerLabel != null)
               Text(
                 'Last trick won by $lastTrickWinnerLabel',

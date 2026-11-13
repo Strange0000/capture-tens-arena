@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -132,8 +133,16 @@ class _GameScreenState extends State<GameScreen> {
     final isVeryNarrowPhone = viewport.width < 360;
     // Round 7 side-panel layout (desktop): score panel on the left,
     // table in the centre, hand fanned vertically on the right.
-    // Narrow / short screens keep the old top-pill + bottom-hand row.
-    final isSideLayout = viewport.width >= 900 && viewport.height >= 560;
+    // Round 8: the height gate is GONE. Round 7 required height
+    // >= 560, so at the 1024×506 test window the new layout never
+    // showed and the old top-bar + bottom-row layout appeared
+    // instead — with the hand clipped. The side layout is now used
+    // on every desktop-width window (>= 900px); on short windows the
+    // panel, cards and gaps shrink (see compact + the vertical hand
+    // sizing below) so everything still fits. Only genuinely narrow
+    // screens (< 900px) keep the old top-pill + bottom-hand row.
+    final isSideLayout = viewport.width >= 900;
+    final isShortSideLayout = viewport.height < 560;
     final isCompactGameControls = viewport.width < 400;
     final isShortPhone = viewport.height < 700;
 
@@ -489,6 +498,7 @@ class _GameScreenState extends State<GameScreen> {
                         trickWinnerMessage: _trickWinnerMessage,
                         lastTrickWinnerLabel: _lastTrickLabel,
                         vertical: true,
+                        compact: isShortSideLayout,
                       ),
                     ),
                     // Centre: the table, with the power-suit picker
@@ -562,6 +572,11 @@ class _GameScreenState extends State<GameScreen> {
                     ),
                     // Right: hand fanned vertically — never clipped
                     // by the bottom edge, because there is no bottom row.
+                    // Round 8: on short windows the cards and the fan
+                    // overlap shrink so the whole 13-card hand fits
+                    // inside the rail without scrolling: at 506px tall
+                    // the hand is 12×22 + 69 ≈ 333px, inside the
+                    // ~390px the rail has after its header.
                     Container(
                       width: 104,
                       padding: const EdgeInsets.fromLTRB(4, 10, 12, 12),
@@ -594,7 +609,16 @@ class _GameScreenState extends State<GameScreen> {
                                 ? const SizedBox.shrink()
                                 : _HandArea(
                                     app: app,
-                                    cardWidth: viewport.height < 700 ? 56.0 : 68.0,
+                                    cardWidth: viewport.height < 560
+                                        ? 48.0
+                                        : viewport.height < 700
+                                            ? 56.0
+                                            : 68.0,
+                                    verticalOverlap: viewport.height < 560
+                                        ? 22.0
+                                        : viewport.height < 700
+                                            ? 26.0
+                                            : 30.0,
                                     autoSort: _autoSortHand,
                                     highlightLegal: _highlightLegal,
                                     vertical: true,
@@ -719,6 +743,20 @@ class _GameScreenState extends State<GameScreen> {
                       // the bottom ~20-30% of the hand was clipped).
                       if (sh < 600) cw = cw.clamp(36.0, 44.0).toDouble();
                       if (sh < 700) cw = cw.clamp(36.0, 52.0).toDouble();
+                      // Round 8: the hand is the LAST child of the
+                      // Column, so if the fixed children above it
+                      // (app bar + score pill + power-suit picker)
+                      // ever exceed the viewport, the hand is the
+                      // part that gets pushed off the bottom edge.
+                      // Reserve room for those plus a minimum table
+                      // height, and shrink the cards to fit what is
+                      // left — the hand can never be clipped again.
+                      final reserved = 56.0 + 120.0 +
+                          (match.phase == 'power-select' ? 160.0 : 0.0) +
+                          100.0;
+                      final handBudget =
+                          (sh - reserved).clamp(64.0, 220.0).toDouble();
+                      cw = cw.clamp(36.0, ((handBudget - 28) / 1.428)).toDouble();
                       return SizedBox(
                         height: (cw * 1.428) + 28,
                         child: _showDealAnimation
@@ -1069,6 +1107,7 @@ class _HandArea extends StatelessWidget {
     this.onIllegalTap,
     this.onLegalPlay,
     this.vertical = false,
+    this.verticalOverlap = 30.0,
   });
 
   final AppState app;
@@ -1087,6 +1126,11 @@ class _HandArea extends StatelessWidget {
   /// right side of the screen instead of in a row along the bottom,
   /// so it can never be clipped by the bottom edge.
   final bool vertical;
+
+  /// Overlap between stacked cards in the vertical fan. Round 8:
+  /// shrinks on short windows so the whole 13-card hand fits in the
+  /// rail without scrolling.
+  final double verticalOverlap;
 
   static const _rankValues = {
     'A': 14, 'K': 13, 'Q': 12, 'J': 11, '10': 10,
@@ -1129,6 +1173,58 @@ class _HandArea extends StatelessWidget {
     return true;
   }
 
+  /// Plain-words reason a card cannot be played right now. Shared by
+  /// the tap handler below so the message is identical in the
+  /// vertical and horizontal fans.
+  static String? _illegalReasonFor(
+    ArenaCard card,
+    MatchState match,
+    List<ArenaCard> hand,
+    bool isMyTurn,
+  ) {
+    if (!isMyTurn) return "Wait — it's not your turn yet.";
+    if (match.completedTricksCount == 0 &&
+        match.currentTrick?.plays.isEmpty == true &&
+        (card.rank == '10' ||
+            (match.powerSuit != null && card.suit == match.powerSuit))) {
+      return "No Power Suit cards or 10s on the first trick.";
+    }
+    if (match.currentTrick?.leadSuit != null &&
+        hand.any((c) => c.suit == match.currentTrick!.leadSuit)) {
+      return 'You must follow the lead suit (${match.currentTrick!.leadSuit}) — play a ${match.currentTrick!.leadSuit} card.';
+    }
+    return 'You cannot play that card right now.';
+  }
+
+  /// Tap-time play decision, made from the CURRENT match state — not
+  /// the state at build time. Round 8: a tap that landed exactly as
+  /// the turn changed was judged against the stale build-time state
+  /// and silently did nothing (the Round 7 "flaky 9♠ tap" — the
+  /// first tap never registered, the second played it). The visuals
+  /// still use build-time values, but a tap always re-checks right
+  /// now: if the card is playable at tap time it plays, otherwise
+  /// the player gets the plain-words reason instead of silence.
+  /// (Checked against the SDK: the Draggable wrapper only claims the
+  /// gesture after the pointer moves past the slop, so a still tap
+  /// is not stolen by drag — the stale-turn check was the cause.)
+  void _handleCardTap(AppState app, ArenaCard card) {
+    final m = app.match;
+    if (m == null) return;
+    final nowMyTurn = m.players.any(
+      (p) => p.userId == app.userId && p.seat == m.currentTurnSeat,
+    );
+    final legalNow = _isCardLegal(card, m.currentTrick, m.hand, match: m);
+    if (nowMyTurn && legalNow) {
+      AudioService.instance.playCardPlace();
+      AudioService.instance.hapticLight();
+      onLegalPlay?.call();
+      app.playCard(card.id);
+    } else {
+      final reason = _illegalReasonFor(card, m, m.hand, nowMyTurn);
+      if (reason != null) onIllegalTap?.call(reason);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final match = app.match!;
@@ -1157,10 +1253,10 @@ class _HandArea extends StatelessWidget {
 
     if (vertical) {
       // Vertical fan: cards stacked top to bottom, each one peeking
-      // out below the last (~30px visible strip, rank + suit readable).
+      // out below the last (visible strip, rank + suit readable).
       // Same tap / illegal-tap / drag-free logic as the horizontal row.
       final cardHeight = cardWidth * 1.428;
-      const overlap = 30.0;
+      final overlap = verticalOverlap;
       final totalHeight = (N - 1) * overlap + cardHeight;
       return SingleChildScrollView(
         child: SizedBox(
@@ -1170,20 +1266,6 @@ class _HandArea extends StatelessWidget {
             children: List.generate(N, (index) {
               final card = hand[index];
               final isLegal = _isCardLegal(card, match.currentTrick, match.hand, match: match);
-              final canPlay = isMyTurn && isLegal;
-              final String? illegalReason = canPlay
-                  ? null
-                  : !isMyTurn
-                      ? "Wait — it's not your turn yet."
-                      : match.completedTricksCount == 0 &&
-                              match.currentTrick?.plays.isEmpty == true &&
-                              (card.rank == '10' ||
-                                  (match.powerSuit != null && card.suit == match.powerSuit))
-                          ? "No Power Suit cards or 10s on the first trick."
-                          : match.currentTrick?.leadSuit != null &&
-                                  match.hand.any((c) => c.suit == match.currentTrick!.leadSuit)
-                              ? 'You must follow the lead suit (${match.currentTrick!.leadSuit}) — play a ${match.currentTrick!.leadSuit} card.'
-                              : 'You cannot play that card right now.';
               return Positioned(
                 top: index * overlap,
                 left: 8,
@@ -1191,17 +1273,11 @@ class _HandArea extends StatelessWidget {
                   card: card,
                   powerSuit: match.powerSuit,
                   isLegal: highlightLegal ? isLegal : true,
-                  onPlay: canPlay
-                      ? () {
-                          AudioService.instance.playCardPlace();
-                          AudioService.instance.hapticLight();
-                          onLegalPlay?.call();
-                          app.playCard(card.id);
-                        }
-                      : null,
-                  onIllegalTap: !canPlay && illegalReason != null
-                      ? () => onIllegalTap?.call(illegalReason)
-                      : null,
+                  // One tap path for both outcomes: _handleCardTap
+                  // re-checks playability at tap time (Round 8), so
+                  // a tap is never judged on stale build-time state.
+                  onPlay: () => _handleCardTap(app, card),
+                  onIllegalTap: () => _handleCardTap(app, card),
                   dimmed: !isMyTurn,
                   width: cardWidth,
                 ),
@@ -1216,39 +1292,41 @@ class _HandArea extends StatelessWidget {
       builder: (context, constraints) {
         final aw = constraints.maxWidth - 16;
         double widthFactor = 1.0;
+        double overlapWidth = cardWidth;
         if (N > 1) {
           final maxOverlap = (aw - cardWidth) / (N - 1);
           // At least 20px of each card stays visible — the corner pip
           // (rank + suit) needs ~16px, so a card is always readable.
-          final overlapWidth = maxOverlap.clamp(20.0, cardWidth);
+          overlapWidth = maxOverlap.clamp(20.0, cardWidth);
           widthFactor = overlapWidth / cardWidth;
         }
+        // Full row width, including each card's horizontal margin
+        // (3 × scale on each side inside ArenaCardWidget).
+        final rowWidth = N == 0
+            ? 0.0
+            : (N - 1) * overlapWidth + cardWidth + N * 6 * (cardWidth / 70);
 
         return Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Center(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+          // Round 8: this used to be Center > SingleChildScrollView.
+          // When the row is wider than the viewport, Center centres
+          // it — so it overflows equally on BOTH sides and the
+          // leftmost card sits off-screen with no way to scroll to
+          // it (scroll offset 0 is the left edge). Now the scroll
+          // child's width is max(available, row): when the row fits
+          // it is centred; when it does not, it starts at the left
+          // edge and the leftmost card is always reachable.
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: math.max(aw, rowWidth),
               child: Row(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(N, (index) {
                   final card = hand[index];
                   final isLegal = _isCardLegal(card, match.currentTrick, match.hand, match: match);
                   final canPlay = isMyTurn && isLegal;
-                  final String? illegalReason = canPlay
-                      ? null
-                      : !isMyTurn
-                          ? "Wait — it's not your turn yet."
-                          : match.completedTricksCount == 0 &&
-                                  match.currentTrick?.plays.isEmpty == true &&
-                                  (card.rank == '10' ||
-                                      (match.powerSuit != null && card.suit == match.powerSuit))
-                              ? "No Power Suit cards or 10s on the first trick."
-                              : match.currentTrick?.leadSuit != null &&
-                                      match.hand.any((c) => c.suit == match.currentTrick!.leadSuit)
-                                  ? 'You must follow the lead suit (${match.currentTrick!.leadSuit}) — play a ${match.currentTrick!.leadSuit} card.'
-                                  : 'You cannot play that card right now.';
 
                   // 3D fan arc — shallow, so the outer cards don't
                   // ride up over the table.
@@ -1259,21 +1337,10 @@ class _HandArea extends StatelessWidget {
                     card: card,
                     powerSuit: match.powerSuit,
                     isLegal: highlightLegal ? isLegal : true,
-                    onPlay: canPlay
-                        ? () {
-                            AudioService.instance.playCardPlace();
-                            AudioService.instance.hapticLight();
-                            onLegalPlay?.call();
-                            app.playCard(card.id);
-                          }
-                        : null,
-                    // Illegal taps are handled inside ArenaCardWidget's
-                    // own GestureDetector (see that file): an outer
-                    // wrapper here used to lose the gesture arena to
-                    // the card's own onTapDown/onTapUp recognisers.
-                    onIllegalTap: !canPlay && illegalReason != null
-                        ? () => onIllegalTap?.call(illegalReason)
-                        : null,
+                    // One tap path for both outcomes: _handleCardTap
+                    // re-checks playability at tap time (Round 8).
+                    onPlay: () => _handleCardTap(app, card),
+                    onIllegalTap: () => _handleCardTap(app, card),
                     dimmed: !isMyTurn,
                     width: cardWidth,
                   );

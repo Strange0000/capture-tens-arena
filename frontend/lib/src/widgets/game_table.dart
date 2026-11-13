@@ -86,27 +86,67 @@ class GameTable extends StatelessWidget {
         final double chipH = ovalHeight < 200
             ? (mobileLayout ? 47.0 : 51.0)
             : (mobileLayout ? 53.0 : 59.0);
-        final double chipW = 150.0;
+        final double chipW = ovalHeight < 200 ? 132.0 : 150.0;
         const double chipGap = 8.0; // clear space between a chip and a played card
+
+        // Height of one player's chip (the active player's chip is
+        // taller: it carries the timer badge + progress bar).
+        double chipHeightFor(MatchPlayer player) {
+          final isActiveTurn = player.seat == match.currentTurnSeat;
+          return isActiveTurn && match.turnDeadline != null ? chipH + 32 : chipH;
+        }
+
+        // Top (partner) and bottom (you) chip tops, from the trick
+        // cluster — computed once, so the side chips can be clamped
+        // between them and never overlap either of them. (Round 7:
+        // during power-suit selection the name plate truncated to
+        // "…st wXYm…" and overlapped the opponent's label — the side
+        // chips were vertically centred with no regard for the
+        // top/bottom chips, and a chip could also sit half off the
+        // left edge, which is what makes a name read middle-truncated.)
+        final topPlayer = match.players.firstWhere(
+          (p) => (p.seat - mySeat + 4) % 4 == 2,
+          orElse: () => match.players.first,
+        );
+        final bottomPlayer = match.players.firstWhere(
+          (p) => (p.seat - mySeat + 4) % 4 == 0,
+          orElse: () => match.players.first,
+        );
+        final double topChipTop = math.max(
+            2.0, centreY - trickHalfH - chipGap - chipHeightFor(topPlayer));
+        final double topChipBottom = topChipTop + chipHeightFor(topPlayer);
+        final double bottomChipTop = math.min(
+            centreY + trickHalfH + chipGap,
+            stackH - chipHeightFor(bottomPlayer) - 2);
 
         Offset chipPosition(MatchPlayer player) {
           final relativeSeat = (player.seat - mySeat + 4) % 4;
-          final isActiveTurn = player.seat == match.currentTurnSeat;
-          final double h = isActiveTurn && match.turnDeadline != null ? chipH + 32 : chipH;
+          final double h = chipHeightFor(player);
+          double left;
+          double top;
           switch (relativeSeat) {
             case 0: // You — bottom rim, pill starts below the bottom card.
-              final top = math.min(centreY + trickHalfH + chipGap, stackH - h - 2);
-              return Offset(centreX - chipW / 2, top);
+              top = bottomChipTop;
+              left = centreX - chipW / 2;
             case 2: // Partner — top rim, pill ends above the top card.
-              final top = math.max(2.0, centreY - trickHalfH - chipGap - h);
-              return Offset(centreX - chipW / 2, top);
+              top = topChipTop;
+              left = centreX - chipW / 2;
             case 1: // Opponent — right rim, avatar centred on the rim.
-              final left = math.min(ovalLeft + ovalWidth - chipW / 2, stackW - chipW - 2);
-              return Offset(left, centreY - h / 2);
+              left = ovalLeft + ovalWidth - chipW / 2;
+              // Clamped between the top and bottom chips, so this chip
+              // can never slide up over the partner's label or down
+              // over yours on a short table.
+              top = (centreY - h / 2).clamp(
+                  topChipBottom + 4, math.max(topChipBottom + 4, bottomChipTop - h - 4));
             default: // Opponent — left rim, avatar centred on the rim.
-              final left = math.max(2.0, ovalLeft - chipW / 2);
-              return Offset(left, centreY - h / 2);
+              left = ovalLeft - chipW / 2;
+              top = (centreY - h / 2).clamp(
+                  topChipBottom + 4, math.max(topChipBottom + 4, bottomChipTop - h - 4));
           }
+          // Never let a chip sit half off the left/right edge: a
+          // clipped name pill reads as middle-truncated ("…st wXYm…").
+          left = left.clamp(2.0, math.max(2.0, stackW - chipW - 2));
+          return Offset(left, top);
         }
 
         return Padding(
@@ -266,6 +306,7 @@ class GameTable extends StatelessWidget {
                             : mobileLayout
                                 ? 32.0
                                 : 36.0,
+                        chipWidth: chipW,
                       ),
                     );
                   },
@@ -341,6 +382,7 @@ class _PlayerChip extends StatelessWidget {
     this.isLead = false,
     this.mobileLayout = false,
     this.avatarSize = 36.0,
+    this.chipWidth = 150.0,
   });
 
   final MatchPlayer player;
@@ -350,6 +392,7 @@ class _PlayerChip extends StatelessWidget {
   final bool isLead;
   final bool mobileLayout;
   final double avatarSize;
+  final double chipWidth;
 
   String _seatRole(int relativeSeat) {
     return switch (relativeSeat) {
@@ -387,6 +430,7 @@ class _PlayerChip extends StatelessWidget {
         borderColor: borderColor,
         isLead: isLead,
         avatarSize: avatarSize,
+        chipWidth: chipWidth,
       );
     }
     return Column(
@@ -401,7 +445,7 @@ class _PlayerChip extends StatelessWidget {
           size: avatarSize,
         ),
         const SizedBox(height: 3),
-        _NamePill(player: player, role: role, accentColor: accent),
+        _NamePill(player: player, role: role, accentColor: accent, maxWidth: chipWidth),
       ],
     );
   }
@@ -471,15 +515,16 @@ class _AvatarCircle extends StatelessWidget {
 
 /// Name + card count pill under the avatar — compact, never covering cards.
 class _NamePill extends StatelessWidget {
-  const _NamePill({required this.player, required this.role, required this.accentColor});
+  const _NamePill({required this.player, required this.role, required this.accentColor, this.maxWidth = 150});
   final MatchPlayer player;
   final String role;
   final Color accentColor;
+  final double maxWidth;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(maxWidth: 150),
+      constraints: BoxConstraints(maxWidth: maxWidth),
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: const Color(0xFF070B13).withOpacity(0.88),
@@ -527,6 +572,7 @@ class _TimedChip extends StatefulWidget {
     required this.borderColor,
     required this.isLead,
     this.avatarSize = 36.0,
+    this.chipWidth = 150.0,
   });
 
   final MatchPlayer player;
@@ -536,6 +582,7 @@ class _TimedChip extends StatefulWidget {
   final Color borderColor;
   final bool isLead;
   final double avatarSize;
+  final double chipWidth;
 
   @override
   State<_TimedChip> createState() => _TimedChipState();
@@ -592,6 +639,7 @@ class _TimedChipState extends State<_TimedChip> {
           player: widget.player,
           role: widget.role,
           accentColor: widget.accentColor,
+          maxWidth: widget.chipWidth,
         ),
         const SizedBox(height: 3),
         // Turn timer on its OWN line, below the name — it used to sit

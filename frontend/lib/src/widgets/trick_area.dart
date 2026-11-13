@@ -9,9 +9,20 @@ import 'arena_card_widget.dart';
 ///
 /// Round 3: the old cluster was 220×185 with 58px cards — the four
 /// played cards piled into one overlapping blob in the middle of a
-/// small oval. The cluster is now ~176×132 (44px cards on desktop),
-/// and the cards sit further apart (±0.75) so there is a real gap
-/// between them instead of a pile.
+/// small oval. The cluster is now ~176×160 (44px cards on desktop),
+/// and the cards sit further apart (±0.6 vertically) so there is a real
+/// gap between them instead of a pile.
+///
+/// Round 8 — why the height is 160, not 132: with the old 132px box
+/// and ±0.75 vertical alignment, the top card's centre sat at
+/// y = 0.125 × 132 = 16.5px, so a 63px-tall card spanned y −15…48 —
+/// the top 15px (the corner pip: rank + suit) was clipped off by the
+/// Stack, and the bottom card lost its bottom pip the same way. A
+/// trick card with no readable corner pip is easy to misread — the
+/// Round 7 test reported a "duplicate 2♣" that the engine cannot
+/// produce (see the backend regression test), and clipped pips are
+/// the most likely cause. The box is now tall enough that every
+/// card's corner pips are fully visible at every scale.
 ({double width, double height, double cardWidth}) trickAreaMetrics(
   double screenWidth, {
   double scale = 1.0,
@@ -24,10 +35,10 @@ import 'arena_card_widget.dart';
           ? 150.0
           : 176.0;
   final double height = extraNarrowPhone
-      ? 100.0
+      ? 112.0
       : isMobile
-          ? 112.0
-          : 132.0;
+          ? 130.0
+          : 160.0;
   final double cardWidth = extraNarrowPhone
       ? 32.0
       : isMobile
@@ -194,10 +205,12 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Relative Seat 2 → top (Partner)
+          // Relative Seat 2 → top (Partner). ±0.6, not ±0.75: at
+          // ±0.75 the top/bottom cards' corner pips were clipped by
+          // the cluster box (see trickAreaMetrics).
           if (byRelativeSeats[2] != null)
             Align(
-              alignment: const Alignment(0.0, -0.75),
+              alignment: const Alignment(0.0, -0.6),
               child: _buildAnimatedCard(byRelativeSeats[2]!.seat, byRelativeSeats[2]!, cardWidth),
             ),
 
@@ -218,7 +231,7 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
           // Relative Seat 0 → bottom (You)
           if (byRelativeSeats[0] != null)
             Align(
-              alignment: const Alignment(0.0, 0.75),
+              alignment: const Alignment(0.0, 0.6),
               child: _buildAnimatedCard(byRelativeSeats[0]!.seat, byRelativeSeats[0]!, cardWidth),
             ),
 
