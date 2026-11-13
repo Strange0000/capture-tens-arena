@@ -40,6 +40,27 @@ class _MatchResultOverlayState extends State<MatchResultOverlay>
 
   bool get _won => widget.match.winnerTeam == widget.myTeam;
 
+  /// Why the winner actually won — the victory line used to always say
+  /// "You captured the most tens!", even when tens were tied 2–2 and
+  /// the win came from the cards tiebreaker.
+  String get _winReason {
+    final winner = widget.match.winnerTeam;
+    if (winner == null) return '';
+    final w = winner == 'A' ? widget.match.captures.a : widget.match.captures.b;
+    final l = winner == 'A' ? widget.match.captures.b : widget.match.captures.a;
+    if (w.tens > l.tens) {
+      return _won ? 'Congratulations! You captured the most tens!' : 'They captured the most tens.';
+    }
+    if (w.cards > l.cards) {
+      return _won
+          ? 'Tens tied ${w.tens}–${l.tens} — you won on cards captured!'
+          : 'Tens tied ${w.tens}–${l.tens} — they won on cards captured.';
+    }
+    return _won
+        ? 'Tens and cards tied — you won on aces!'
+        : 'Tens and cards tied — they won on aces.';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -125,143 +146,170 @@ class _MatchResultOverlayState extends State<MatchResultOverlay>
             ),
           ),
 
-        // Confetti
+        // Confetti — decorative only; must never intercept taps.
         if (_won)
-          Align(
-            alignment: Alignment.topCenter,
-            child: ConfettiWidget(
-              confettiController: _confetti,
-              blastDirectionality: BlastDirectionality.explosive,
-              numberOfParticles: 35,
-              colors: const [
-                Color(0xFFFFC857), Color(0xFF48E5C2), Colors.white,
-                Color(0xFFFF6B6B), Color(0xFFD4A017),
-              ],
-              gravity: 0.18,
-              emissionFrequency: 0.06,
-              maxBlastForce: 18,
-              minBlastForce: 6,
+          IgnorePointer(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConfettiWidget(
+                confettiController: _confetti,
+                blastDirectionality: BlastDirectionality.explosive,
+                numberOfParticles: 35,
+                colors: const [
+                  Color(0xFFFFC857), Color(0xFF48E5C2), Colors.white,
+                  Color(0xFFFF6B6B), Color(0xFFD4A017),
+                ],
+                gravity: 0.18,
+                emissionFrequency: 0.06,
+                maxBlastForce: 18,
+                minBlastForce: 6,
+              ),
             ),
           ),
 
-        // Content card
+        // Compact result card — never a full-screen blocking panel.
+        // The old version was a tall, unscrollable column: on short /
+        // small windows its Home / Play Again buttons fell to the very
+        // bottom edge of the viewport and were clipped out of the
+        // tappable area, so clicks on them did nothing. Now the card
+        // is capped at 86% of the viewport height, its content scrolls,
+        // and the buttons live in a sticky footer outside the scroll
+        // view, so they are always on screen and tappable.
         Center(
           child: ScaleTransition(
             scale: _scale,
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 28),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-              decoration: BoxDecoration(
-                color: const Color(0xFF101826),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: _won ? const Color(0xFFFFC857).withOpacity(0.6) : Colors.white12,
-                  width: _won ? 2 : 1,
-                ),
-                boxShadow: _won
-                    ? [BoxShadow(color: const Color(0xFFFFC857).withOpacity(0.25), blurRadius: 50, spreadRadius: 6)]
-                    : [],
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 420,
+                maxHeight: MediaQuery.sizeOf(context).height * 0.86,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Icon with pulsing glow
-                  AnimatedBuilder(
-                    animation: _glowAnim,
-                    builder: (context, child) => Container(
-                      width: 88, height: 88,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: _won
-                            ? [BoxShadow(
-                                color: const Color(0xFFFFC857).withOpacity(_glowAnim.value * 0.5),
-                                blurRadius: 30 + _glowAnim.value * 20,
-                                spreadRadius: _glowAnim.value * 8,
-                              )]
-                            : [],
-                      ),
-                      child: child,
-                    ),
-                    child: _won
-                        ? const Icon(Icons.emoji_events_rounded, size: 72, color: Color(0xFFFFC857))
-                        : const Icon(Icons.sentiment_dissatisfied_rounded, size: 72, color: Colors.white38),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF101826),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: _won ? const Color(0xFFFFC857).withOpacity(0.6) : Colors.white12,
+                    width: _won ? 2 : 1,
                   ),
-                  const SizedBox(height: 18),
-
-                  Text(
-                    _won ? 'Victory!' : 'Defeated',
-                    style: TextStyle(
-                      fontSize: 38, fontWeight: FontWeight.w900,
-                      color: _won ? const Color(0xFFFFC857) : Colors.white70,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _won ? 'Congratulations! You captured the most tens!' : 'Better luck next time!',
-                    style: TextStyle(fontSize: 13, color: _won ? Colors.white60 : Colors.white38, fontWeight: FontWeight.w500),
-                    textAlign: TextAlign.center,
-                  ),
-
-                  if (winner != null) ...[
-                    const SizedBox(height: 4),
-                    Text('Team $winner wins',
-                      style: const TextStyle(fontSize: 12, color: Colors.white38, fontWeight: FontWeight.w600),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-
-                  // Rank change display (strictly only for Ranked Matches)
-                  if (ru != null && widget.match.mode == 'ranked') ...[
-                    const SizedBox(height: 16),
-                    _RankChangeWidget(rankUpdate: ru),
-                  ],
-
-                  const SizedBox(height: 20),
-                  const Divider(color: Colors.white10),
-                  const SizedBox(height: 12),
-
-                  // Animated score table
-                  AnimatedBuilder(
-                    animation: _countAnim,
-                    builder: (context, _) => Row(
-                      children: [
-                        _ScoreCol(label: 'Team A', captures: a, highlight: winner == 'A', progress: _countAnim.value),
-                        const SizedBox(width: 16),
-                        Container(width: 1, height: 80, color: Colors.white10),
-                        const SizedBox(width: 16),
-                        _ScoreCol(label: 'Team B', captures: b, highlight: winner == 'B', progress: _countAnim.value),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: widget.onHome,
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size(56, 50),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          child: const Text('Home'),
+                  boxShadow: _won
+                      ? [BoxShadow(color: const Color(0xFFFFC857).withOpacity(0.25), blurRadius: 50, spreadRadius: 6)]
+                      : [],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Icon with pulsing glow
+                            AnimatedBuilder(
+                              animation: _glowAnim,
+                              builder: (context, child) => Container(
+                                width: 72, height: 72,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  boxShadow: _won
+                                      ? [BoxShadow(
+                                          color: const Color(0xFFFFC857).withOpacity(_glowAnim.value * 0.5),
+                                          blurRadius: 30 + _glowAnim.value * 20,
+                                          spreadRadius: _glowAnim.value * 8,
+                                        )]
+                                      : [],
+                                ),
+                                child: child,
+                              ),
+                              child: _won
+                                  ? const Icon(Icons.emoji_events_rounded, size: 56, color: Color(0xFFFFC857))
+                                  : const Icon(Icons.sentiment_dissatisfied_rounded, size: 56, color: Colors.white38),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              _won ? 'Victory!' : 'Defeated',
+                              style: TextStyle(
+                                fontSize: 32, fontWeight: FontWeight.w900,
+                                color: _won ? const Color(0xFFFFC857) : Colors.white70,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _winReason,
+                              style: TextStyle(fontSize: 13, color: _won ? Colors.white60 : Colors.white38, fontWeight: FontWeight.w500),
+                              textAlign: TextAlign.center,
+                            ),
+                            if (winner != null) ...[
+                              const SizedBox(height: 4),
+                              Text('Team $winner wins',
+                                style: const TextStyle(fontSize: 12, color: Colors.white38, fontWeight: FontWeight.w600),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                            // Rank change display (strictly only for Ranked Matches)
+                            if (ru != null && widget.match.mode == 'ranked') ...[
+                              const SizedBox(height: 16),
+                              _RankChangeWidget(rankUpdate: ru),
+                            ],
+                            const SizedBox(height: 16),
+                            const Divider(color: Colors.white10),
+                            const SizedBox(height: 8),
+                            // Animated score table
+                            AnimatedBuilder(
+                              animation: _countAnim,
+                              builder: (context, _) => Row(
+                                children: [
+                                  _ScoreCol(label: 'Team A', captures: a, highlight: winner == 'A', progress: _countAnim.value),
+                                  const SizedBox(width: 16),
+                                  Container(width: 1, height: 80, color: Colors.white10),
+                                  const SizedBox(width: 16),
+                                  _ScoreCol(label: 'Team B', captures: b, highlight: winner == 'B', progress: _countAnim.value),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: widget.onPlayAgain,
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: const Size(56, 50),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    // Sticky footer — always visible and tappable.
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () {
+                                debugPrint('[Result] Home tapped');
+                                widget.onHome();
+                              },
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(56, 50),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: const Text('Home'),
+                            ),
                           ),
-                          child: const Text('Play Again'),
-                        ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () {
+                                debugPrint('[Result] Play Again tapped');
+                                widget.onPlayAgain();
+                              },
+                              style: ElevatedButton.styleFrom(
+                                minimumSize: const Size(56, 50),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: const Text('Play Again'),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

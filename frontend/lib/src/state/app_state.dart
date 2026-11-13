@@ -249,16 +249,20 @@ class AppState extends ChangeNotifier {
   void _onMatchState(Map<String, dynamic> json) {
     // debug: print('[AppState] match:state received, phase=${json['phase']}, id=${json['id']}');
     final incoming = MatchState.fromJson(json);
-    // Ignore stale updates from a match we already left.
-    // A completed match can never be a new match, so keep the guard for
-    // phase 'complete': the server re-broadcasts finished offline matches
-    // on reconnect, and accepting one here used to resurrect the match
-    // after Home / Leave had cleared it (lobby then bounced back to /game).
-    if (_leftMatchId != null && incoming.id == _leftMatchId) return;
-    match = incoming;
-    if (incoming.phase != 'complete') {
-      _leftMatchId = null; // Clear since we're in a valid match now
+    // Never resurrect a match we already left — regardless of the phase
+    // the re-broadcast claims. The old code cleared this guard on ANY
+    // non-'complete' state for the same id, and the server re-broadcasts
+    // a stored match on reconnect (reconnectMatch) — so after Home /
+    // Leave, and again after "Play as Guest" re-login, the finished
+    // match came back, the lobby auto-navigated to /game, and the
+    // victory modal reappeared on top of a dead game. A left match id
+    // is dead forever; a genuinely new match always gets a new id, and
+    // only then is the guard cleared.
+    if (_leftMatchId != null) {
+      if (incoming.id == _leftMatchId) return;
+      if (incoming.phase != 'complete') _leftMatchId = null;
     }
+    match = incoming;
     // Set inMatch for any active phase so reconnecting players are navigated correctly
     const activePhases = {'deal-five', 'power-select', 'deal-rest', 'playing', 'trick-resolving', 'complete'};
     if (activePhases.contains(match!.phase)) {

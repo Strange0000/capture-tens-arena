@@ -33,6 +33,13 @@ class _GameScreenState extends State<GameScreen> {
   bool _waitTimedOut = false;
   int _waitSeconds = 0;
   String? _lastMatchDifficulty;
+  /// Set the moment the player taps Home / Play Again on the victory
+  /// modal. The overlay unmounts immediately, so the buttons can never
+  /// look dead — even if navigation or a late server broadcast is slow,
+  /// the player sees the result go away at once. Reset when a new match
+  /// id arrives (see build, below).
+  bool _resultDismissed = false;
+  String? _lastMatchId;
 
   // Preferences
   bool _highlightLegal = true;
@@ -193,6 +200,14 @@ class _GameScreenState extends State<GameScreen> {
           ),
         ),
       );
+    }
+
+    // A new match id means a fresh table: the victory modal may show
+    // again when this match completes. (Field assignment only — no
+    // setState during build.)
+    if (match.id != _lastMatchId) {
+      _lastMatchId = match.id;
+      _resultDismissed = false;
     }
 
     // Detect trick winner
@@ -617,8 +632,11 @@ class _GameScreenState extends State<GameScreen> {
                   ),
                 ),
 
-              // Match Result Overlay
-              if (match.phase == 'complete')
+              // Match Result Overlay — compact dialog, NOT a full-screen
+              // blocking panel (see match_result_overlay.dart). Hidden
+              // the instant Home / Play Again is tapped (_resultDismissed)
+              // so the buttons can never appear dead.
+              if (match.phase == 'complete' && !_resultDismissed)
                 Positioned.fill(
                   child: MatchResultOverlay(
                     match: match,
@@ -626,11 +644,18 @@ class _GameScreenState extends State<GameScreen> {
                     rankUpdate: app.lastRankUpdate,
                     onPlayAgain: () async {
                       final mode = match.mode;
-                      app.leaveMatch();
+                      debugPrint('[Game] Play Again tapped — leaving match');
                       setState(() {
+                        _resultDismissed = true;
                         _showDealAnimation = true;
                         _lastTrickCount = 0;
                       });
+                      app.leaveMatch();
+                      // Let the leave reach the server before starting
+                      // a new table, otherwise the old match can be
+                      // re-broadcast and resurrect the finished game.
+                      await Future.delayed(const Duration(milliseconds: 200));
+                      if (!mounted) return;
                       if (mode == 'offline') {
                         app.startOffline(_lastMatchDifficulty ?? 'hard');
                       } else if (mode == 'ranked') {
@@ -641,18 +666,21 @@ class _GameScreenState extends State<GameScreen> {
                       }
                     },
                     onHome: () {
-                      // leaveMatch() + the one-shot lobby guard + the
-                      // stale-state guard in AppState together stop the
-                      // old bug where Home appeared to do nothing and the
-                      // lobby bounced straight back to /game.
+                      // 1) Hide the modal immediately — instant feedback.
+                      // 2) Leave the match (AppState ignores any later
+                      //    re-broadcast of this finished match id).
+                      // 3) Navigate after the frame, so the leave's
+                      //    notifyListeners rebuild cannot race the push.
                       debugPrint('[Game] Home tapped — leaving match');
+                      setState(() => _resultDismissed = true);
                       app.leaveMatch();
-                      if (context.mounted) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!mounted) return;
                         Navigator.of(context).pushNamedAndRemoveUntil(
                           '/lobby',
                           (route) => false,
                         );
-                      }
+                      });
                     },
                   ),
                 ),
@@ -664,6 +692,9 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Future<void> _confirmQuit(BuildContext context, AppState app) async {
+    // A finished match is not forfeited by leaving — say so, instead of
+    // warning about losing "your active hand and progress".
+    final isFinished = app.match?.phase == 'complete';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -672,34 +703,37 @@ class _GameScreenState extends State<GameScreen> {
           borderRadius: BorderRadius.circular(24),
           side: BorderSide(color: Colors.redAccent.withOpacity(0.3)),
         ),
-        title: const Row(children: [
-          Icon(Icons.exit_to_app_rounded, color: Colors.redAccent, size: 22),
-          SizedBox(width: 10),
-          Text('Leave Match?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+        title: Row(children: [
+          Icon(isFinished ? Icons.home_rounded : Icons.exit_to_app_rounded, color: isFinished ? const Color(0xFFFFC857) : Colors.redAccent, size: 22),
+          const SizedBox(width: 10),
+          Text(isFinished ? 'Back to Lobby?' : 'Leave Match?', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
         ]),
-        content: const Text(
-          'Are you sure you want to quit this match? Your active hand and progress will be forfeited.',
-          style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
+        content: Text(
+          isFinished
+              ? 'This match is already finished. Return to the lobby?'
+              : 'Are you sure you want to quit this match? Your active hand and progress will be forfeited.',
+          style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Stay in Game', style: TextStyle(color: Color(0xFF48E5C2), fontWeight: FontWeight.w700)),
+            child: Text(isFinished ? 'Stay Here' : 'Stay in Game', style: const TextStyle(color: Color(0xFF48E5C2), fontWeight: FontWeight.w700)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              foregroundColor: Colors.white,
+              backgroundColor: isFinished ? const Color(0xFFFFC857) : Colors.redAccent,
+              foregroundColor: isFinished ? const Color(0xFF070B13) : Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Leave Match', style: TextStyle(fontWeight: FontWeight.w800)),
+            child: Text(isFinished ? 'Back to Lobby' : 'Leave Match', style: const TextStyle(fontWeight: FontWeight.w800)),
           ),
         ],
       ),
     );
     if (confirmed == true && context.mounted) {
+      setState(() => _resultDismissed = true);
       app.leaveMatch();
       // Remove stale game/matchmaking routes. Leaving must never reveal an
       // older GameScreen which could restart or resurrect the previous match.
@@ -945,6 +979,13 @@ class _HandArea extends StatelessWidget {
                             app.playCard(card.id);
                           }
                         : null,
+                    // Illegal taps are handled inside ArenaCardWidget's
+                    // own GestureDetector (see that file): an outer
+                    // wrapper here used to lose the gesture arena to
+                    // the card's own onTapDown/onTapUp recognisers.
+                    onIllegalTap: !canPlay && illegalReason != null
+                        ? () => onIllegalTap?.call(illegalReason)
+                        : null,
                     dimmed: !isMyTurn,
                     width: cardWidth,
                   );
@@ -957,17 +998,6 @@ class _HandArea extends StatelessWidget {
                     alignment: Alignment.bottomCenter,
                     child: cardWidget,
                   );
-
-                  // Tapping a card you cannot play used to do nothing at
-                  // all (dimmed, onTap: null). Explain why instead, in
-                  // plain words, via the HUD banner.
-                  if (!canPlay && illegalReason != null && onIllegalTap != null) {
-                    wrappedCard = GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => onIllegalTap!(illegalReason),
-                      child: wrappedCard,
-                    );
-                  }
 
                   if (canPlay && !isTouchLayout) {
                     wrappedCard = Draggable<String>(

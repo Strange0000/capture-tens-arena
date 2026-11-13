@@ -12,6 +12,7 @@ class ArenaCardWidget extends StatefulWidget {
     required this.card,
     required this.powerSuit,
     required this.onPlay,
+    this.onIllegalTap,
     this.dimmed = false,
     this.isLegal = true,
     this.small = false,
@@ -22,6 +23,13 @@ class ArenaCardWidget extends StatefulWidget {
   final ArenaCard card;
   final String? powerSuit;
   final VoidCallback? onPlay;
+  /// Called when the player taps this card but cannot play it.
+  /// Handled HERE, inside this widget's own GestureDetector: the
+  /// previous design wrapped an outer GestureDetector around the card,
+  /// but this widget's own tap recogniser (onTapDown/onTapUp) won the
+  /// gesture arena first and then did nothing because onTap was null —
+  /// so illegal taps were silently swallowed and no hint ever appeared.
+  final VoidCallback? onIllegalTap;
   final bool dimmed;
   final bool isLegal;
   final bool small;
@@ -50,27 +58,38 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
     final suitColor = isRed ? const Color(0xFFCC1111) : const Color(0xFF111122);
 
     final isPlayable = widget.onPlay != null && widget.isLegal && !widget.dimmed;
-    final effectivelyDimmed = widget.dimmed || (widget.onPlay != null && !widget.isLegal);
+    // An unplayable card is visibly dimmed — previously an illegal card
+    // on your turn was NOT dimmed (onPlay was null, so the old
+    // effectivelyDimmed test was false), so players tapped it expecting
+    // a play and got silence. Played trick cards pass isLegal=true, so
+    // they stay full opacity.
+    final effectivelyDimmed = widget.dimmed || !widget.isLegal;
     final isHovered = _hovered && isPlayable;
 
     return Opacity(
       opacity: effectivelyDimmed ? 0.38 : 1.0,
       child: MouseRegion(
-        onEnter: effectivelyDimmed
-            ? null
-            : (_) {
+        onEnter: isPlayable
+            ? (_) {
                 AudioService.instance.playCardClick();
                 setState(() => _hovered = true);
-              },
+              }
+            : null,
         onExit: (_) => setState(() => _hovered = false),
-        cursor: effectivelyDimmed
-            ? SystemMouseCursors.basic
-            : (widget.onPlay != null ? SystemMouseCursors.click : SystemMouseCursors.basic),
+        cursor: isPlayable
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
         child: GestureDetector(
-          onTapDown: effectivelyDimmed ? null : (_) => setState(() => _pressed = true),
-          onTapUp: effectivelyDimmed ? null : (_) => setState(() => _pressed = false),
-          onTap: effectivelyDimmed ? null : widget.onPlay,
-          onTapCancel: () => setState(() => _pressed = false),
+          // Only a playable card gets press feedback. A non-playable
+          // card must NOT register onTapDown/onTapUp here: those
+          // recognisers used to win the gesture arena and swallow the
+          // tap before any illegal-tap handler could see it.
+          onTapDown: isPlayable ? (_) => setState(() => _pressed = true) : null,
+          onTapUp: isPlayable ? (_) => setState(() => _pressed = false) : null,
+          // One tap path for both outcomes: playable -> play, otherwise
+          // explain why in plain words via the HUD banner.
+          onTap: isPlayable ? widget.onPlay : widget.onIllegalTap,
+          onTapCancel: isPlayable ? () => setState(() => _pressed = false) : null,
           child: AnimatedScale(
             scale: _pressed ? 0.93 : 1.0,
             duration: const Duration(milliseconds: 90),
