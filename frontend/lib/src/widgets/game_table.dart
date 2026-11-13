@@ -92,7 +92,7 @@ class GameTable extends StatelessWidget {
         Offset chipPosition(MatchPlayer player) {
           final relativeSeat = (player.seat - mySeat + 4) % 4;
           final isActiveTurn = player.seat == match.currentTurnSeat;
-          final double h = isActiveTurn && match.turnDeadline != null ? chipH + 10 : chipH;
+          final double h = isActiveTurn && match.turnDeadline != null ? chipH + 32 : chipH;
           switch (relativeSeat) {
             case 0: // You — bottom rim, pill starts below the bottom card.
               final top = math.min(centreY + trickHalfH + chipGap, stackH - h - 2);
@@ -127,32 +127,45 @@ class GameTable extends StatelessWidget {
                     borderRadius: BorderRadius.all(
                       Radius.elliptical(ovalWidth / 2, ovalHeight / 2),
                     ),
+                    // Light wood rim, like the poker reference —
+                    // warm tan wood, not the old dark brown.
                     gradient: const LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [Color(0xFF8A5A2B), Color(0xFF5C3A17), Color(0xFF3E2712)],
+                      colors: [Color(0xFFB07A45), Color(0xFF7A4E24), Color(0xFF4A2C14)],
                     ),
                     boxShadow: [
                       BoxShadow(color: Colors.black.withOpacity(0.55), blurRadius: 28, offset: const Offset(0, 10)),
                     ],
                   ),
-                  padding: const EdgeInsets.all(9),
+                  padding: const EdgeInsets.all(12),
+                  // Gold pinstripe ring between the wood rim and the
+                  // felt, like the reference table.
                   child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: const BorderRadius.all(Radius.elliptical(999, 999)),
-                      gradient: RadialGradient(
-                        center: const Alignment(0, -0.25),
-                        radius: 1.1,
-                        colors: [
-                          const Color(0xFF14663F),
-                          const Color(0xFF0B3D2E),
-                          const Color(0xFF072A20),
+                    padding: const EdgeInsets.all(3),
+                    decoration: const BoxDecoration(
+                      borderRadius: BorderRadius.all(Radius.elliptical(999, 999)),
+                      border: Border.fromBorderSide(
+                          BorderSide(color: Color(0xFFFFC857), width: 2)),
+                    ),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.all(Radius.elliptical(999, 999)),
+                        // Brighter mid-green felt, like the reference —
+                        // the old felt was so dark it read as black.
+                        gradient: const RadialGradient(
+                          center: Alignment(0, -0.25),
+                          radius: 1.1,
+                          colors: [
+                            Color(0xFF1B7A4D),
+                            Color(0xFF0E5C38),
+                            Color(0xFF0B3D2E),
+                          ],
+                        ),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black, blurRadius: 12, offset: Offset(0, 2)),
                         ],
                       ),
-                      border: Border.all(color: const Color(0xFFFFC857).withOpacity(0.45), width: 1.5),
-                      boxShadow: [
-                        BoxShadow(color: Colors.black.withOpacity(0.35), blurRadius: 12, offset: const Offset(0, 2)),
-                      ],
                     ),
                   ),
                 ),
@@ -458,16 +471,15 @@ class _AvatarCircle extends StatelessWidget {
 
 /// Name + card count pill under the avatar — compact, never covering cards.
 class _NamePill extends StatelessWidget {
-  const _NamePill({required this.player, required this.role, required this.accentColor, this.secondsLeft});
+  const _NamePill({required this.player, required this.role, required this.accentColor});
   final MatchPlayer player;
   final String role;
   final Color accentColor;
-  final int? secondsLeft;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(maxWidth: 140),
+      constraints: const BoxConstraints(maxWidth: 150),
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: const Color(0xFF070B13).withOpacity(0.88),
@@ -499,13 +511,6 @@ class _NamePill extends StatelessWidget {
             '${player.cardCount}',
             style: const TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.w800),
           ),
-          if (secondsLeft != null) ...[
-            const SizedBox(width: 4),
-            Text(
-              '${secondsLeft}s',
-              style: TextStyle(color: accentColor, fontSize: 9, fontFamily: 'monospace', fontWeight: FontWeight.w900),
-            ),
-          ],
         ],
       ),
     );
@@ -587,7 +592,22 @@ class _TimedChipState extends State<_TimedChip> {
           player: widget.player,
           role: widget.role,
           accentColor: widget.accentColor,
-          secondsLeft: _secondsLeft,
+        ),
+        const SizedBox(height: 3),
+        // Turn timer on its OWN line, below the name — it used to sit
+        // inside the name pill and squeeze the name out
+        // ("OPPONENT Ciph…", "YOU GuestIzH2…").
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xFF070B13).withOpacity(0.88),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: timerColor.withOpacity(0.5)),
+          ),
+          child: Text(
+            '⏱ ${_secondsLeft}s',
+            style: TextStyle(color: timerColor, fontSize: 10, fontWeight: FontWeight.w900),
+          ),
         ),
         const SizedBox(height: 3),
         SizedBox(

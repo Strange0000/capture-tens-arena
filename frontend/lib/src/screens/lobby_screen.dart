@@ -76,7 +76,7 @@ class _LobbyScreenState extends State<LobbyScreen>
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF101826),
+        backgroundColor: ArenaColors.panel,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
           side: BorderSide(color: const Color(0xFFFFC857).withOpacity(0.4)),
@@ -172,30 +172,10 @@ class _LobbyScreenState extends State<LobbyScreen>
       });
     }
 
-    return Stack(
-      children: [
-        // Rich Atmospheric Background
-        Positioned.fill(
-          child: Image.asset('assets/images/lobby_bg.png', fit: BoxFit.cover),
-        ),
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: const Alignment(0, -0.2),
-                radius: 1.2,
-                colors: [
-                  const Color(0xFF0E3A28).withOpacity(0.70),
-                  const Color(0xFF060D0A).withOpacity(0.95),
-                ],
-              ),
-            ),
-          ),
-        ),
-
-        // Foreground content
-        Positioned.fill(
-          child: Scaffold(
+    // Royal Casino room (poker reference): the old lobby_bg.png photo
+    // (dark teal neon hall) is gone — felt background, drawn in code.
+    return RoyalBackground(
+      child: Scaffold(
             backgroundColor: Colors.transparent,
             body: SafeArea(
               child: FadeTransition(
@@ -264,8 +244,6 @@ class _LobbyScreenState extends State<LobbyScreen>
               ),
             ),
           ),
-        ),
-      ],
     );
   }
 
@@ -434,51 +412,85 @@ class _LobbyScreenState extends State<LobbyScreen>
   }
 
   Widget _buildGamePortals(BuildContext context, AppState app) {
+    // The three portals, built once per layout: tall gold-bordered
+    // cards in a row on wide screens (reference mockup), horizontal
+    // rows on narrow screens. One shared builder, so the layout can
+    // only change when the available width crosses the breakpoint —
+    // never between visits at the same width.
+    List<Widget> portals({required bool vertical}) => [
+          _GamePortalCard(
+            vertical: vertical,
+            themeColor: const Color(0xFFFFC857),
+            badgeTag: 'COMPETITIVE 2v2',
+            title: 'Ranked Match',
+            subtitle: 'Climb competitive tiers and earn seasonal MMR points',
+            icon: Icons.military_tech_rounded,
+            perks: const ['⚡ +25 MMR / Win', '🏆 Tier Leaderboard', '👥 2v2 Teams'],
+            ctaText: 'PLAY RANKED',
+            onTap: () {
+              app.queueRanked();
+              Navigator.pushNamed(context, '/matchmaking');
+            },
+          ),
+          _GamePortalCard(
+            vertical: vertical,
+            themeColor: const Color(0xFF3FA97C),
+            badgeTag: 'SOLO PRACTICE',
+            title: 'Bot Practice',
+            subtitle: 'Hone your strategy against advanced neural AI bots',
+            icon: Icons.smart_toy_rounded,
+            perks: const ['🤖 Hard AI', '⚡ Instant Match', '🎯 Risk Free'],
+            ctaText: 'PLAY PRACTICE',
+            onTap: () {
+              app.startOffline('hard');
+              Navigator.pushNamed(context, '/game');
+            },
+          ),
+          _GamePortalCard(
+            vertical: vertical,
+            themeColor: const Color(0xFFD4A017),
+            badgeTag: 'CUSTOM ROOM',
+            title: 'Private Room',
+            subtitle: 'Create a private salon with custom codes for friends or bots',
+            icon: Icons.group_add_rounded,
+            perks: const ['🔒 Private Code', '👥 Custom Squads', '🤖 Fill with Bots'],
+            ctaText: _showRoomPanel ? 'HIDE ROOM PANEL' : 'HOST OR JOIN ROOM',
+            onTap: () {
+              setState(() => _showRoomPanel = !_showRoomPanel);
+            },
+          ),
+        ];
+
     return Column(
       children: [
-        // ── Ranked Match Portal ─────────────────────────────────────────────
-        _GamePortalCard(
-          themeColor: const Color(0xFFFFC857),
-          badgeTag: 'COMPETITIVE 2v2',
-          title: 'Ranked Match',
-          subtitle: 'Climb competitive tiers and earn seasonal MMR points',
-          icon: Icons.military_tech_rounded,
-          perks: const ['⚡ +25 MMR / Win', '🏆 Tier Leaderboard', '👥 2v2 Teams'],
-          ctaText: 'PLAY RANKED',
-          onTap: () {
-            app.queueRanked();
-            Navigator.pushNamed(context, '/matchmaking');
-          },
-        ),
-        const SizedBox(height: 16),
-
-        // ── Bot Match Portal ────────────────────────────────────────────────
-        _GamePortalCard(
-          themeColor: const Color(0xFF3FA97C),
-          badgeTag: 'SOLO PRACTICE',
-          title: 'Bot Practice',
-          subtitle: 'Hone your strategy against advanced neural AI bots',
-          icon: Icons.smart_toy_rounded,
-          perks: const ['🤖 Hard AI', '⚡ Instant Match', '🎯 Risk Free'],
-          ctaText: 'PLAY PRACTICE',
-          onTap: () {
-            app.startOffline('hard');
-            Navigator.pushNamed(context, '/game');
-          },
-        ),
-        const SizedBox(height: 16),
-
-        // ── Private Custom Room Portal ──────────────────────────────────────
-        _GamePortalCard(
-          themeColor: const Color(0xFFD4A017),
-          badgeTag: 'CUSTOM ROOM',
-          title: 'Private Room',
-          subtitle: 'Create a private salon with custom codes for friends or bots',
-          icon: Icons.group_add_rounded,
-          perks: const ['🔒 Private Code', '👥 Custom Squads', '🤖 Fill with Bots'],
-          ctaText: _showRoomPanel ? 'HIDE ROOM PANEL' : 'HOST OR JOIN ROOM',
-          onTap: () {
-            setState(() => _showRoomPanel = !_showRoomPanel);
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth >= 900) {
+              final cards = portals(vertical: true);
+              return SizedBox(
+                height: 330,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: cards[0]),
+                    const SizedBox(width: 16),
+                    Expanded(child: cards[1]),
+                    const SizedBox(width: 16),
+                    Expanded(child: cards[2]),
+                  ],
+                ),
+              );
+            }
+            final cards = portals(vertical: false);
+            return Column(
+              children: [
+                cards[0],
+                const SizedBox(height: 16),
+                cards[1],
+                const SizedBox(height: 16),
+                cards[2],
+              ],
+            );
           },
         ),
 
@@ -547,7 +559,7 @@ class _LobbyScreenState extends State<LobbyScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF101826),
+      backgroundColor: ArenaColors.panel,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -559,7 +571,7 @@ class _LobbyScreenState extends State<LobbyScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF101826),
+      backgroundColor: ArenaColors.panel,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -573,7 +585,7 @@ class _LobbyScreenState extends State<LobbyScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF101826),
+        backgroundColor: ArenaColors.panel,
         title: const Text('Party Invite', style: TextStyle(color: Colors.white)),
         content: Text(
           '${invite['from']} invited you to join their party.',
@@ -608,7 +620,7 @@ class _LobbyScreenState extends State<LobbyScreen>
         heightFactor: 0.7,
         child: Container(
           decoration: const BoxDecoration(
-            color: Color(0xFF1F222A),
+            color: ArenaColors.panelLight,
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
           padding: const EdgeInsets.all(24),
@@ -765,7 +777,7 @@ class _LobbyTopBar extends StatelessWidget {
                 // Compact overflow menu button on mobile
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert_rounded, color: Colors.white70, size: 20),
-                  color: const Color(0xFF10192A),
+                  color: ArenaColors.panel,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                     side: BorderSide(color: Colors.white.withOpacity(0.12)),
@@ -914,8 +926,10 @@ class _RankShowcaseCard extends StatelessWidget {
     return GlassPanel(
       borderRadius: 20,
       padding: const EdgeInsets.all(20),
-      backgroundColor: const Color(0xFF10182E).withOpacity(0.65),
-      border: Border.all(color: tierColor.withOpacity(0.35), width: 1.2),
+      // Cream casino plaque (gold-trimmed cream card), not the old
+      // dark-navy panel.
+      backgroundColor: const Color(0xFFF5EFE0).withOpacity(0.97),
+      border: Border.all(color: const Color(0xFFFFC857).withOpacity(0.6), width: 1.5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -928,7 +942,7 @@ class _RankShowcaseCard extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w900,
-                  color: Colors.white.withOpacity(0.4),
+                  color: const Color(0xFF1B2A22).withOpacity(0.55),
                   letterSpacing: 2.0,
                 ),
               ),
@@ -992,7 +1006,7 @@ class _RankShowcaseCard extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w900,
-                color: Colors.white,
+                color: Color(0xFF1B2A22),
               ),
             ),
           ),
@@ -1025,11 +1039,11 @@ class _RankShowcaseCard extends StatelessWidget {
             children: [
               Text(
                 'Next: ${rank.nextTierMmr} MMR',
-                style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11),
+                style: TextStyle(color: const Color(0xFF1B2A22).withOpacity(0.5), fontSize: 11),
               ),
               Text(
                 'Peak: ${rank.peakMmr} MMR',
-                style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11),
+                style: TextStyle(color: const Color(0xFF1B2A22).withOpacity(0.5), fontSize: 11),
               ),
             ],
           ),
@@ -1039,17 +1053,17 @@ class _RankShowcaseCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.04),
+              color: const Color(0xFF1B2A22).withOpacity(0.06),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.07)),
+              border: Border.all(color: const Color(0xFF1B2A22).withOpacity(0.12)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _StatCell(label: 'WINS', value: '${rank.wins}', color: const Color(0xFF3FA97C)),
-                Container(width: 1, height: 26, color: Colors.white10),
+                Container(width: 1, height: 26, color: const Color(0xFF1B2A22).withOpacity(0.12)),
                 _StatCell(label: 'LOSSES', value: '${rank.losses}', color: Colors.redAccent),
-                Container(width: 1, height: 26, color: Colors.white10),
+                Container(width: 1, height: 26, color: const Color(0xFF1B2A22).withOpacity(0.12)),
                 _StatCell(label: 'WIN RATE', value: rank.winRate, color: const Color(0xFFFFC857)),
               ],
             ),
@@ -1063,8 +1077,8 @@ class _RankShowcaseCard extends StatelessWidget {
                 child: OutlinedButton.icon(
                   onPressed: onViewTiers,
                   style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: Colors.white.withOpacity(0.15)),
-                    foregroundColor: Colors.white70,
+                    side: BorderSide(color: const Color(0xFF1B2A22).withOpacity(0.25)),
+                    foregroundColor: const Color(0xFF1B2A22).withOpacity(0.85),
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
@@ -1077,8 +1091,8 @@ class _RankShowcaseCard extends StatelessWidget {
                 child: OutlinedButton.icon(
                   onPressed: onViewReplays,
                   style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: Colors.white.withOpacity(0.15)),
-                    foregroundColor: Colors.white70,
+                    side: BorderSide(color: const Color(0xFF1B2A22).withOpacity(0.25)),
+                    foregroundColor: const Color(0xFF1B2A22).withOpacity(0.85),
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
@@ -1117,7 +1131,7 @@ class _StatCell extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            color: Colors.white.withOpacity(0.35),
+            color: const Color(0xFF1B2A22).withOpacity(0.55),
             fontSize: 9,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.0,
@@ -1142,6 +1156,7 @@ class _GamePortalCard extends StatefulWidget {
     required this.perks,
     required this.ctaText,
     required this.onTap,
+    this.vertical = false,
   });
 
   final Color themeColor;
@@ -1152,6 +1167,9 @@ class _GamePortalCard extends StatefulWidget {
   final List<String> perks;
   final String ctaText;
   final VoidCallback onTap;
+  /// Tall card (crest on top, gold button at the bottom) for the
+  /// wide-screen 3-column row, like the reference mockup.
+  final bool vertical;
 
   @override
   State<_GamePortalCard> createState() => _GamePortalCardState();
@@ -1190,7 +1208,7 @@ class _GamePortalCardState extends State<_GamePortalCard> {
               end: Alignment.bottomRight,
               colors: [
                 widget.themeColor.withOpacity(_isHovered ? 0.20 : 0.10),
-                const Color(0xFF0F172A).withOpacity(0.85),
+                ArenaColors.panel.withOpacity(0.9),
               ],
             ),
             border: Border.all(
@@ -1219,7 +1237,7 @@ class _GamePortalCardState extends State<_GamePortalCard> {
                     alignment: fullWidth ? Alignment.center : null,
                     padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
                     decoration: BoxDecoration(
-                      color: _isHovered ? widget.themeColor : widget.themeColor.withOpacity(0.18),
+                      color: widget.themeColor,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: widget.themeColor.withOpacity(0.6)),
                       boxShadow: _isHovered
@@ -1239,7 +1257,7 @@ class _GamePortalCardState extends State<_GamePortalCard> {
                         Text(
                           widget.ctaText,
                           style: TextStyle(
-                            color: _isHovered ? const Color(0xFF070B13) : widget.themeColor,
+                            color: const Color(0xFF070B13),
                             fontWeight: FontWeight.w900,
                             fontSize: 13,
                             letterSpacing: 1.0,
@@ -1249,8 +1267,107 @@ class _GamePortalCardState extends State<_GamePortalCard> {
                         Icon(
                           Icons.arrow_forward_rounded,
                           size: 16,
-                          color: _isHovered ? const Color(0xFF070B13) : widget.themeColor,
+                          color: const Color(0xFF070B13),
                         ),
+                      ],
+                    ),
+                  );
+                }
+
+                // Tall card: crest on top, gold button pinned to the
+                // bottom — the wide-screen row from the reference mockup.
+                if (widget.vertical) {
+                  return Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: widget.themeColor.withOpacity(0.14),
+                            border: Border.all(
+                              color: widget.themeColor.withOpacity(0.5),
+                              width: 1.5,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: widget.themeColor.withOpacity(0.3),
+                                blurRadius: 16,
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            widget.icon,
+                            color: widget.themeColor,
+                            size: 32,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: widget.themeColor.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            widget.badgeTag,
+                            style: TextStyle(
+                              color: widget.themeColor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.5,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          widget.title,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          widget.subtitle,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withOpacity(0.55),
+                            height: 1.3,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: widget.perks.map((p) {
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.06),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                p,
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.75),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                        const Spacer(),
+                        ctaButton(fullWidth: true),
                       ],
                     ),
                   );
@@ -2186,7 +2303,7 @@ class _FriendsSheetState extends State<_FriendsSheet> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: const Color(0xFF101826),
+        backgroundColor: ArenaColors.panel,
         title: const Text("Remove friend?", style: TextStyle(color: Colors.white)),
         content: Text("Remove $username from your friends list?", style: const TextStyle(color: Colors.white70)),
         actions: [

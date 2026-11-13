@@ -158,9 +158,12 @@ class RoyalGoldButton extends StatelessWidget {
     this.primary = true,
     this.loading = false,
     this.height = 56,
+    this.labelWidget,
   });
   final String label;
   final VoidCallback? onTap;
+  /// Optional rich label (e.g. "Continue as " + bold username).
+  final Widget? labelWidget;
   final IconData? icon;
   final bool primary;
   final bool loading;
@@ -186,8 +189,9 @@ class RoyalGoldButton extends StatelessWidget {
           const SizedBox(width: 10),
         ],
         Flexible(
-          child: Text(
-            loading ? 'Please wait…' : label,
+          child: labelWidget ??
+              Text(
+                loading ? 'Please wait…' : label,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 16,

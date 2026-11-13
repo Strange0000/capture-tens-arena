@@ -371,6 +371,26 @@ class _LoginScreenState extends State<LoginScreen>
       return Column(children: [
         RoyalGoldButton(
           label: 'Continue as ${app.cachedUsername}',
+          // Two-part label: plain "Continue as" + bold username, so
+          // the name can never read as run-on text.
+          labelWidget: RichText(
+            textAlign: TextAlign.center,
+            text: TextSpan(
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.4,
+                color: ArenaColors.ink,
+              ),
+              children: [
+                const TextSpan(text: 'Continue as  '),
+                TextSpan(
+                  text: app.cachedUsername,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ],
+            ),
+          ),
           icon: Icons.arrow_forward_rounded,
           loading: _loading,
           onTap: _continueAsExisting,

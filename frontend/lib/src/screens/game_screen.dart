@@ -13,7 +13,9 @@ import '../widgets/deal_animation.dart';
 import '../widgets/emote_picker.dart';
 import '../widgets/game_table.dart';
 import '../widgets/match_result_overlay.dart';
+import '../theme.dart';
 import '../widgets/power_suit_picker.dart';
+import '../widgets/royal_widgets.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({super.key});
@@ -39,6 +41,10 @@ class _GameScreenState extends State<GameScreen> {
   /// the player sees the result go away at once. Reset when a new match
   /// id arrives (see build, below).
   bool _resultDismissed = false;
+  /// Guard: the quit dialog must never open twice. Two stacked
+  /// identical dialogs made the first tap look dead in the Round 5
+  /// test — it only popped the top copy.
+  bool _quitDialogOpen = false;
   String? _lastMatchId;
 
   // Preferences
@@ -280,13 +286,10 @@ class _GameScreenState extends State<GameScreen> {
             ? (isVeryNarrowPhone ? 'CUSTOM' : 'CUSTOM SALON')
             : (isVeryNarrowPhone ? 'BOT MATCH' : 'BOT COMBAT');
 
-    return Container(
-      decoration: const BoxDecoration(
-        image: DecorationImage(
-          image: AssetImage('assets/images/game_bg.png'),
-          fit: BoxFit.cover,
-        ),
-      ),
+    // Royal Casino room (poker reference): the old game_bg.png photo —
+    // a chrome/cyan sci-fi table — is gone. The drawn wood-rim oval in
+    // GameTable IS the table now, on a code-drawn felt background.
+    return RoyalBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
@@ -382,7 +385,7 @@ class _GameScreenState extends State<GameScreen> {
               PopupMenuButton<String>(
                 tooltip: 'Game options',
                 icon: const Icon(Icons.more_vert_rounded, color: Colors.white70, size: 22),
-                color: const Color(0xFF10192A),
+                color: ArenaColors.panel,
                 onSelected: (action) {
                   if (action == 'restart') {
                     _confirmRestart(context, app);
@@ -506,7 +509,7 @@ class _GameScreenState extends State<GameScreen> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF10192A).withOpacity(0.92),
+                                  color: ArenaColors.panel.withOpacity(0.92),
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(color: const Color(0xFF3FA97C).withOpacity(0.4), width: 1.5),
                                   boxShadow: [
@@ -534,7 +537,7 @@ class _GameScreenState extends State<GameScreen> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF10192A).withOpacity(0.9),
+                                  color: ArenaColors.panel.withOpacity(0.9),
                                   borderRadius: BorderRadius.circular(16),
                                   border: Border.all(color: Colors.white.withOpacity(0.1)),
                                 ),
@@ -553,13 +556,19 @@ class _GameScreenState extends State<GameScreen> {
                   Builder(
                     builder: (context) {
                       final sw = MediaQuery.sizeOf(context).width;
-                      final cw = sw < 375
+                      final sh = MediaQuery.sizeOf(context).height;
+                      var cw = sw < 375
                           ? 36.0
                           : sw < 450
                               ? 40.0
                               : (sw / 9).clamp(48.0, 64.0);
+                      // Short viewports: shrink the cards so the whole
+                      // hand fits above the bottom edge (Round 5 test:
+                      // the bottom ~20-30% of the hand was clipped).
+                      if (sh < 600) cw = cw.clamp(36.0, 44.0).toDouble();
+                      if (sh < 700) cw = cw.clamp(36.0, 52.0).toDouble();
                       return SizedBox(
-                        height: (cw * 1.428) + (isShortPhone ? 14 : 20),
+                        height: (cw * 1.428) + 28,
                         child: _showDealAnimation
                             ? const SizedBox.shrink()
                             : _HandArea(
@@ -620,7 +629,7 @@ class _GameScreenState extends State<GameScreen> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF0F1B2E).withOpacity(0.92),
+                                  color: ArenaColors.panel.withOpacity(0.92),
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
                                     color: (_bannerColor ?? const Color(0xFFFFD166)).withOpacity(0.6),
@@ -733,10 +742,12 @@ class _GameScreenState extends State<GameScreen> {
     // A finished match is not forfeited by leaving — say so, instead of
     // warning about losing "your active hand and progress".
     final isFinished = app.match?.phase == 'complete';
+    if (_quitDialogOpen) return;
+    _quitDialogOpen = true;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF10192A),
+        backgroundColor: ArenaColors.panel,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24),
           side: BorderSide(color: Colors.redAccent.withOpacity(0.3)),
@@ -757,19 +768,34 @@ class _GameScreenState extends State<GameScreen> {
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(isFinished ? 'Stay Here' : 'Stay in Game', style: const TextStyle(color: Color(0xFFFFC857), fontWeight: FontWeight.w700)),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isFinished ? const Color(0xFFFFC857) : Colors.redAccent,
-              foregroundColor: isFinished ? const Color(0xFF070B13) : Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          // Plain InkWell tap target with an opaque hit area, not
+          // an ElevatedButton: quick taps on this button did nothing
+          // in the Round 5 test.
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => Navigator.pop(ctx, true),
+              child: Ink(
+                decoration: BoxDecoration(
+                  color: isFinished ? const Color(0xFFFFC857) : Colors.redAccent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                child: Text(
+                  isFinished ? 'Back to Lobby' : 'Leave Match',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: isFinished ? const Color(0xFF070B13) : Colors.white,
+                  ),
+                ),
+              ),
             ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(isFinished ? 'Back to Lobby' : 'Leave Match', style: const TextStyle(fontWeight: FontWeight.w800)),
           ),
         ],
       ),
     );
+    _quitDialogOpen = false;
     if (confirmed == true && context.mounted) {
       setState(() => _resultDismissed = true);
       app.leaveMatch();
@@ -786,7 +812,7 @@ class _GameScreenState extends State<GameScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF10192A),
+        backgroundColor: ArenaColors.panel,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24),
           side: const BorderSide(color: Color(0xFFFFD166), width: 1.2),
@@ -827,7 +853,7 @@ class _GameScreenState extends State<GameScreen> {
   void _showQuickRules(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF10192A),
+      backgroundColor: ArenaColors.panel,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => Padding(
         padding: const EdgeInsets.all(22),
@@ -1011,8 +1037,8 @@ class _HandArea extends StatelessWidget {
 
                   // 3D fan arc — shallow, so the outer cards don't
                   // ride up over the table.
-                  final double fanAngle = N > 1 ? (index - (N - 1) / 2) * 0.03 : 0.0;
-                  final double yOffset = N > 1 ? ((index - (N - 1) / 2).abs() * 2).toDouble() : 0.0;
+                  final double fanAngle = N > 1 ? (index - (N - 1) / 2) * 0.015 : 0.0;
+                  final double yOffset = N > 1 ? ((index - (N - 1) / 2).abs() * 1).toDouble() : 0.0;
 
                   final cardWidget = ArenaCardWidget(
                     card: card,

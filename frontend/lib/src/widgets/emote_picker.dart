@@ -83,7 +83,7 @@ class _EmotePickerState extends State<EmotePicker>
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF101826).withOpacity(0.95),
+                  color: const Color(0xFF0F2018).withOpacity(0.95),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: const Color(0xFF3FA97C).withOpacity(0.3)),
                   boxShadow: [
@@ -125,7 +125,7 @@ class _EmotePickerState extends State<EmotePicker>
             decoration: BoxDecoration(
               color: _open
                   ? const Color(0xFF3FA97C).withOpacity(0.2)
-                  : const Color(0xFF101826).withOpacity(0.8),
+                  : const Color(0xFF0F2018).withOpacity(0.8),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: _open
@@ -211,7 +211,7 @@ class _FloatingEmoteState extends State<FloatingEmote>
               child: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF101826).withOpacity(0.9),
+                  color: const Color(0xFF0F2018).withOpacity(0.9),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: const Color(0xFF3FA97C).withOpacity(0.3)),
                 ),
