@@ -87,7 +87,7 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
               height: h,
               margin: EdgeInsets.symmetric(horizontal: 3 * scale),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8 * scale),
+                borderRadius: BorderRadius.circular(10 * scale),
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -99,7 +99,7 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
                       : isTen
                           ? const Color(0xFF48E5C2)
                           : (isPlayable
-                              ? const Color(0xFF64B5F6)
+                              ? const Color(0xFFFFC857)
                               : const Color(0xFFCCCCCC)),
                   width: (isPower || isTen)
                       ? 2.0
@@ -118,7 +118,7 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
                           ? const Color(0xFFFFD166).withOpacity(isHovered ? 0.6 : 0.25)
                           : isTen
                               ? const Color(0xFF48E5C2).withOpacity(isHovered ? 0.6 : 0.25)
-                              : const Color(0xFF64B5F6).withOpacity(isHovered ? 0.45 : 0.15),
+                              : const Color(0xFFFFC857).withOpacity(isHovered ? 0.45 : 0.18),
                       blurRadius: isHovered ? 18 : 8,
                       spreadRadius: isHovered ? 2 : 0,
                     ),
@@ -148,7 +148,7 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
                 ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(7 * scale),
+                borderRadius: BorderRadius.circular(9 * scale),
                 child: Stack(
                   children: [
                     // Subtle inner texture

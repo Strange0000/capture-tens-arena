@@ -25,6 +25,9 @@ class GameScreen extends StatefulWidget {
 class _GameScreenState extends State<GameScreen> {
   bool _showDealAnimation = true;
   String? _trickWinnerMessage;
+  /// Persistent "Last trick: <name> · Team A" — never auto-cleared,
+  /// unlike the 2.2s transient [_trickWinnerMessage] banner.
+  String? _lastTrickLabel;
   String? _lastPowerSuit;
   int _lastTrickCount = 0;
   bool _waitTimedOut = false;
@@ -195,6 +198,10 @@ class _GameScreenState extends State<GameScreen> {
     // Detect trick winner
     if (match.completedTricksCount > _lastTrickCount) {
       final winner = match.lastTrickWinner;
+      if (winner != null) {
+        final team = match.lastTrickWinnerTeam;
+        _lastTrickLabel = team == null ? winner : '$winner · Team $team';
+      }
       if (winner != null && _trickWinnerMessage == null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
@@ -285,7 +292,7 @@ class _GameScreenState extends State<GameScreen> {
               color: (match.mode == 'ranked'
                       ? const Color(0xFFFFD166)
                       : match.mode == 'private'
-                          ? const Color(0xFFB388FF)
+                          ? const Color(0xFFD4A017)
                           : const Color(0xFF48E5C2))
                   .withOpacity(0.12),
               borderRadius: BorderRadius.circular(16),
@@ -293,7 +300,7 @@ class _GameScreenState extends State<GameScreen> {
                 color: (match.mode == 'ranked'
                         ? const Color(0xFFFFD166)
                         : match.mode == 'private'
-                            ? const Color(0xFFB388FF)
+                            ? const Color(0xFFD4A017)
                             : const Color(0xFF48E5C2))
                     .withOpacity(0.35),
                 width: 1.0,
@@ -309,7 +316,7 @@ class _GameScreenState extends State<GameScreen> {
                     color: match.mode == 'ranked'
                         ? const Color(0xFFFFD166)
                         : match.mode == 'private'
-                            ? const Color(0xFFB388FF)
+                            ? const Color(0xFFD4A017)
                             : const Color(0xFF48E5C2),
                     shape: BoxShape.circle,
                   ),
@@ -324,7 +331,7 @@ class _GameScreenState extends State<GameScreen> {
                     color: match.mode == 'ranked'
                         ? const Color(0xFFFFD166)
                         : match.mode == 'private'
-                            ? const Color(0xFFB388FF)
+                            ? const Color(0xFFD4A017)
                             : const Color(0xFF48E5C2),
                   ),
                 ),
@@ -428,6 +435,7 @@ class _GameScreenState extends State<GameScreen> {
                     myTeam: app.myTeam,
                     powerSuit: match.powerSuit,
                     trickWinnerMessage: _trickWinnerMessage,
+                    lastTrickWinnerLabel: _lastTrickLabel,
                   ),
                   // Table Arena (Clean, transparent, seamlessly integrating with table art)
                   Expanded(
@@ -517,6 +525,11 @@ class _GameScreenState extends State<GameScreen> {
                                 cardWidth: cw,
                                 autoSort: _autoSortHand,
                                 highlightLegal: _highlightLegal,
+                                onIllegalTap: (reason) => _showBannerAlert(
+                                  reason,
+                                  Icons.info_outline_rounded,
+                                  const Color(0xFFFFD166),
+                                ),
                               ),
                       );
                     },
@@ -628,6 +641,11 @@ class _GameScreenState extends State<GameScreen> {
                       }
                     },
                     onHome: () {
+                      // leaveMatch() + the one-shot lobby guard + the
+                      // stale-state guard in AppState together stop the
+                      // old bug where Home appeared to do nothing and the
+                      // lobby bounced straight back to /game.
+                      debugPrint('[Game] Home tapped — leaving match');
                       app.leaveMatch();
                       if (context.mounted) {
                         Navigator.of(context).pushNamedAndRemoveUntil(
@@ -755,7 +773,8 @@ class _GameScreenState extends State<GameScreen> {
             const SizedBox(height: 18),
             const Text('Capture Tens Arena Rules', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFFFFD166))),
             const SizedBox(height: 14),
-            const _QuickRule('🎯', 'Capture the most 10s! Most 10s wins the battle.'),
+            const _QuickRule('🎯', 'Capture the most 10s over 13 tricks! Most 10s wins; tied? Most cards, then most aces.'),
+            const _QuickRule('🚫', 'First trick: no Power Suit cards and no 10s.'),
             const _QuickRule('⚡', 'Power Suit (Trump) beats all other suits regardless of card rank.'),
             const _QuickRule('🃏', 'Lead suit must be followed if you hold cards of that suit.'),
             const _QuickRule('⬆️', 'Card Rank: A > K > Q > J > 10 > 9 > 8 > 7 > 6 > 5 > 4 > 3 > 2.'),
@@ -797,12 +816,16 @@ class _HandArea extends StatelessWidget {
     required this.cardWidth,
     required this.autoSort,
     required this.highlightLegal,
+    this.onIllegalTap,
   });
 
   final AppState app;
   final double cardWidth;
   final bool autoSort;
   final bool highlightLegal;
+  /// Called (with a plain-words reason) when the player taps a card
+  /// they cannot play. Previously such taps did nothing at all.
+  final void Function(String reason)? onIllegalTap;
 
   static const _rankValues = {
     'A': 14, 'K': 13, 'Q': 12, 'J': 11, '10': 10,
@@ -816,8 +839,23 @@ class _HandArea extends StatelessWidget {
     'clubs': 1,
   };
 
-  bool _isCardLegal(ArenaCard card, CurrentTrick? trick, List<ArenaCard> hand) {
+  bool _isCardLegal(
+    ArenaCard card,
+    CurrentTrick? trick,
+    List<ArenaCard> hand, {
+    MatchState? match,
+  }) {
     if (trick == null || trick.plays.isEmpty) {
+      // First trick of the match: no Power Suit cards and no 10s
+      // (backend rules.ts enforces the same rule).
+      if (match != null &&
+          match.completedTricksCount == 0 &&
+          match.currentTrick?.plays.isEmpty == true) {
+        if (card.rank == '10') return false;
+        if (match.powerSuit != null && card.suit == match.powerSuit) {
+          return false;
+        }
+      }
       return true;
     }
     final leadSuit = trick.leadSuit;
@@ -876,8 +914,21 @@ class _HandArea extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: List.generate(N, (index) {
                   final card = hand[index];
-                  final isLegal = _isCardLegal(card, match.currentTrick, match.hand);
+                  final isLegal = _isCardLegal(card, match.currentTrick, match.hand, match: match);
                   final canPlay = isMyTurn && isLegal;
+                  final String? illegalReason = canPlay
+                      ? null
+                      : !isMyTurn
+                          ? "Wait — it's not your turn yet."
+                          : match.completedTricksCount == 0 &&
+                                  match.currentTrick?.plays.isEmpty == true &&
+                                  (card.rank == '10' ||
+                                      (match.powerSuit != null && card.suit == match.powerSuit))
+                              ? "No Power Suit cards or 10s on the first trick."
+                              : match.currentTrick?.leadSuit != null &&
+                                      match.hand.any((c) => c.suit == match.currentTrick!.leadSuit)
+                                  ? 'You must follow the lead suit (${match.currentTrick!.leadSuit}) — play a ${match.currentTrick!.leadSuit} card.'
+                                  : 'You cannot play that card right now.';
 
                   // 3D fan arc
                   final double fanAngle = N > 1 ? (index - (N - 1) / 2) * 0.03 : 0.0;
@@ -906,6 +957,17 @@ class _HandArea extends StatelessWidget {
                     alignment: Alignment.bottomCenter,
                     child: cardWidget,
                   );
+
+                  // Tapping a card you cannot play used to do nothing at
+                  // all (dimmed, onTap: null). Explain why instead, in
+                  // plain words, via the HUD banner.
+                  if (!canPlay && illegalReason != null && onIllegalTap != null) {
+                    wrappedCard = GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => onIllegalTap!(illegalReason),
+                      child: wrappedCard,
+                    );
+                  }
 
                   if (canPlay && !isTouchLayout) {
                     wrappedCard = Draggable<String>(

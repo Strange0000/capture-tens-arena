@@ -3,6 +3,9 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../widgets/arena_loading.dart';
 
 import '../models/rank_info.dart';
 import '../services/audio_service.dart';
@@ -20,6 +23,12 @@ class _LobbyScreenState extends State<LobbyScreen>
   final _roomCodeController = TextEditingController();
   final _friendUsernameController = TextEditingController();
   bool _showRoomPanel = false;
+  /// One-shot guard for the auto-navigate below (see build): without it
+  /// every rebuild while app.match != null re-pushed /game — so after
+  /// Home/Leave, a stale match state bounced the lobby straight back
+  /// to the game screen and Home looked dead.
+  bool _navigationTriggered = false;
+  bool _tutorialPromptChecked = false;
 
   late final AnimationController _entryCtrl;
   late final Animation<double> _entryAnim;
@@ -46,6 +55,53 @@ class _LobbyScreenState extends State<LobbyScreen>
     _floatAnim = Tween<double>(begin: -4.0, end: 4.0).animate(
       CurvedAnimation(parent: _floatCtrl, curve: Curves.easeInOut),
     );
+    _maybePromptTutorial();
+  }
+
+  /// First visit only: offer the interactive tutorial / rules instead
+  /// of dropping a new guest straight into the portals. The
+  /// 'tutorial_completed' flag was previously write-only — nothing
+  /// ever read it, so new players were never prompted.
+  Future<void> _maybePromptTutorial() async {
+    if (_tutorialPromptChecked) return;
+    _tutorialPromptChecked = true;
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('tutorial_completed') == true) return;
+    if (!mounted) return;
+    // Let the lobby settle first so the prompt does not fight the entry animation.
+    await Future.delayed(const Duration(milliseconds: 900));
+    if (!mounted) return;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF101826),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: const Color(0xFFFFC857).withOpacity(0.4)),
+        ),
+        title: const Text(
+          'New to Capture Tens?',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+        ),
+        content: const Text(
+          'Learn the rules in about 2 minutes — capture the most 10s over 13 tricks, and how the Power Suit works.',
+          style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Skip for now'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('How to Play'),
+          ),
+        ],
+      ),
+    );
+    if (go == true && mounted) {
+      Navigator.pushNamed(context, '/tutorial');
+    }
   }
 
   @override
@@ -66,7 +122,7 @@ class _LobbyScreenState extends State<LobbyScreen>
       if (app.isAuthChecking) {
         return const Scaffold(
           backgroundColor: Color(0xFF070B13),
-          body: Center(child: CircularProgressIndicator()),
+          body: ArenaLoading(message: 'Loading the Arena…'),
         );
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -76,12 +132,15 @@ class _LobbyScreenState extends State<LobbyScreen>
       });
       return const Scaffold(
         backgroundColor: Color(0xFF070B13),
-        body: Center(child: CircularProgressIndicator()),
+        body: ArenaLoading(message: 'Loading the Arena…'),
       );
     }
 
-    // Auto-navigate to game when match starts
-    if (app.match != null) {
+    // Auto-navigate to game when match starts — one-shot only.
+    if (app.match == null) {
+      _navigationTriggered = false;
+    } else if (!_navigationTriggered) {
+      _navigationTriggered = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (context.mounted && ModalRoute.of(context)?.isCurrent == true) {
           Navigator.pushNamed(context, '/game');
@@ -351,7 +410,7 @@ class _LobbyScreenState extends State<LobbyScreen>
 
         // ── Private Custom Room Portal ──────────────────────────────────────
         _GamePortalCard(
-          themeColor: const Color(0xFFB388FF),
+          themeColor: const Color(0xFFD4A017),
           badgeTag: 'CUSTOM ROOM',
           title: 'Private Room',
           subtitle: 'Create a private salon with custom codes for friends or bots',
@@ -361,6 +420,43 @@ class _LobbyScreenState extends State<LobbyScreen>
           onTap: () {
             setState(() => _showRoomPanel = !_showRoomPanel);
           },
+        ),
+
+        const SizedBox(height: 16),
+
+        // ── How to Play ─────────────────────────────────────────────────
+        // Text-labelled entry in the lobby body (previously only a small
+        // top-bar icon / overflow item, easy to miss).
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _showRulesSheet(context),
+                icon: const Icon(Icons.menu_book_rounded, color: Color(0xFFFFC857), size: 20),
+                label: const Text('How to Play'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Color(0xFFFFC857), width: 1.2),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.pushNamed(context, '/tutorial'),
+                icon: const Icon(Icons.school_rounded, color: Color(0xFF48E5C2), size: 20),
+                label: const Text('Interactive Tutorial'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: Colors.white.withOpacity(0.2)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+          ],
         ),
 
         // Custom room drawer
@@ -590,7 +686,7 @@ class _LobbyTopBar extends StatelessWidget {
                 _TopIconButton(
                   tooltip: 'Game Rules',
                   icon: Icons.menu_book_rounded,
-                  iconColor: const Color(0xFF64B5F6),
+                  iconColor: const Color(0xFFFFC857),
                   onTap: onRules,
                 ),
                 _TopIconButton(
@@ -622,7 +718,7 @@ class _LobbyTopBar extends StatelessWidget {
                     const PopupMenuItem(
                       value: 'rules',
                       child: Row(children: [
-                        Icon(Icons.menu_book_rounded, color: Color(0xFF64B5F6), size: 18),
+                        Icon(Icons.menu_book_rounded, color: Color(0xFFFFC857), size: 18),
                         SizedBox(width: 10),
                         Text('Rules', style: TextStyle(color: Colors.white, fontSize: 13)),
                       ]),
@@ -1325,7 +1421,7 @@ class _RoomBanner extends StatelessWidget {
             fontSize: 25,
             fontWeight: FontWeight.w900,
             letterSpacing: 5,
-            color: Color(0xFFB388FF),
+            color: Color(0xFFFFC857),
           ),
         ),
         const SizedBox(height: 5),
@@ -1356,8 +1452,8 @@ class _RoomBanner extends StatelessWidget {
 
     return GlassPanel(
       padding: EdgeInsets.all(isMobile ? 14 : 18),
-      backgroundColor: const Color(0xFF26193E).withOpacity(0.65),
-      border: Border.all(color: const Color(0xFFB388FF).withOpacity(0.5)),
+      backgroundColor: const Color(0xFF2A2113).withOpacity(0.65),
+      border: Border.all(color: const Color(0xFFD4A017).withOpacity(0.5)),
       child: isMobile
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1365,7 +1461,7 @@ class _RoomBanner extends StatelessWidget {
                 Row(
                   children: [
                     const Icon(Icons.meeting_room_rounded,
-                        color: Color(0xFFB388FF), size: 28),
+                        color: Color(0xFFD4A017), size: 28),
                     const SizedBox(width: 12),
                     Expanded(child: _roomDetails()),
                     IconButton(
@@ -1378,8 +1474,8 @@ class _RoomBanner extends StatelessWidget {
                 const SizedBox(height: 12),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF30B89C),
-                    foregroundColor: Colors.white,
+                    backgroundColor: const Color(0xFFFFC857),
+                    foregroundColor: const Color(0xFF070B13),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -1397,7 +1493,7 @@ class _RoomBanner extends StatelessWidget {
           : Row(
               children: [
                 const Icon(Icons.meeting_room_rounded,
-                    color: Color(0xFFB388FF), size: 32),
+                    color: Color(0xFFD4A017), size: 32),
                 const SizedBox(width: 16),
                 Expanded(child: _roomDetails()),
                 IconButton(
@@ -1408,8 +1504,8 @@ class _RoomBanner extends StatelessWidget {
                 const SizedBox(width: 10),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF30B89C),
-                    foregroundColor: Colors.white,
+                    backgroundColor: const Color(0xFFFFC857),
+                    foregroundColor: const Color(0xFF070B13),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 18,
                       vertical: 12,
@@ -1449,7 +1545,7 @@ class _PrivateRoomPanel extends StatelessWidget {
 
     return GlassPanel(
       backgroundColor: const Color(0xFF161F33).withOpacity(0.75),
-      border: Border.all(color: const Color(0xFFB388FF).withOpacity(0.3)),
+      border: Border.all(color: const Color(0xFFD4A017).withOpacity(0.3)),
       padding: EdgeInsets.all(isMobile ? 14 : 20),
       child: isMobile
           ? Column(
@@ -1457,8 +1553,8 @@ class _PrivateRoomPanel extends StatelessWidget {
               children: [
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF7C4DFF),
-                    foregroundColor: Colors.white,
+                    backgroundColor: const Color(0xFFFFC857),
+                    foregroundColor: const Color(0xFF070B13),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
@@ -1517,8 +1613,8 @@ class _PrivateRoomPanel extends StatelessWidget {
                 Expanded(
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF7C4DFF),
-                      foregroundColor: Colors.white,
+                      backgroundColor: const Color(0xFFFFC857),
+                      foregroundColor: const Color(0xFF070B13),
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
@@ -1578,21 +1674,21 @@ class _PartyBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return GlassPanel(
       padding: const EdgeInsets.all(14),
-      backgroundColor: const Color(0xFF7C4DFF).withOpacity(0.15),
-      border: Border.all(color: const Color(0xFF7C4DFF).withOpacity(0.4)),
+      backgroundColor: const Color(0xFFFFC857).withOpacity(0.12),
+      border: Border.all(color: const Color(0xFFFFC857).withOpacity(0.4)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.group, color: Color(0xFF7C4DFF), size: 18),
+              const Icon(Icons.group, color: Color(0xFFFFC857), size: 18),
               const SizedBox(width: 8),
               const Expanded(
                 child: Text(
                   'Your Party',
                   style: TextStyle(
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF7C4DFF),
+                    color: Color(0xFFFFC857),
                   ),
                 ),
               ),
@@ -1701,6 +1797,11 @@ class _RulesSheet extends StatelessWidget {
                 body: 'Each player plays 1 card per trick clockwise. '
                     'You MUST follow the lead suit if you can. '
                     'If you have no cards of the lead suit, you may play any card (including Power Suit).',
+              ),
+              _RuleSection(
+                icon: '🚫',
+                title: 'First Trick',
+                body: 'On the very first trick, no Power Suit cards and no 10s can be played (unless you have no other option).',
               ),
               _RuleSection(
                 icon: '📊',
@@ -1911,7 +2012,7 @@ class _FriendsSheetState extends State<_FriendsSheet> {
       action = IconButton(
         tooltip: "Invite to party",
         onPressed: busy ? null : () { app.inviteToParty(id); Navigator.pop(context); },
-        icon: const Icon(Icons.group_add_rounded, color: Color(0xFFB388FF)),
+        icon: const Icon(Icons.group_add_rounded, color: Color(0xFFD4A017)),
       );
     } else if (status == "pending" && !isRequester) {
       action = Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1991,7 +2092,7 @@ class _FriendsSheetState extends State<_FriendsSheet> {
         IconButton(
           tooltip: "Invite to party",
           onPressed: id.isEmpty ? null : () { app.inviteToParty(id); Navigator.pop(context); },
-          icon: const Icon(Icons.group_add_rounded, color: Color(0xFFB388FF)),
+          icon: const Icon(Icons.group_add_rounded, color: Color(0xFFD4A017)),
         ),
         IconButton(
           tooltip: "Remove friend",

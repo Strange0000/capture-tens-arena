@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import '../widgets/arena_loading.dart';
 import '../widgets/google_sign_in_web_button_stub.dart'
     if (dart.library.html) '../widgets/google_sign_in_web_button.dart' as google_web;
 
@@ -21,6 +22,9 @@ class _LoginScreenState extends State<LoginScreen>
   late final AnimationController _fadeCtrl;
   late final AnimationController _pulseCtrl;
   bool _loading = false;
+  /// Shown after ~6s of waiting: the Render free tier can take ~25-30s
+  /// to wake, and a bare "Connecting…" gives the player no explanation.
+  bool _showSlowHint = false;
   bool _buttonsVisible = false;
   double _mouseX = 0.0;
   double _mouseY = 0.0;
@@ -62,7 +66,13 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _loginAsGuest() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _showSlowHint = false;
+    });
+    Future.delayed(const Duration(seconds: 6), () {
+      if (mounted && _loading) setState(() => _showSlowHint = true);
+    });
     final app = context.read<AppState>();
     try {
       await app.bootGuest();
@@ -70,7 +80,12 @@ class _LoginScreenState extends State<LoginScreen>
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login failed: $e'), backgroundColor: Colors.redAccent));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _showSlowHint = false;
+        });
+      }
     }
   }
 
@@ -176,7 +191,7 @@ class _LoginScreenState extends State<LoginScreen>
                     children: [
                       Positioned(top: -120, right: -80, child: _GlowOrb(color: const Color(0xFF48E5C2), size: 350, opacity: 0.05)),
                       Positioned(bottom: -100, left: -60, child: _GlowOrb(color: const Color(0xFFFFC857), size: 300, opacity: 0.04)),
-                      Positioned(top: screenHeight * 0.3, left: -140, child: _GlowOrb(color: const Color(0xFF7C4DFF), size: 280, opacity: 0.03)),
+                      Positioned(top: screenHeight * 0.3, left: -140, child: _GlowOrb(color: const Color(0xFFFFC857), size: 280, opacity: 0.03)),
                     ],
                   ),
                 ),
@@ -247,7 +262,7 @@ class _LoginScreenState extends State<LoginScreen>
                                     ),
                                     ShaderMask(
                                       shaderCallback: (bounds) => const LinearGradient(
-                                        colors: [Color(0xFF48E5C2), Color(0xFF30B89C)],
+                                        colors: [Color(0xFFFFC857), Color(0xFFD4A017)],
                                       ).createShader(bounds),
                                       child: const Text('Arena', style: TextStyle(
                                         fontSize: 38, fontWeight: FontWeight.w900, color: Colors.white, height: 1.2, letterSpacing: -1,
@@ -283,6 +298,11 @@ class _LoginScreenState extends State<LoginScreen>
                                       style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.15), letterSpacing: 1),
                                     ),
                                     const SizedBox(height: 10),
+                                    TextButton.icon(
+                                      onPressed: () => Navigator.pushNamed(context, '/tutorial'),
+                                      icon: const Icon(Icons.menu_book_rounded, size: 16),
+                                      label: const Text('How to Play'),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -295,6 +315,19 @@ class _LoginScreenState extends State<LoginScreen>
                 ),
               ),
             ),
+
+            // Full-screen branded loading while signing in. Previously
+            // only the button itself showed a small spinner + "Connecting…"
+            // while the guest backend woke up (~25s), which looked stuck.
+            if (_loading)
+              Positioned.fill(
+                child: ArenaLoading(
+                  message: 'Connecting to the Arena…',
+                  subMessage: _showSlowHint
+                      ? 'Waking up the server — this can take about 30 seconds on the free tier. Please wait, no need to tap again.'
+                      : 'Signing you in…',
+                ),
+              ),
           ],
         ),
       ),
@@ -517,13 +550,13 @@ class _PremiumButtonState extends State<_PremiumButton> {
             height: widget.primary ? 58 : 50,
             decoration: BoxDecoration(
             gradient: widget.primary
-                ? const LinearGradient(colors: [Color(0xFF48E5C2), Color(0xFF30B89C)])
+                ? const LinearGradient(colors: [Color(0xFFFFC857), Color(0xFFD4A017)])
                 : null,
             color: widget.primary ? null : Colors.transparent,
             borderRadius: BorderRadius.circular(14),
             border: widget.primary ? null : Border.all(color: Colors.white.withOpacity(0.12)),
             boxShadow: widget.primary
-                ? [BoxShadow(color: const Color(0xFF48E5C2).withOpacity(_pressed ? 0.15 : 0.25), blurRadius: 20, spreadRadius: 2)]
+                ? [BoxShadow(color: const Color(0xFFFFC857).withOpacity(_pressed ? 0.15 : 0.25), blurRadius: 20, spreadRadius: 2)]
                 : [],
           ),
           child: Row(

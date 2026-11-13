@@ -1,11 +1,11 @@
 {
-    "name": "capture_tens_arena",
-    "short_name": "capture_tens_arena",
+    "name": "Capture Tens Arena",
+    "short_name": "Capture Tens",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#070B13",
+    "theme_color": "#070B13",
+    "description": "Capture Tens Arena — a 4-player 2v2 trick-taking card game. Capture the most 10s.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

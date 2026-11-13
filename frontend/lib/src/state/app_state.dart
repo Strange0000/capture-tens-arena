@@ -249,10 +249,16 @@ class AppState extends ChangeNotifier {
   void _onMatchState(Map<String, dynamic> json) {
     // debug: print('[AppState] match:state received, phase=${json['phase']}, id=${json['id']}');
     final incoming = MatchState.fromJson(json);
-    // Ignore stale updates from a match we already left
+    // Ignore stale updates from a match we already left.
+    // A completed match can never be a new match, so keep the guard for
+    // phase 'complete': the server re-broadcasts finished offline matches
+    // on reconnect, and accepting one here used to resurrect the match
+    // after Home / Leave had cleared it (lobby then bounced back to /game).
     if (_leftMatchId != null && incoming.id == _leftMatchId) return;
     match = incoming;
-    _leftMatchId = null; // Clear since we're in a valid match now
+    if (incoming.phase != 'complete') {
+      _leftMatchId = null; // Clear since we're in a valid match now
+    }
     // Set inMatch for any active phase so reconnecting players are navigated correctly
     const activePhases = {'deal-five', 'power-select', 'deal-rest', 'playing', 'trick-resolving', 'complete'};
     if (activePhases.contains(match!.phase)) {
@@ -639,7 +645,11 @@ class AppState extends ChangeNotifier {
 
   /// Called when player returns to home after a completed match.
   void leaveMatch() {
-    _leftMatchId = match?.id; // Remember so we ignore stale server updates
+    // Remember so we ignore stale server updates. Never overwrite the
+    // guard with null: a second leaveMatch() while match is already null
+    // (double-tap, queue cancel) used to wipe it and let the stale
+    // completed match come back.
+    if (match != null) _leftMatchId = match!.id;
     // Explicitly cancel any ranked search as well as marking a match leave.
     socket.cancelRankedQueue();
     socket.leaveMatch();

@@ -118,6 +118,7 @@ class MatchState {
     this.currentTrick,
     this.turnDeadline,
     this.lastTrickWinner,
+    this.lastTrickWinnerTeam,
     required this.mode,
   });
 
@@ -135,6 +136,7 @@ class MatchState {
   final int firstPlayerSeat;
   final int? turnDeadline;
   final String? lastTrickWinner;
+  final String? lastTrickWinnerTeam;
 
   factory MatchState.fromJson(Map<String, dynamic> json) {
     final tricks = json['completedTricks'] as List<dynamic>? ?? [];
@@ -142,13 +144,17 @@ class MatchState {
         .map((item) => MatchPlayer.fromJson(item as Map<String, dynamic>))
         .toList();
 
-    // Extract last trick winner name
+    // Extract last trick winner name + team (for the persistent
+    // "Last trick" line on the game screen).
     String? lastWinner;
+    String? lastWinnerTeam;
     if (tricks.isNotEmpty) {
       final lastTrick = tricks.last as Map<String, dynamic>;
       final winnerSeat = lastTrick['winnerSeat'] as int?;
       if (winnerSeat != null) {
-        lastWinner = players.where((p) => p.seat == winnerSeat).firstOrNull?.username;
+        final winner = players.where((p) => p.seat == winnerSeat).firstOrNull;
+        lastWinner = winner?.username;
+        lastWinnerTeam = winner?.team;
       }
     }
 
@@ -215,6 +221,7 @@ class MatchState {
       firstPlayerSeat: json['firstPlayerSeat'] as int? ?? 0,
       turnDeadline: json['turnDeadline'] as int?,
       lastTrickWinner: lastWinner,
+      lastTrickWinnerTeam: lastWinnerTeam,
     );
   }
 }

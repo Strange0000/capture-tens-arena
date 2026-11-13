@@ -135,7 +135,7 @@ class _MatchResultOverlayState extends State<MatchResultOverlay>
               numberOfParticles: 35,
               colors: const [
                 Color(0xFFFFC857), Color(0xFF48E5C2), Colors.white,
-                Color(0xFFFF6B6B), Color(0xFF7C4DFF),
+                Color(0xFFFF6B6B), Color(0xFFD4A017),
               ],
               gravity: 0.18,
               emissionFrequency: 0.06,

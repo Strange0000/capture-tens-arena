@@ -213,7 +213,7 @@ class _TableCenterEmblem extends StatelessWidget {
         'hearts' => const Color(0xFFFF5252),
         'diamonds' => const Color(0xFFFF7043),
         'clubs' => const Color(0xFF81D4FA),
-        _ => const Color(0xFFB388FF),
+        _ => const Color(0xFFD7DEE8),
       };
 
       return Column(

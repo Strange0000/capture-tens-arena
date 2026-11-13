@@ -13,6 +13,7 @@ class CapturesBar extends StatelessWidget {
     this.myTeam = 'A',
     this.powerSuit,
     this.trickWinnerMessage,
+    this.lastTrickWinnerLabel,
   });
 
   final MatchCaptures captures;
@@ -20,6 +21,9 @@ class CapturesBar extends StatelessWidget {
   final String myTeam;
   final String? powerSuit;
   final String? trickWinnerMessage;
+  /// Persistent "Last trick: <name> · Team A" — unlike
+  /// [trickWinnerMessage], this is never cleared after 2 seconds.
+  final String? lastTrickWinnerLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -48,12 +52,12 @@ class CapturesBar extends StatelessWidget {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  const Color(0xFF131F35).withOpacity(0.85),
-                  const Color(0xFF090E1A).withOpacity(0.85),
+                  const Color(0xFF0B3D2E).withOpacity(0.92),
+                  const Color(0xFF072A20).withOpacity(0.92),
                 ],
               ),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withOpacity(0.12), width: 1.2),
+              border: Border.all(color: const Color(0xFFFFC857).withOpacity(0.28), width: 1.2),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.4),
@@ -70,16 +74,18 @@ class CapturesBar extends StatelessWidget {
                     teamTitle: myLabel,
                     isMyTeam: true,
                     captures: myCaptures,
-                    accentColor: const Color(0xFF48E5C2),
+                    accentColor: const Color(0xFFFFC857),
                     alignment: CrossAxisAlignment.start,
                   ),
                 ),
 
                 // Center Trick & Power Suit Hub
                 _CenterMatchHub(
+                  captures: captures,
                   completedTricks: completedTricks,
                   powerSuit: powerSuit,
                   trickWinnerMessage: trickWinnerMessage,
+                  lastTrickWinnerLabel: lastTrickWinnerLabel,
                 ),
 
                 // Rival Squad (Right)
@@ -105,14 +111,18 @@ class CapturesBar extends StatelessWidget {
 
 class _CenterMatchHub extends StatelessWidget {
   const _CenterMatchHub({
+    required this.captures,
     required this.completedTricks,
     required this.powerSuit,
     this.trickWinnerMessage,
+    this.lastTrickWinnerLabel,
   });
 
+  final MatchCaptures captures;
   final int completedTricks;
   final String? powerSuit;
   final String? trickWinnerMessage;
+  final String? lastTrickWinnerLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -168,6 +178,55 @@ class _CenterMatchHub extends StatelessWidget {
                 key: const ValueKey('normal_center'),
                 mainAxisSize: MainAxisSize.min,
                 children: [
+          // Live tens score — the headline number of the game.
+          // Fixed Team A / Team B order (not swapped by myTeam), so
+          // "A 2 — 1 B" always means the same thing. The leading side
+          // is gold; the per-team 🔟 badges below stay as detail.
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                'A ${captures.a.tens}',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  color: captures.a.tens > captures.b.tens
+                      ? const Color(0xFFFFC857)
+                      : Colors.white70,
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  '—',
+                  style: TextStyle(fontSize: 14, color: Colors.white38),
+                ),
+              ),
+              Text(
+                '${captures.b.tens} B',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  color: captures.b.tens > captures.a.tens
+                      ? const Color(0xFFFFC857)
+                      : Colors.white70,
+                ),
+              ),
+            ],
+          ),
+          const Text(
+            'TENS  ·  MOST 10s WINS',
+            style: TextStyle(
+              fontSize: 8,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
+              color: Colors.white38,
+            ),
+          ),
+          const SizedBox(height: 5),
+
           // Trump / Power Suit Badge or Trick Index
           if (powerSuit != null)
             Row(
@@ -246,6 +305,20 @@ class _CenterMatchHub extends StatelessWidget {
               ],
             ),
           ),
+
+          // Persistent last-trick winner — stays until the next trick
+          // is won, unlike the 2.2s transient banner above.
+          if (lastTrickWinnerLabel != null) ...[
+            const SizedBox(height: 3),
+            Text(
+              'Last trick: $lastTrickWinnerLabel',
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFFFFD166),
+              ),
+            ),
+          ],
         ],
       ),
     ),
@@ -277,7 +350,7 @@ class _CenterMatchHub extends StatelessWidget {
         'hearts' => const Color(0xFFFF5252),
         'diamonds' => const Color(0xFFFF7043),
         'clubs' => const Color(0xFF81D4FA),
-        _ => const Color(0xFFB388FF),
+        _ => const Color(0xFFD7DEE8),
       };
 }
 
