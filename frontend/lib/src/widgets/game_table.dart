@@ -11,9 +11,22 @@ import 'trick_area.dart';
 /// a big green felt oval with a wooden rim, players seated around the
 /// perimeter in small circular avatar chips (name + card count in a
 /// compact pill under the avatar), and the played cards in the centre
-/// of the table — nothing full-screen, nothing blocking the game, and
-/// the played cards never overlap the player names (the chips live on
-/// the rim, the cards live in the middle).
+/// of the table — nothing full-screen, nothing blocking the game.
+///
+/// Round 3 — why the screen was crowded (see the screenshot):
+/// the player chips were positioned with `Align(±0.88)` against the
+/// WHOLE table area, not against the oval. When the table area was
+/// short (tall score bar + huge hand), the top/bottom chips collapsed
+/// toward the centre and landed on top of the played cards, and the
+/// "PARTNER N…" / "YOU G…" pills covered the centre cards. The chips
+/// are now positioned with explicit coordinates computed FROM the oval
+/// and the trick cluster: the partner pill always ends 8px above the
+/// top played card, the self pill always starts 8px below the bottom
+/// played card, and the side chips sit on the left/right rim — so no
+/// chip can ever cover a played card, on any screen size. The score
+/// bar is slim and the hand cards are smaller, so the table area (and
+/// the oval) is much taller than before, which is what makes the
+/// clearance possible in the first place.
 class GameTable extends StatelessWidget {
   const GameTable({
     super.key,
@@ -33,23 +46,67 @@ class GameTable extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final mobileLayout = constraints.maxWidth < 450;
-        final availableWidth = (constraints.maxWidth - (mobileLayout ? 12.0 : 32.0))
+        final stackW = constraints.maxWidth;
+        final stackH = constraints.maxHeight;
+        final centreX = stackW / 2;
+        final centreY = stackH / 2;
+        final availableWidth = (stackW - (mobileLayout ? 12.0 : 32.0))
             .clamp(100.0, double.infinity)
             .toDouble();
-        final availableHeight = (constraints.maxHeight - (mobileLayout ? 8.0 : 16.0))
+        final availableHeight = (stackH - (mobileLayout ? 8.0 : 16.0))
             .clamp(100.0, double.infinity)
             .toDouble();
         // Oval, not a small circle: fill the table area like a real
-        // poker table (the old table was a 210px circle in the middle
-        // of a full-screen background image). Clamped so the oval
-        // (and the rim chips) always fit inside this area.
-        var ovalWidth = math.min(availableWidth, availableHeight * 1.55);
-        var ovalHeight = ovalWidth * 0.62;
-        if (ovalHeight > availableHeight * 0.94) {
-          ovalHeight = availableHeight * 0.94;
-          ovalWidth = ovalHeight / 0.62;
+        // poker table. Clamped so the oval (and the rim chips) always
+        // fit inside this area.
+        var ovalWidth = math.min(availableWidth, availableHeight * 1.6);
+        var ovalHeight = ovalWidth * 0.60;
+        if (ovalHeight > availableHeight * 0.92) {
+          ovalHeight = availableHeight * 0.92;
+          ovalWidth = ovalHeight / 0.60;
         }
-        ovalHeight = math.max(170.0, ovalHeight);
+        ovalHeight = math.max(160.0, ovalHeight);
+        final ovalLeft = (stackW - ovalWidth) / 2;
+
+        // Trick cluster size — shared with TrickArea via trickAreaMetrics,
+        // so the chip positions below are computed from the REAL card
+        // positions. On a short oval the cluster shrinks (0.8 / 0.7) so
+        // the rim chips still have a clear lane around it.
+        final trickScale = ovalHeight < 200
+            ? 0.7
+            : ovalHeight < 260
+                ? 0.8
+                : 1.0;
+        final trickMetrics = trickAreaMetrics(stackW, scale: trickScale);
+        final trickHalfH = trickMetrics.height / 2;
+
+        // Chip slot: avatar + name pill (+ timer bar when active).
+        // Smaller on short ovals so the lane around the cards survives.
+        final double chipH = ovalHeight < 200
+            ? (mobileLayout ? 47.0 : 51.0)
+            : (mobileLayout ? 53.0 : 59.0);
+        final double chipW = 116.0;
+        const double chipGap = 8.0; // clear space between a chip and a played card
+
+        Offset chipPosition(MatchPlayer player) {
+          final relativeSeat = (player.seat - mySeat + 4) % 4;
+          final isActiveTurn = player.seat == match.currentTurnSeat;
+          final double h = isActiveTurn && match.turnDeadline != null ? chipH + 10 : chipH;
+          switch (relativeSeat) {
+            case 0: // You — bottom rim, pill starts below the bottom card.
+              final top = math.min(centreY + trickHalfH + chipGap, stackH - h - 2);
+              return Offset(centreX - chipW / 2, top);
+            case 2: // Partner — top rim, pill ends above the top card.
+              final top = math.max(2.0, centreY - trickHalfH - chipGap - h);
+              return Offset(centreX - chipW / 2, top);
+            case 1: // Opponent — right rim, avatar centred on the rim.
+              final left = math.min(ovalLeft + ovalWidth - chipW / 2, stackW - chipW - 2);
+              return Offset(left, centreY - h / 2);
+            default: // Opponent — left rim, avatar centred on the rim.
+              final left = math.max(2.0, ovalLeft - chipW / 2);
+              return Offset(left, centreY - h / 2);
+          }
+        }
 
         return Padding(
           padding: EdgeInsets.symmetric(
@@ -58,6 +115,7 @@ class GameTable extends StatelessWidget {
           ),
           child: Stack(
             alignment: Alignment.center,
+            clipBehavior: Clip.none,
             children: [
               // ── Oval table: wooden rim + green felt ──
               Center(
@@ -99,7 +157,10 @@ class GameTable extends StatelessWidget {
                 ),
               ),
 
-              // ── Centre: trick cards + trump pill, drag-and-drop zone ──
+              // ── Centre: trick cards only, drag-and-drop zone ──
+              // No trump pill here any more: trump lives in the slim
+              // score strip at the top, and the old centre pill used to
+              // float down over the hand cards.
               Center(
                 child: DragTarget<String>(
                   onWillAcceptWithDetails: (_) => match.phase == 'playing',
@@ -112,9 +173,9 @@ class GameTable extends StatelessWidget {
                     final isHoveredWithCard = candidateData.isNotEmpty;
                     return AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
-                      width: ovalWidth * 0.82,
-                      // No fixed height: the trick cards + trump pill size
-                      // the zone, so nothing is clipped on short screens.
+                      width: ovalWidth * 0.78,
+                      // No fixed height: the trick cards size the zone,
+                      // so nothing is clipped on short screens.
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       decoration: BoxDecoration(
                         borderRadius: const BorderRadius.all(Radius.elliptical(999, 999)),
@@ -152,6 +213,7 @@ class GameTable extends StatelessWidget {
                               trick: match.currentTrick!,
                               powerSuit: match.powerSuit,
                               mySeat: mySeat,
+                              scale: trickScale,
                             )
                           else
                             _TableCenterEmblem(
@@ -160,13 +222,6 @@ class GameTable extends StatelessWidget {
                                 (p) => p.seat == match.currentTurnSeat && p.seat == mySeat,
                               ),
                             ),
-                          if (match.powerSuit != null &&
-                              match.currentTrick != null &&
-                              (match.phase == 'playing' || match.phase == 'trick-resolving'))
-                            Padding(
-                              padding: const EdgeInsets.only(top: 6),
-                              child: _TrumpPill(suit: match.powerSuit!),
-                            ),
                         ],
                       ),
                     );
@@ -174,64 +229,37 @@ class GameTable extends StatelessWidget {
                 ),
               ),
 
-              // ── Player chips around the rim ──
+              // ── Player chips around the rim, anchored to the oval ──
               for (final player in match.players)
-                _PlayerChip(
-                  player: player,
-                  mySeat: mySeat,
-                  active: player.seat == match.currentTurnSeat,
-                  deadline: player.seat == match.currentTurnSeat ? match.turnDeadline : null,
-                  isLead: match.currentTrick != null &&
-                      match.currentTrick!.plays.isEmpty &&
-                      player.seat == match.currentTurnSeat,
-                  mobileLayout: mobileLayout,
+                Builder(
+                  builder: (context) {
+                    final pos = chipPosition(player);
+                    return Positioned(
+                      left: pos.dx,
+                      top: pos.dy,
+                      width: chipW,
+                      child: _PlayerChip(
+                        player: player,
+                        mySeat: mySeat,
+                        active: player.seat == match.currentTurnSeat,
+                        deadline: player.seat == match.currentTurnSeat ? match.turnDeadline : null,
+                        isLead: match.currentTrick != null &&
+                            match.currentTrick!.plays.isEmpty &&
+                            player.seat == match.currentTurnSeat,
+                        mobileLayout: mobileLayout,
+                        avatarSize: ovalHeight < 200
+                            ? 30.0
+                            : mobileLayout
+                                ? 32.0
+                                : 36.0,
+                      ),
+                    );
+                  },
                 ),
             ],
           ),
         );
       },
-    );
-  }
-}
-
-// ── Trump pill (compact, sits under the centre cards) ───────────────────────
-
-class _TrumpPill extends StatelessWidget {
-  const _TrumpPill({required this.suit});
-  final String suit;
-
-  @override
-  Widget build(BuildContext context) {
-    final symbol = switch (suit) {
-      'hearts' => '♥',
-      'diamonds' => '♦',
-      'clubs' => '♣',
-      _ => '♠',
-    };
-    final color = switch (suit) {
-      'hearts' => const Color(0xFFFF5252),
-      'diamonds' => const Color(0xFFFF7043),
-      'clubs' => const Color(0xFF81D4FA),
-      _ => const Color(0xFFD7DEE8),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0A1220).withOpacity(0.65),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.35), width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(symbol, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.bold)),
-          const SizedBox(width: 5),
-          Text(
-            '${suit.toUpperCase()} TRUMP',
-            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: color, letterSpacing: 1.2),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -273,21 +301,14 @@ class _TableCenterEmblem extends StatelessWidget {
     }
 
     if (match.powerSuit != null) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _TrumpPill(suit: match.powerSuit!),
-          const SizedBox(height: 8),
-          Text(
-            isMyTurn ? 'YOUR TURN · PLAY A CARD' : 'Waiting for turn...',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: isMyTurn ? FontWeight.w900 : FontWeight.w600,
-              color: isMyTurn ? const Color(0xFF48E5C2) : Colors.white24,
-              letterSpacing: 1.0,
-            ),
-          ),
-        ],
+      return Text(
+        isMyTurn ? 'YOUR TURN · PLAY A CARD' : 'Waiting for turn...',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: isMyTurn ? FontWeight.w900 : FontWeight.w600,
+          color: isMyTurn ? const Color(0xFF48E5C2) : Colors.white24,
+          letterSpacing: 1.0,
+        ),
       );
     }
 
@@ -305,6 +326,7 @@ class _PlayerChip extends StatelessWidget {
     this.deadline,
     this.isLead = false,
     this.mobileLayout = false,
+    this.avatarSize = 36.0,
   });
 
   final MatchPlayer player;
@@ -313,16 +335,7 @@ class _PlayerChip extends StatelessWidget {
   final int? deadline;
   final bool isLead;
   final bool mobileLayout;
-
-  Alignment get _alignment {
-    final relativeSeat = (player.seat - mySeat + 4) % 4;
-    return switch (relativeSeat) {
-      0 => const Alignment(0.0, 0.88), // You — bottom rim
-      1 => const Alignment(0.88, 0.0), // Opponent — right rim
-      2 => const Alignment(0.0, -0.88), // Partner — top rim
-      _ => const Alignment(-0.88, 0.0), // Opponent — left rim
-    };
-  }
+  final double avatarSize;
 
   String _seatRole(int relativeSeat) {
     return switch (relativeSeat) {
@@ -351,31 +364,31 @@ class _PlayerChip extends StatelessWidget {
             ? accent
             : Colors.white.withOpacity(0.25);
 
-    return Align(
-      alignment: _alignment,
-      child: active && deadline != null
-          ? _TimedChip(
-              player: player,
-              deadline: deadline!,
-              role: role,
-              accentColor: accent,
-              borderColor: borderColor,
-              isLead: isLead,
-            )
-          : Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _AvatarCircle(
-                  player: player,
-                  accentColor: accent,
-                  borderColor: borderColor,
-                  active: active,
-                  isLead: isLead,
-                ),
-                const SizedBox(height: 3),
-                _NamePill(player: player, role: role, accentColor: accent),
-              ],
-            ),
+    if (active && deadline != null) {
+      return _TimedChip(
+        player: player,
+        deadline: deadline!,
+        role: role,
+        accentColor: accent,
+        borderColor: borderColor,
+        isLead: isLead,
+        avatarSize: avatarSize,
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _AvatarCircle(
+          player: player,
+          accentColor: accent,
+          borderColor: borderColor,
+          active: active,
+          isLead: isLead,
+          size: avatarSize,
+        ),
+        const SizedBox(height: 3),
+        _NamePill(player: player, role: role, accentColor: accent),
+      ],
     );
   }
 }
@@ -389,6 +402,7 @@ class _AvatarCircle extends StatelessWidget {
     required this.borderColor,
     required this.active,
     required this.isLead,
+    this.size = 36.0,
   });
 
   final MatchPlayer player;
@@ -396,6 +410,7 @@ class _AvatarCircle extends StatelessWidget {
   final Color borderColor;
   final bool active;
   final bool isLead;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
@@ -406,8 +421,8 @@ class _AvatarCircle extends StatelessWidget {
       clipBehavior: Clip.none,
       children: [
         Container(
-          width: 46,
-          height: 46,
+          width: size,
+          height: size,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: const Color(0xFF0B1424),
@@ -418,12 +433,12 @@ class _AvatarCircle extends StatelessWidget {
           ),
           child: Center(
             child: player.isBot
-                ? Icon(Icons.smart_toy_rounded, size: 22, color: accentColor)
+                ? Icon(Icons.smart_toy_rounded, size: size * 0.48, color: accentColor)
                 : Text(
                     initial,
                     style: TextStyle(
                       color: accentColor,
-                      fontSize: 20,
+                      fontSize: size * 0.44,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
@@ -451,7 +466,7 @@ class _NamePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(maxWidth: 92),
+      constraints: const BoxConstraints(maxWidth: 110),
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: const Color(0xFF070B13).withOpacity(0.88),
@@ -475,8 +490,12 @@ class _NamePill extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 4),
+          // A real icon, not the 🂠 emoji: that glyph is missing from
+          // the font and rendered as a tofu box ("■ 8") in the screenshot.
+          const Icon(Icons.style_rounded, size: 10, color: Colors.white70),
+          const SizedBox(width: 2),
           Text(
-            '🂠 ${player.cardCount}',
+            '${player.cardCount}',
             style: const TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.w800),
           ),
           if (secondsLeft != null) ...[
@@ -501,6 +520,7 @@ class _TimedChip extends StatefulWidget {
     required this.accentColor,
     required this.borderColor,
     required this.isLead,
+    this.avatarSize = 36.0,
   });
 
   final MatchPlayer player;
@@ -509,6 +529,7 @@ class _TimedChip extends StatefulWidget {
   final Color accentColor;
   final Color borderColor;
   final bool isLead;
+  final double avatarSize;
 
   @override
   State<_TimedChip> createState() => _TimedChipState();
@@ -558,6 +579,7 @@ class _TimedChipState extends State<_TimedChip> {
           borderColor: timerColor,
           active: true,
           isLead: widget.isLead,
+          size: widget.avatarSize,
         ),
         const SizedBox(height: 3),
         _NamePill(
@@ -568,7 +590,7 @@ class _TimedChipState extends State<_TimedChip> {
         ),
         const SizedBox(height: 3),
         SizedBox(
-          width: 64,
+          width: 56,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(

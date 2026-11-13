@@ -522,17 +522,20 @@ class _GameScreenState extends State<GameScreen> {
                             ),
                     ),
 
-                  // Player Hand Area
+                  // Player Hand Area — Round 3: cards were up to 92px
+                  // wide (~170px tall with padding), which left almost
+                  // no room for the table. Capped at 64px wide (~107px
+                  // tall total) so the oval gets the screen back.
                   Builder(
                     builder: (context) {
                       final sw = MediaQuery.sizeOf(context).width;
                       final cw = sw < 375
-                          ? 40.0
+                          ? 36.0
                           : sw < 450
-                              ? 44.0
-                              : (sw / 8).clamp(52.0, 92.0);
+                              ? 40.0
+                              : (sw / 9).clamp(48.0, 64.0);
                       return SizedBox(
-                        height: (cw * 1.428) + (isShortPhone ? 24 : 38),
+                        height: (cw * 1.428) + (isShortPhone ? 14 : 20),
                         child: _showDealAnimation
                             ? const SizedBox.shrink()
                             : _HandArea(
@@ -552,9 +555,11 @@ class _GameScreenState extends State<GameScreen> {
                 ],
               ),
 
-              // Top HUD Banner Alert (Positioned below scoreboard, never covers player cards!)
+              // Top HUD Banner Alert — just below the slim score strip
+              // (AppBar ~50 + strip ~44), floating over the table's top
+              // margin, never over the centre cards or the hand.
               Positioned(
-                top: 76,
+                top: 52,
                 left: 20,
                 right: 20,
                 child: AnimatedSwitcher(
@@ -934,7 +939,9 @@ class _HandArea extends StatelessWidget {
         double widthFactor = 1.0;
         if (N > 1) {
           final maxOverlap = (aw - cardWidth) / (N - 1);
-          final overlapWidth = maxOverlap.clamp(16.0, cardWidth + 4.0);
+          // At least 20px of each card stays visible — the corner pip
+          // (rank + suit) needs ~16px, so a card is always readable.
+          final overlapWidth = maxOverlap.clamp(20.0, cardWidth + 4.0);
           widthFactor = overlapWidth / cardWidth;
         }
 
@@ -964,9 +971,10 @@ class _HandArea extends StatelessWidget {
                                   ? 'You must follow the lead suit (${match.currentTrick!.leadSuit}) — play a ${match.currentTrick!.leadSuit} card.'
                                   : 'You cannot play that card right now.';
 
-                  // 3D fan arc
+                  // 3D fan arc — shallow, so the outer cards don't
+                  // ride up over the table.
                   final double fanAngle = N > 1 ? (index - (N - 1) / 2) * 0.03 : 0.0;
-                  final double yOffset = N > 1 ? ((index - (N - 1) / 2).abs() * 3).toDouble() : 0.0;
+                  final double yOffset = N > 1 ? ((index - (N - 1) / 2).abs() * 2).toDouble() : 0.0;
 
                   final cardWidget = ArenaCardWidget(
                     card: card,
