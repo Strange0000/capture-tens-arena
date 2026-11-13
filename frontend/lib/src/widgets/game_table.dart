@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../models/match_state.dart';
-import '../services/audio_service.dart';
 import '../theme.dart';
 import 'trick_area.dart';
 
@@ -33,13 +32,11 @@ class GameTable extends StatelessWidget {
     super.key,
     required this.match,
     required this.mySeat,
-    this.onCardPlayed,
     this.tilt3d = false,
   });
 
   final MatchState match;
   final int mySeat;
-  final ValueChanged<String>? onCardPlayed;
   final bool tilt3d;
 
   @override
@@ -211,55 +208,32 @@ class GameTable extends StatelessWidget {
                 ),
               ),
 
-              // ── Centre: trick cards only, drag-and-drop zone ──
+              // ── Centre: trick cards only ──
               // No trump pill here any more: trump lives in the slim
               // score strip at the top, and the old centre pill used to
-              // float down over the hand cards.
+              // float down over the hand cards. (Round 11: the
+              // DragTarget that used to wrap this zone is gone —
+              // drag-to-play was removed because its recognizer
+              // swallowed mouse taps; see _HandArea.)
               Center(
-                child: DragTarget<String>(
-                  onWillAcceptWithDetails: (_) => match.phase == 'playing',
-                  onAcceptWithDetails: (details) {
-                    AudioService.instance.playCardPlace();
-                    AudioService.instance.hapticMedium();
-                    onCardPlayed?.call(details.data);
-                  },
-                  builder: (context, candidateData, rejectedData) {
-                    final isHoveredWithCard = candidateData.isNotEmpty;
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      width: ovalWidth * 0.78,
-                      // No fixed height: the trick cards size the zone,
-                      // so nothing is clipped on short screens.
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        borderRadius: const BorderRadius.all(Radius.elliptical(999, 999)),
-                        color: isHoveredWithCard
-                            ? ArenaColors.gold.withOpacity(0.12)
-                            : Colors.transparent,
-                        border: Border.all(
-                          color: isHoveredWithCard
-                              ? ArenaColors.gold
-                              : Colors.white.withOpacity(0.05),
-                          width: isHoveredWithCard ? 2 : 1,
-                        ),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          if (isHoveredWithCard)
-                            const Padding(
-                              padding: EdgeInsets.only(bottom: 4),
-                              child: Text(
-                                'RELEASE TO PLAY',
-                                style: TextStyle(
-                                  color: ArenaColors.gold,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 2,
-                                ),
-                              ),
-                            ),
+                child: Container(
+                  width: ovalWidth * 0.78,
+                  // No fixed height: the trick cards size the zone,
+                  // so nothing is clipped on short screens.
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    borderRadius:
+                        const BorderRadius.all(Radius.elliptical(999, 999)),
+                    color: Colors.transparent,
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.05),
+                      width: 1,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
                           if (match.currentTrick != null &&
                               (match.phase == 'playing' || match.phase == 'trick-resolving'))
                             TrickArea(
@@ -276,10 +250,8 @@ class GameTable extends StatelessWidget {
                                 (p) => p.seat == match.currentTurnSeat && p.seat == mySeat,
                               ),
                             ),
-                        ],
-                      ),
-                    );
-                  },
+                    ],
+                  ),
                 ),
               ),
 
@@ -328,32 +300,13 @@ class _TableCenterEmblem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (match.phase == 'power-select') {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0F1A2C).withOpacity(0.7),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFFFD166).withOpacity(0.3)),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('👑', style: TextStyle(fontSize: 18)),
-            SizedBox(width: 8),
-            Text(
-              'SELECTING TRUMP SUIT',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w900,
-                color: Color(0xFFFFD166),
-                letterSpacing: 1.5,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+    // Round 11: the power-select emblem used to render here, in the
+    // table centre — but during power-select the table area is only
+    // ~135px tall (picker + hand eat the rest) while the active bottom
+    // chip is 91px tall, so the chip was pulled up into the emblem and
+    // the banner covered the bottom player's avatar/name. The banner
+    // now lives above the table in the game screen Column instead.
+    if (match.phase == 'power-select') return const SizedBox.shrink();
 
     if (match.powerSuit != null) {
       return Text(
@@ -591,7 +544,9 @@ class _TimedChip extends StatefulWidget {
 class _TimedChipState extends State<_TimedChip> {
   Timer? _timer;
   double _progress = 1.0;
-  int _secondsLeft = 18;
+  int _secondsLeft = 45;
+  int? _deadlineSeen;
+  int _totalMs = 45000;
 
   @override
   void initState() {
@@ -602,11 +557,19 @@ class _TimedChipState extends State<_TimedChip> {
 
   void _tick() {
     final remainingMs = widget.deadline - DateTime.now().millisecondsSinceEpoch;
-    const totalMs = 18000;
+    // A new deadline means a new turn: the total is whatever the
+    // deadline was when it first appeared (server TURN_TIMEOUT_MS is
+    // 45000). The old code hard-coded 18000 and clamped the seconds
+    // to 0..18, so the chip hit 0s while the server still allowed
+    // ~27s more.
+    if (_deadlineSeen != widget.deadline) {
+      _deadlineSeen = widget.deadline;
+      _totalMs = math.max(remainingMs, 1000);
+    }
     if (!mounted) return;
     setState(() {
-      _progress = (remainingMs / totalMs).clamp(0.0, 1.0);
-      _secondsLeft = (remainingMs / 1000).ceil().clamp(0, 18);
+      _progress = (remainingMs / _totalMs).clamp(0.0, 1.0);
+      _secondsLeft = (remainingMs / 1000).ceil().clamp(0, 99);
     });
   }
 

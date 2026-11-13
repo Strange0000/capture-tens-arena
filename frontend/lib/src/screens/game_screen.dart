@@ -514,6 +514,35 @@ class _GameScreenState extends State<GameScreen> {
                     trickWinnerMessage: _trickWinnerMessage,
                     lastTrickWinnerLabel: _lastTrickLabel,
                   ),
+                  // Power-suit phase banner — in the Column, above
+                  // the table, so it can never cover a player chip.
+                  // (Round 11: the old centred emblem inside the
+                  // table overlapped the bottom player's avatar/name
+                  // on short screens, because the table area shrinks
+                  // to ~135px while the picker and hand are showing.)
+                  if (match.phase == 'power-select')
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2, bottom: 2),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0B3D2E).withOpacity(0.85),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                              color: const Color(0xFFFFC857), width: 1),
+                        ),
+                        child: const Text(
+                          '👑  SELECTING TRUMP SUIT',
+                          style: TextStyle(
+                            color: Color(0xFFFFC857),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ),
+                    ),
                   // Table Arena (Clean, transparent, seamlessly integrating with table art)
                   Expanded(
                     child: Stack(
@@ -522,35 +551,6 @@ class _GameScreenState extends State<GameScreen> {
                           child: GameTable(
                             match: match,
                             mySeat: app.mySeat,
-                            // Round 10: a dropped card goes through
-                            // the same tap-time legality check as a
-                            // tap — the drag path used to call
-                            // app.playCard directly, so an illegal
-                            // drop was sent straight to the server.
-                            onCardPlayed: (cardId) {
-                              final card = match.hand
-                                  .where((c) => c.id == cardId)
-                                  .firstOrNull;
-                              if (card == null) return;
-                              _tryPlayCard(
-                                app: app,
-                                card: card,
-                                onIllegalTap: (reason) => _showBannerAlert(
-                                  reason,
-                                  Icons.info_outline_rounded,
-                                  const Color(0xFFFFD166),
-                                  sticky: true,
-                                ),
-                                onLegalPlay: () {
-                                  if (_bannerSticky) {
-                                    setState(() {
-                                      _bannerAlert = null;
-                                      _bannerSticky = false;
-                                    });
-                                  }
-                                },
-                              );
-                            },
                             tilt3d: _tableTilt3d,
                           ),
                         ),
@@ -1164,7 +1164,8 @@ String? _illegalReasonFor(
 /// trick (wrong lead suit, winner as current turn). Now a legal card
 /// always plays on the first tap, and the reason always names the
 /// rule that actually blocks the card. Returns true when played.
-/// Shared by the tap path and the drag path (GameTable.onCardPlayed).
+/// The single tap path for playing a card (Round 11: drag-to-play
+/// was removed — see _HandArea — so this is the only play path).
 bool _tryPlayCard({
   required AppState app,
   required ArenaCard card,
@@ -1243,11 +1244,20 @@ class _HandArea extends StatelessWidget {
     final isMyTurn = match.players.any(
       (p) => p.userId == app.userId && p.seat == match.currentTurnSeat,
     );
-    // A Draggable recognizer can win the gesture arena before a tap on
-    // touchscreens. On phones, use direct card taps; keep drag-to-play on
-    // larger layouts where a mouse drag is a reliable interaction.
-    final isTouchLayout = MediaQuery.sizeOf(context).width < 600;
-
+    // Round 11: NO Draggable wrapper on hand cards. The old code
+    // wrapped playable cards in Draggable on desktop widths, and a
+    // mouse's hit slop is 1.0 logical pixel (Flutter
+    // computeHitSlop: PointerDeviceKind.mouse -> kPrecisePointerHitSlop).
+    // ImmediateMultiDragGestureRecognizer resolves "accepted" as soon
+    // as the pointer moves >1px — a normal mouse click drifts that far
+    // — so the drag recognizer won the gesture arena and the tap
+    // recognizer lost: the first tap was silently swallowed (the card
+    // only raised / showed drag feedback), and the next click could
+    // land on a neighbouring off-suit card, which the legality code
+    // then rightly rejected with a follow-suit message. That is the
+    // Round 10 turn-change tap failures (A-clubs, 8-hearts, K-diamonds):
+    // the legality rules were already correct; the gesture layer was
+    // misrouting the taps. Tapping is the only play interaction now.
     // Prepare hand
     final hand = List<ArenaCard>.from(match.hand);
     if (autoSort) {
@@ -1314,9 +1324,6 @@ class _HandArea extends StatelessWidget {
                   final isLegal = match.phase == 'playing'
                       ? legalIds.contains(card.id)
                       : true;
-                  final canPlay =
-                      isMyTurn && match.phase == 'playing' && isLegal;
-
                   // 3D fan arc — shallow, so the outer cards don't
                   // ride up over the table.
                   final double fanAngle = N > 1 ? (index - (N - 1) / 2) * 0.015 : 0.0;
@@ -1334,7 +1341,11 @@ class _HandArea extends StatelessWidget {
                     width: cardWidth,
                   );
 
+                  // Keyed by card id, so a hand rebuild (new state
+                  // arriving exactly as a tap lands) can never reuse
+                  // one card's Element/gesture state for another card.
                   Widget wrappedCard = Transform(
+                    key: ValueKey(card.id),
                     transform: Matrix4.identity()
                       ..setEntry(3, 2, 0.001)
                       ..translate(0.0, yOffset, 0.0)
@@ -1343,32 +1354,9 @@ class _HandArea extends StatelessWidget {
                     child: cardWidget,
                   );
 
-                  if (canPlay && !isTouchLayout) {
-                    wrappedCard = Draggable<String>(
-                      data: card.id,
-                      feedback: Material(
-                        color: Colors.transparent,
-                        child: Transform.scale(
-                          scale: 1.12,
-                          child: ArenaCardWidget(
-                            card: card,
-                            powerSuit: match.powerSuit,
-                            onPlay: null,
-                            dimmed: false,
-                            width: cardWidth,
-                          ),
-                        ),
-                      ),
-                      childWhenDragging: Opacity(
-                        opacity: 0.25,
-                        child: wrappedCard,
-                      ),
-                      child: wrappedCard,
-                    );
-                  }
-
                   if (index < N - 1) {
                     return Align(
+                      key: ValueKey(card.id),
                       widthFactor: widthFactor,
                       alignment: Alignment.centerLeft,
                       child: wrappedCard,

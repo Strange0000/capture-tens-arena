@@ -132,15 +132,18 @@ class CapturesBar extends StatelessWidget {
     );
   }
 
-  /// Cards/aces count in plain words, always shown (Round 10).
-  /// Cards decide first; aces only matter if the cards are tied too,
-  /// so aces are shown only in that case.
+  /// Cards/aces count in plain words, always shown (Round 10/11).
+  /// Cards decide the tiebreaker first; aces only matter if the cards
+  /// are tied too — but both counts are always displayed, so the pill
+  /// never loses a segment mid-game.
   String _tiebreakerText() {
-    final cards = 'Cards: Team A ${captures.a.cards}, Team B ${captures.b.cards}';
-    if (captures.a.cards == captures.b.cards) {
-      return '$cards · Aces: Team A ${captures.a.aces}, Team B ${captures.b.aces}';
-    }
-    return cards;
+    // Round 11: aces used to be shown only when the card counts were
+    // tied — so in a real game they vanished after trick 2 (cards
+    // were never tied again in tricks 5-13) and only reappeared in
+    // the end modal. Cards and aces are both part of the score now,
+    // always visible like the Cards line.
+    return 'Cards: Team A ${captures.a.cards}, Team B ${captures.b.cards} '
+        '· Aces: Team A ${captures.a.aces}, Team B ${captures.b.aces}';
   }
 }
 

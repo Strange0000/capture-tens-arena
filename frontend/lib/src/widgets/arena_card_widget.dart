@@ -79,7 +79,23 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
         cursor: isPlayable
             ? SystemMouseCursors.click
             : SystemMouseCursors.basic,
-        child: GestureDetector(
+        // Round 11: the hover raise (-12px) used to live on the
+        // AnimatedContainer INSIDE the GestureDetector, so the hit
+        // box stayed where the card was BEFORE the raise: the top
+        // 12px of a raised card could not be tapped, and the bottom
+        // 12px of the hit box overlapped the card below it in the
+        // fan. The raise now wraps the GestureDetector, so the hit
+        // box follows the visual card exactly.
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          transform: isHovered
+              ? (Matrix4.identity()
+                ..setEntry(3, 2, 0.003)
+                ..translate(0.0, -12.0, 30.0))
+              : Matrix4.identity(),
+          transformAlignment: Alignment.center,
+          child: GestureDetector(
           // Only a playable card gets press feedback. A non-playable
           // card must NOT register onTapDown/onTapUp here: those
           // recognisers used to win the gesture arena and swallow the
@@ -96,12 +112,6 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeOutCubic,
-              transform: isHovered
-                  ? (Matrix4.identity()
-                    ..setEntry(3, 2, 0.003)
-                    ..translate(0.0, -12.0, 30.0))
-                  : Matrix4.identity(),
-              transformAlignment: Alignment.center,
               width: w,
               height: h,
               margin: EdgeInsets.symmetric(horizontal: 3 * scale),
@@ -296,7 +306,8 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }
 

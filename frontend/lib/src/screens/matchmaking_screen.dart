@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
+import '../widgets/royal_widgets.dart';
 
 class MatchmakingScreen extends StatefulWidget {
   const MatchmakingScreen({super.key});
@@ -135,48 +136,32 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
         }
       },
       child: Scaffold(
-      backgroundColor: const Color(0xFF070B13),
-      body: Stack(
-        children: [
-          // Background
-          Positioned.fill(
-            child: Image.asset('assets/images/matchmaking_bg.png', fit: BoxFit.cover),
-          ),
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    const Color(0xFF070B13).withOpacity(0.5),
-                    const Color(0xFF070B13).withOpacity(0.85),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // Content — Round 8: scrollable, so the Cancel button is
-          // always reachable. The old fixed Column (220px portal +
-          // spacers + timer + badge) was ~640px tall, so at a 506px
-          // window the Cancel button sat below the viewport and the
-          // screen looked like it had no Cancel at all. On short
-          // screens the portal and gaps shrink too.
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final isShort = constraints.maxHeight < 560;
-                return SingleChildScrollView(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight,
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 32),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
+      backgroundColor: Colors.transparent,
+      // Round 11: the old photo background (matchmaking_bg.png)
+      // left the right ~2/3 of a desktop screen black, and the
+      // content was a narrow ~310px column of intrinsic-width
+      // children. The background is now the code-drawn casino
+      // felt (same as lobby/game), and the content sits in a
+      // centred max-width column, so the screen reads as one
+      // full-width panel instead of a thin strip.
+      body: RoyalBackground(
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isShort = constraints.maxHeight < 560;
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: constraints.maxHeight,
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 560),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
                           SizedBox(height: isShort ? 8 : 24),
 
                           // Animated radar/portal
@@ -302,13 +287,14 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
                 ),
               ),
             ),
-          );
+          ),
+        ),
+      );
             },
           ),
         ),
-      ],
+      ),
     ),
-  ),
 );
   }
 }

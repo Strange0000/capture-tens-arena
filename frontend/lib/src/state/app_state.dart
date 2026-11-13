@@ -268,6 +268,50 @@ class AppState extends ChangeNotifier {
       if (incoming.id == _leftMatchId) return;
       if (incoming.phase != 'complete') _leftMatchId = null;
     }
+    // Stale-broadcast guard: the in-memory matchStore is per-process
+    // while the socket adapter is shared, so an older match:state can
+    // arrive after a newer one. A stale state must never rewind the
+    // game — it is what returned a played card to the hand and put the
+    // timer under the wrong player in Round 10 (trick 6). A new match
+    // always has a new id, so this only ever compares states of the
+    // same match.
+    if (match != null && incoming.id == match!.id) {
+      final current = match!;
+      if (incoming.turnGeneration < current.turnGeneration ||
+          (incoming.turnGeneration == current.turnGeneration &&
+              incoming.updatedAt < current.updatedAt)) {
+        debugPrint(
+            '[AppState] ignoring stale match:state '
+            '(gen ${incoming.turnGeneration}/${incoming.updatedAt} '
+            '< held ${current.turnGeneration}/${current.updatedAt})');
+        return;
+      }
+    }
+    // Duplicate-card detector (log only): hand + current trick must
+    // never contain the same card id twice. The engine simulation
+    // (300 games) and the server invariant say this cannot happen at
+    // state level, so if it ever appears on screen it is a rendering
+    // or stale-state problem — log it with the full ids instead of
+    // failing silently.
+    final seenIds = <String, String>{};
+    for (final card in incoming.hand) {
+      final prev = seenIds[card.id];
+      if (prev != null) {
+        debugPrint('[AppState] DUPLICATE card ${card.id} in hand (also in $prev)');
+      }
+      seenIds[card.id] = 'hand';
+    }
+    final trick = incoming.currentTrick;
+    if (trick != null) {
+      for (final play in trick.plays) {
+        final prev = seenIds[play.card.id];
+        if (prev != null) {
+          debugPrint(
+              '[AppState] DUPLICATE card ${play.card.id} in trick (also in $prev)');
+        }
+        seenIds[play.card.id] = 'trick';
+      }
+    }
     match = incoming;
     // Set inMatch for any active phase so reconnecting players are navigated correctly
     const activePhases = {'deal-five', 'power-select', 'deal-rest', 'playing', 'trick-resolving', 'complete'};

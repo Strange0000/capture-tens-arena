@@ -140,8 +140,65 @@ export function publicStateForSeat(state: MatchState, viewerSeat?: number) {
     },
     winnerTeam: state.winnerTeam,
     turnDeadline: state.turnDeadline,
-    firstPlayerSeat: state.firstPlayerSeat
+    firstPlayerSeat: state.firstPlayerSeat,
+    // Monotonic version of this match state. The client ignores a
+    // match:state whose (turnGeneration, updatedAt) is older than the
+    // one it already holds for the same match id: the in-memory
+    // matchStore is per-process while the socket adapter is shared,
+    // so a stale broadcast can otherwise revert the client — a played
+    // card returning to the hand and the timer under the wrong player
+    // (Round 10, trick 6). turnGeneration rises on every played card;
+    // updatedAt rises on every engine mutation (touch()).
+    turnGeneration: state.turnGeneration ?? 0,
+    updatedAt: state.updatedAt ?? 0
   };
+}
+
+/// 52-card invariant: hands + deck + current trick + completed tricks
+/// must contain exactly the 52 unique cards. Captures are a DERIVED
+/// view of the completed tricks (applyCapture copies the same card
+/// objects), so they are deliberately NOT counted here. Returns an
+/// error string on violation, null when the invariant holds. Log-only:
+/// callers must never throw on this — a false alarm must not break a
+/// live game.
+export function assertUniqueCards(state: MatchState): string | null {
+  const seen = new Map<string, string>();
+  const check = (card: Card, where: string): string | null => {
+    const prev = seen.get(card.id);
+    if (prev) return `duplicate ${card.id} in ${where} (already in ${prev})`;
+    seen.set(card.id, where);
+    return null;
+  };
+  for (const [seat, hand] of Object.entries(state.hands)) {
+    for (const c of hand) {
+      const e = check(c, `hand ${seat}`);
+      if (e) return e;
+    }
+  }
+  for (const c of state.deck) {
+    const e = check(c, "deck");
+    if (e) return e;
+  }
+  // During the "trick-resolving" window, playCard has already pushed
+  // the finished trick into completedTricks but currentTrick still
+  // references the SAME trick object (the client shows it for 2s).
+  // Count it once: skip currentTrick when its index is already in
+  // completedTricks.
+  const completedIndexes = new Set(state.completedTricks.map((t) => t.index));
+  if (state.currentTrick && !completedIndexes.has(state.currentTrick.index)) {
+    for (const play of state.currentTrick.plays) {
+      const e = check(play.card, `current trick (seat ${play.seat})`);
+      if (e) return e;
+    }
+  }
+  for (const trick of state.completedTricks) {
+    for (const play of trick.plays) {
+      const e = check(play.card, `completed trick ${trick.index} (seat ${play.seat})`);
+      if (e) return e;
+    }
+  }
+  if (seen.size !== 52) return `only ${seen.size} unique cards accounted for`;
+  return null;
 }
 
 function publicHandCounts(state: MatchState) {
