@@ -9,7 +9,9 @@ import '../theme.dart';
 import '../widgets/arena_loading.dart';
 import '../widgets/royal_widgets.dart';
 
+import '../models/arena_card.dart';
 import '../models/rank_info.dart';
+import '../widgets/arena_card_widget.dart';
 import '../services/audio_service.dart';
 import '../state/app_state.dart';
 
@@ -248,50 +250,398 @@ class _LobbyScreenState extends State<LobbyScreen>
   }
 
   // ── Wide Desktop / Tablet Layout ───────────────────────────────────────────
+  // Round 7 — a NEW layout, not a recolour: a big oval felt table in
+  // the CENTRE with the three game modes as round gold chips on its
+  // rim, a small career plaque at the TOP LEFT, and the Friends panel
+  // as a slim vertical strip on the RIGHT. The old structure (tall
+  // rank card on the left + stacked mode rows in the middle) is gone.
   Widget _buildWideLayout(BuildContext context, AppState app) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Left Column: Player Rank Trophy & Party
-        SizedBox(
-          width: 320,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _RankShowcaseCard(
-                username: app.username,
-                rankInfo: app.rankInfo,
-                floatAnim: _floatAnim,
-                onViewTiers: () => _showTiersSheet(context),
-                onViewReplays: () => Navigator.pushNamed(context, '/replay'),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Left: small career plaque (top-left) + party.
+            SizedBox(
+              width: 264,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _CareerPlaque(
+                    username: app.username,
+                    rankInfo: app.rankInfo,
+                    onViewTiers: () => _showTiersSheet(context),
+                    onViewReplays: () => Navigator.pushNamed(context, '/replay'),
+                  ),
+                  if (app.party != null) ...[
+                    const SizedBox(height: 12),
+                    _PartyBanner(party: app.party!, onLeave: app.leaveParty),
+                  ],
+                ],
               ),
-              if (app.party != null) ...[
-                const SizedBox(height: 16),
-                _PartyBanner(party: app.party!, onLeave: app.leaveParty),
-              ],
-              const SizedBox(height: 16),
-              _FriendsPanel(
+            ),
+            const SizedBox(width: 16),
+            // Centre: the oval table with the mode chips on its rim.
+            Expanded(child: _LobbyTable(context: context, app: app, showRoomPanel: _showRoomPanel, onToggleRoomPanel: () => setState(() => _showRoomPanel = !_showRoomPanel), roomController: _roomCodeController)),
+            const SizedBox(width: 16),
+            // Right: slim Friends strip.
+            SizedBox(
+              width: 272,
+              child: _FriendsPanel(
                 app: app,
                 onAdd: () => _showFriendsSheet(context),
                 onRemove: (friendId, username) => _confirmRemoveFriend(context, app, friendId, username),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-        const SizedBox(width: 24),
-
-        // Right Column: 3 Luxury Game Mode Portals
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildSectionHeader('SELECT ARENA', 'Choose your game mode to enter the table'),
-              const SizedBox(height: 16),
-              _buildGamePortals(context, app),
-            ],
-          ),
+        const SizedBox(height: 14),
+        // How to Play / Tutorial — under the table, centred.
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 220,
+              child: OutlinedButton.icon(
+                onPressed: () => _showRulesSheet(context),
+                icon: const Icon(Icons.menu_book_rounded, color: Color(0xFFFFC857), size: 20),
+                label: const Text('How to Play'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Color(0xFFFFC857), width: 1.2),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 220,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.pushNamed(context, '/tutorial'),
+                icon: const Icon(Icons.school_rounded, color: Color(0xFFFFC857), size: 20),
+                label: const Text('Interactive Tutorial'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: Colors.white.withOpacity(0.2)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
+    );
+  }
+
+  // ── Lobby centre table ─────────────────────────────────────────────────────
+  // Oval felt table (same wood rim + gold pinstripe as the game table)
+  // with three sample cards in the middle and the game modes as round
+  // gold chips sitting on its rim — Ranked top, Bot Practice bottom
+  // left, Private Room bottom right. Tapping a chip enters that mode.
+  Widget _LobbyTable({
+    required BuildContext context,
+    required AppState app,
+    required bool showRoomPanel,
+    required VoidCallback onToggleRoomPanel,
+    required TextEditingController roomController,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final tableW = constraints.maxWidth.clamp(320.0, 640.0);
+        final tableH = tableW * 0.58;
+        const chipD = 118.0;
+        return Column(
+          children: [
+            SizedBox(
+              width: tableW,
+              height: tableH + chipD * 0.55,
+              child: Stack(
+                alignment: Alignment.center,
+                clipBehavior: Clip.none,
+                children: [
+                  // The oval table.
+                  Center(
+                    child: Container(
+                      width: tableW,
+                      height: tableH,
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.all(Radius.elliptical(999, 999)),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFFB07A45), Color(0xFF7A4E24), Color(0xFF4A2C14)],
+                        ),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withOpacity(0.55), blurRadius: 28, offset: const Offset(0, 10)),
+                        ],
+                      ),
+                      padding: const EdgeInsets.all(12),
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(
+                          borderRadius: BorderRadius.all(Radius.elliptical(999, 999)),
+                          border: Border.fromBorderSide(BorderSide(color: Color(0xFFFFC857), width: 2)),
+                        ),
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            borderRadius: BorderRadius.all(Radius.elliptical(999, 999)),
+                            gradient: RadialGradient(
+                              center: Alignment(0, -0.25),
+                              radius: 1.1,
+                              colors: [Color(0xFF1B7A4D), Color(0xFF0E5C38), Color(0xFF0B3D2E)],
+                            ),
+                          ),
+                          child: Center(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Transform.rotate(angle: -0.08, child: ArenaCardWidget(card: const ArenaCard(id: 'lobby-a', rank: 'A', suit: 'spades'), powerSuit: null, onPlay: null, width: 52)),
+                                const SizedBox(width: 6),
+                                Transform.rotate(angle: 0.04, child: ArenaCardWidget(card: const ArenaCard(id: 'lobby-k', rank: 'K', suit: 'hearts'), powerSuit: null, onPlay: null, width: 52)),
+                                const SizedBox(width: 6),
+                                Transform.rotate(angle: 0.1, child: ArenaCardWidget(card: const ArenaCard(id: 'lobby-q', rank: 'Q', suit: 'clubs'), powerSuit: null, onPlay: null, width: 52)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Ranked — top rim.
+                  Positioned(
+                    top: -6,
+                    child: _ModeChip(
+                      label: 'Ranked',
+                      sublabel: '2v2 · +25 MMR',
+                      icon: Icons.military_tech_rounded,
+                      color: const Color(0xFFFFC857),
+                      diameter: chipD,
+                      onTap: () {
+                        app.queueRanked();
+                        Navigator.pushNamed(context, '/matchmaking');
+                      },
+                    ),
+                  ),
+                  // Bot Practice — bottom-left rim.
+                  Positioned(
+                    left: tableW * 0.06,
+                    bottom: -6,
+                    child: _ModeChip(
+                      label: 'Bot Practice',
+                      sublabel: 'Solo · Risk free',
+                      icon: Icons.smart_toy_rounded,
+                      color: const Color(0xFF3FA97C),
+                      diameter: chipD,
+                      onTap: () {
+                        app.startOffline('hard');
+                        Navigator.pushNamed(context, '/game');
+                      },
+                    ),
+                  ),
+                  // Private Room — bottom-right rim.
+                  Positioned(
+                    right: tableW * 0.06,
+                    bottom: -6,
+                    child: _ModeChip(
+                      label: 'Private Room',
+                      sublabel: 'Custom code',
+                      icon: Icons.group_add_rounded,
+                      color: const Color(0xFFD4A017),
+                      diameter: chipD,
+                      onTap: onToggleRoomPanel,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'SELECT A MODE TO START',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2.5,
+                color: ArenaColors.gold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Ranked — competitive 2v2 · Bot Practice — solo vs bots · Private Room — play with friends',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 11, color: Colors.white54, height: 1.4),
+            ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOutCubic,
+              child: showRoomPanel
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: _PrivateRoomPanel(
+                        controller: roomController,
+                        onCreate: () => app.createRoom(),
+                        onJoin: () {
+                          final code = roomController.text.trim();
+                          if (code.isEmpty) return;
+                          app.joinRoom(code);
+                        },
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ── Small career plaque (top-left of the wide lobby) ────────────────
+  // Compact cream/gold plaque: crest, name, tier, wins/losses — the
+  // tall rank showcase card lives on in the narrow layout only.
+  Widget _CareerPlaque({
+    required String? username,
+    required RankInfo? rankInfo,
+    required VoidCallback onViewTiers,
+    required VoidCallback onViewReplays,
+  }) {
+    final rank = rankInfo ?? RankInfo.fromMmr(0);
+    final tierColor = rank.color;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5EFE0).withOpacity(0.97),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFFFC857).withOpacity(0.6), width: 1.5),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 18, offset: const Offset(0, 6)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'CAREER RATING',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  color: const Color(0xFF1B2A22).withOpacity(0.55),
+                  letterSpacing: 2.0,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: tierColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  rank.seasonDisplay,
+                  style: TextStyle(color: tierColor, fontWeight: FontWeight.bold, fontSize: 10),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Image.asset(rank.icon, height: 52, width: 52),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      username ?? 'Guest Player',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF1B2A22)),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${rank.displayName}  ·  ${rank.mmr} MMR',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tierColor),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: rank.progressInTier.clamp(0.0, 1.0),
+              minHeight: 6,
+              backgroundColor: const Color(0xFF1B2A22).withOpacity(0.08),
+              valueColor: AlwaysStoppedAnimation<Color>(tierColor),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Next: ${rank.nextTierMmr} MMR', style: TextStyle(color: const Color(0xFF1B2A22).withOpacity(0.5), fontSize: 11)),
+              Text('Peak: ${rank.peakMmr} MMR', style: TextStyle(color: const Color(0xFF1B2A22).withOpacity(0.5), fontSize: 11)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1B2A22).withOpacity(0.06),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF1B2A22).withOpacity(0.12)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _StatCell(label: 'WINS', value: '${rank.wins}', color: const Color(0xFF3FA97C)),
+                Container(width: 1, height: 24, color: const Color(0xFF1B2A22).withOpacity(0.12)),
+                _StatCell(label: 'LOSSES', value: '${rank.losses}', color: Colors.redAccent),
+                Container(width: 1, height: 24, color: const Color(0xFF1B2A22).withOpacity(0.12)),
+                _StatCell(label: 'WIN RATE', value: rank.winRate, color: const Color(0xFFFFC857)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onViewTiers,
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: const Color(0xFF1B2A22).withOpacity(0.25)),
+                    foregroundColor: const Color(0xFF1B2A22).withOpacity(0.85),
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.leaderboard_rounded, size: 16),
+                  label: const Text('Tier List', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onViewReplays,
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: const Color(0xFF1B2A22).withOpacity(0.25)),
+                    foregroundColor: const Color(0xFF1B2A22).withOpacity(0.85),
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.history_rounded, size: 16),
+                  label: const Text('Replays', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -2674,3 +3024,99 @@ class GlassPanel extends StatelessWidget {
     );
   }
 }
+
+// ── Round gold mode chip (sits on the lobby table rim) ──────────────────
+class _ModeChip extends StatefulWidget {
+  const _ModeChip({
+    required this.label,
+    required this.sublabel,
+    required this.icon,
+    required this.color,
+    required this.diameter,
+    required this.onTap,
+  });
+
+  final String label;
+  final String sublabel;
+  final IconData icon;
+  final Color color;
+  final double diameter;
+  final VoidCallback onTap;
+
+  @override
+  State<_ModeChip> createState() => _ModeChipState();
+}
+
+class _ModeChipState extends State<_ModeChip> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      cursor: SystemMouseCursors.click,
+      child: AnimatedScale(
+        scale: _hovering ? 1.06 : 1.0,
+        duration: const Duration(milliseconds: 150),
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: widget.onTap,
+            child: Container(
+              width: widget.diameter,
+              height: widget.diameter,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    widget.color,
+                    widget.color.withOpacity(0.75),
+                  ],
+                ),
+                border: Border.all(color: const Color(0xFF3A2410), width: 3),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withOpacity(0.55), blurRadius: 14, offset: const Offset(0, 5)),
+                  BoxShadow(color: widget.color.withOpacity(0.35), blurRadius: 18, offset: const Offset(0, 2)),
+                ],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(widget.icon, size: 26, color: const Color(0xFF2A1A0A)),
+                  const SizedBox(height: 3),
+                  Text(
+                    widget.label,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF2A1A0A),
+                      height: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    widget.sublabel,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF2A1A0A).withOpacity(0.7),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+

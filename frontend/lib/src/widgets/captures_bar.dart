@@ -39,6 +39,7 @@ class CapturesBar extends StatelessWidget {
     this.powerSuit,
     this.trickWinnerMessage,
     this.lastTrickWinnerLabel,
+    this.vertical = false,
   });
 
   final MatchCaptures captures;
@@ -51,25 +52,78 @@ class CapturesBar extends StatelessWidget {
   /// [trickWinnerMessage], this is never cleared after 2 seconds.
   final String? lastTrickWinnerLabel;
 
+  /// Round 7: side-panel layout — the score lives in a vertical gold
+  /// panel on the left of the game screen instead of a pill on top.
+  final bool vertical;
+
   @override
   Widget build(BuildContext context) {
     final sw = MediaQuery.of(context).size.width;
     final isMobile = sw < 450;
 
-    final aLeads = captures.a.tens > captures.b.tens;
-    final bLeads = captures.b.tens > captures.a.tens;
-    final tensTied = !aLeads && !bLeads;
-    final trickNumber = (completedTricks + 1).clamp(1, 13);
-    final progress = (completedTricks.clamp(0, 13)) / 13;
-
-    // Plain-words status, obvious at a glance.
-    final String statusText;
-    if (tensTied) {
-      statusText = 'Tied ${captures.a.tens}–${captures.b.tens}';
-    } else if (aLeads) {
-      statusText = 'Team A leads';
-    } else {
-      statusText = 'Team B leads';
+    if (vertical) {
+      return Container(
+        width: 208,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF123527), Color(0xFF0B241A)],
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: ArenaColors.gold.withOpacity(0.55),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.45),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _ScoreRows(
+              captures: captures,
+              completedTricks: completedTricks,
+              isMobile: isMobile,
+              powerSuit: powerSuit,
+              lastTrickWinnerLabel: lastTrickWinnerLabel,
+              tiebreakerText: _tiebreakerText(),
+              vertical: true,
+            ),
+            if (trickWinnerMessage != null) ...[
+              const SizedBox(height: 8),
+              Container(height: 1, color: Colors.white10),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('👑', style: TextStyle(fontSize: 14)),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      trickWinnerMessage!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: ArenaColors.goldSoft,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      );
     }
 
     return Padding(
@@ -171,6 +225,7 @@ class _ScoreRows extends StatelessWidget {
     required this.powerSuit,
     required this.lastTrickWinnerLabel,
     required this.tiebreakerText,
+    this.vertical = false,
   });
 
   final MatchCaptures captures;
@@ -179,6 +234,7 @@ class _ScoreRows extends StatelessWidget {
   final String? powerSuit;
   final String? lastTrickWinnerLabel;
   final String tiebreakerText;
+  final bool vertical;
 
   @override
   Widget build(BuildContext context) {
@@ -192,6 +248,135 @@ class _ScoreRows extends StatelessWidget {
         : aLeads
             ? 'Team A leads'
             : 'Team B leads';
+
+    if (vertical) {
+      // Side panel: same groups, stacked top to bottom.
+      return Column(
+        key: const ValueKey('score_card_vertical'),
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'TENS CAPTURED',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              color: Colors.white38,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'A ${captures.a.tens}',
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  color: aLeads ? ArenaColors.gold : Colors.white,
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6),
+                child: Text('—', style: TextStyle(fontSize: 16, color: Colors.white38)),
+              ),
+              Text(
+                '${captures.b.tens} B',
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  color: bLeads ? ArenaColors.gold : Colors.white,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Center(child: _StatusPill(text: statusText, isTie: tensTied)),
+          const SizedBox(height: 10),
+          Container(height: 1, color: Colors.white10),
+          const SizedBox(height: 10),
+          Center(
+            child: powerSuit != null
+                ? _TrumpChip(suit: powerSuit!)
+                : const Text(
+                    'Trump not chosen yet',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: ArenaColors.gold,
+                      height: 1.3,
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 10),
+          Container(height: 1, color: Colors.white10),
+          const SizedBox(height: 10),
+          Text(
+            'Trick $trickNumber of 13',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: ArenaColors.gold,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            height: 5,
+            decoration: BoxDecoration(
+              color: Colors.white12,
+              borderRadius: BorderRadius.circular(3),
+            ),
+            alignment: Alignment.centerLeft,
+            child: FractionallySizedBox(
+              widthFactor: progress,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: ArenaColors.gold,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ),
+          ),
+          if (lastTrickWinnerLabel != null || tensTied) ...[
+            const SizedBox(height: 10),
+            Container(height: 1, color: Colors.white10),
+            const SizedBox(height: 8),
+            if (lastTrickWinnerLabel != null)
+              Text(
+                'Last trick won by $lastTrickWinnerLabel',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: ArenaColors.goldSoft,
+                  height: 1.35,
+                ),
+              ),
+            if (tensTied) ...[
+              if (lastTrickWinnerLabel != null) const SizedBox(height: 6),
+              Text(
+                tiebreakerText,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white54,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ],
+        ],
+      );
+    }
 
     return Column(
       key: const ValueKey('score_card'),

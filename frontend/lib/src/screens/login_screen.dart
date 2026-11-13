@@ -97,12 +97,15 @@ class _LoginScreenState extends State<LoginScreen>
       if (mounted) Navigator.pushReplacementNamed(context, '/lobby');
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Google Sign-In failed: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(_friendlyGoogleError(e)),
+              backgroundColor: Colors.redAccent,
+              duration: const Duration(seconds: 4),
+            ),
+          );
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -113,7 +116,6 @@ class _LoginScreenState extends State<LoginScreen>
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final hasCached = app.hasCachedSession;
-    final screenHeight = MediaQuery.of(context).size.height;
 
     return Scaffold(
       body: MouseRegion(
@@ -332,6 +334,24 @@ class _LoginScreenState extends State<LoginScreen>
 
   Widget _SuitIcon(String s, Color c) => Text(s, style: TextStyle(fontSize: 28, color: c.withOpacity(0.18)));
 
+  /// Plain-words version of a Google sign-in failure. The raw SDK
+  /// errors ("Bad state: Future already completed") mean nothing to a
+  /// player, and a stale one used to sit on screen as a red banner
+  /// even for guest play. A failed sign-in must never block guest play.
+  String _friendlyGoogleError(Object e) {
+    final msg = e.toString();
+    if (msg.contains('Future already completed') || msg.contains('Bad state')) {
+      return 'Google sign-in is busy right now. Please tap again.';
+    }
+    if (msg.contains('popup_closed') || msg.contains('cancelled')) {
+      return 'Google sign-in was cancelled. You can still play as a guest.';
+    }
+    if (msg.contains('network') || msg.contains('Failed to fetch')) {
+      return 'Could not reach Google. Check your connection and try again.';
+    }
+    return 'Google sign-in did not work. You can still play as a guest.';
+  }
+
   Widget _buildGoogleButton(AppState app, {bool compact = false}) {
     if (kIsWeb) {
       return google_web.GoogleSignInWebButton(
@@ -347,12 +367,15 @@ class _LoginScreenState extends State<LoginScreen>
         },
         onError: (error) {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Google Sign-In failed: $error'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              SnackBar(
+                content: Text(_friendlyGoogleError(error)),
+                backgroundColor: Colors.redAccent,
+                duration: const Duration(seconds: 4),
+              ),
+            );
         },
       );
     }
