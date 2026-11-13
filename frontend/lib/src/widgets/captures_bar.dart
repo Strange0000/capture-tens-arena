@@ -39,8 +39,6 @@ class CapturesBar extends StatelessWidget {
     this.powerSuit,
     this.trickWinnerMessage,
     this.lastTrickWinnerLabel,
-    this.vertical = false,
-    this.compact = false,
   });
 
   final MatchCaptures captures;
@@ -53,85 +51,10 @@ class CapturesBar extends StatelessWidget {
   /// [trickWinnerMessage], this is never cleared after 2 seconds.
   final String? lastTrickWinnerLabel;
 
-  /// Round 7: side-panel layout — the score lives in a vertical gold
-  /// panel on the left of the game screen instead of a pill on top.
-  final bool vertical;
-
-  /// Round 8: on short desktop windows (e.g. 1024×506) the side
-  /// panel must shrink instead of overflowing — smaller score text
-  /// and tighter spacing so the whole panel fits in ~300px of height.
-  final bool compact;
-
   @override
   Widget build(BuildContext context) {
     final sw = MediaQuery.of(context).size.width;
     final isMobile = sw < 450;
-
-    if (vertical) {
-      return Container(
-        width: compact ? 184 : 208,
-        padding: EdgeInsets.symmetric(horizontal: 14, vertical: compact ? 8 : 12),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF123527), Color(0xFF0B241A)],
-          ),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: ArenaColors.gold.withOpacity(0.55),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.45),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _ScoreRows(
-              captures: captures,
-              completedTricks: completedTricks,
-              isMobile: isMobile,
-              powerSuit: powerSuit,
-              lastTrickWinnerLabel: lastTrickWinnerLabel,
-              tiebreakerText: _tiebreakerText(),
-              vertical: true,
-              compact: compact,
-            ),
-            if (trickWinnerMessage != null) ...[
-              const SizedBox(height: 8),
-              Container(height: 1, color: Colors.white10),
-              const SizedBox(height: 6),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('👑', style: TextStyle(fontSize: 14)),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      trickWinnerMessage!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: ArenaColors.goldSoft,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      );
-    }
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 16, vertical: 4),
@@ -232,8 +155,6 @@ class _ScoreRows extends StatelessWidget {
     required this.powerSuit,
     required this.lastTrickWinnerLabel,
     required this.tiebreakerText,
-    this.vertical = false,
-    this.compact = false,
   });
 
   final MatchCaptures captures;
@@ -242,8 +163,6 @@ class _ScoreRows extends StatelessWidget {
   final String? powerSuit;
   final String? lastTrickWinnerLabel;
   final String tiebreakerText;
-  final bool vertical;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -258,137 +177,6 @@ class _ScoreRows extends StatelessWidget {
             ? 'Team A leads'
             : 'Team B leads';
 
-    if (vertical) {
-      // Side panel: same groups, stacked top to bottom.
-      // Compact (short screens): tighter gaps, smaller score.
-      final gap = compact ? 5.0 : 10.0;
-      final scoreSize = compact ? 20.0 : 26.0;
-      return Column(
-        key: const ValueKey('score_card_vertical'),
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'TENS CAPTURED',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w800,
-              color: Colors.white38,
-              letterSpacing: 1.2,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'A ${captures.a.tens}',
-                style: TextStyle(
-                  fontSize: scoreSize,
-                  fontWeight: FontWeight.w900,
-                  color: aLeads ? ArenaColors.gold : Colors.white,
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 6),
-                child: Text('—', style: TextStyle(fontSize: 16, color: Colors.white38)),
-              ),
-              Text(
-                '${captures.b.tens} B',
-                style: TextStyle(
-                  fontSize: scoreSize,
-                  fontWeight: FontWeight.w900,
-                  color: bLeads ? ArenaColors.gold : Colors.white,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: gap),
-          Center(child: _StatusPill(text: statusText, isTie: tensTied)),
-          SizedBox(height: gap),
-          Container(height: 1, color: Colors.white10),
-          SizedBox(height: gap),
-          Center(
-            child: powerSuit != null
-                ? _TrumpChip(suit: powerSuit!)
-                : const Text(
-                    'Trump not chosen yet',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      color: ArenaColors.gold,
-                      height: 1.3,
-                    ),
-                  ),
-          ),
-          SizedBox(height: gap),
-          Container(height: 1, color: Colors.white10),
-          SizedBox(height: gap),
-          Text(
-            'Trick $trickNumber of 13',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: ArenaColors.gold,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Container(
-            height: 5,
-            decoration: BoxDecoration(
-              color: Colors.white12,
-              borderRadius: BorderRadius.circular(3),
-            ),
-            alignment: Alignment.centerLeft,
-            child: FractionallySizedBox(
-              widthFactor: progress,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: ArenaColors.gold,
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-            ),
-          ),
-          if (lastTrickWinnerLabel != null || tensTied) ...[
-            SizedBox(height: gap),
-            Container(height: 1, color: Colors.white10),
-            SizedBox(height: gap - 2),
-            if (lastTrickWinnerLabel != null)
-              Text(
-                'Last trick won by $lastTrickWinnerLabel',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: ArenaColors.goldSoft,
-                  height: 1.35,
-                ),
-              ),
-            if (tensTied) ...[
-              if (lastTrickWinnerLabel != null) const SizedBox(height: 6),
-              Text(
-                tiebreakerText,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white54,
-                  height: 1.35,
-                ),
-              ),
-            ],
-          ],
-        ],
-      );
-    }
 
     return Column(
       key: const ValueKey('score_card'),

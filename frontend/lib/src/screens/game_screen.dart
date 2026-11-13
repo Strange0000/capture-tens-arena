@@ -131,18 +131,13 @@ class _GameScreenState extends State<GameScreen> {
     final app = context.watch<AppState>();
     final viewport = MediaQuery.sizeOf(context);
     final isVeryNarrowPhone = viewport.width < 360;
-    // Round 7 side-panel layout (desktop): score panel on the left,
-    // table in the centre, hand fanned vertically on the right.
-    // Round 8: the height gate is GONE. Round 7 required height
-    // >= 560, so at the 1024×506 test window the new layout never
-    // showed and the old top-bar + bottom-row layout appeared
-    // instead — with the hand clipped. The side layout is now used
-    // on every desktop-width window (>= 900px); on short windows the
-    // panel, cards and gaps shrink (see compact + the vertical hand
-    // sizing below) so everything still fits. Only genuinely narrow
-    // screens (< 900px) keep the old top-pill + bottom-hand row.
-    final isSideLayout = viewport.width >= 900;
-    final isShortSideLayout = viewport.height < 560;
+    // Round 9: the Round 7/8 side-panel layout (score panel left,
+    // hand fanned vertically right) is REVERTED. Sumit saw it live
+    // and said the previous table was much better — the side layout
+    // squeezed the hand into a thin strip and left the table mostly
+    // empty. The game is back to the previous layout on every width:
+    // centred score pill on top, oval table in the centre, hand
+    // fanned horizontally along the bottom with big readable cards.
     final isCompactGameControls = viewport.width < 400;
     final isShortPhone = viewport.height < 700;
 
@@ -480,170 +475,9 @@ class _GameScreenState extends State<GameScreen> {
         body: SafeArea(
           child: Stack(
             children: [
-              // Main game area — Round 7 side-panel layout on
-              // desktop (score left, table centre, hand right), and
-              // the old top-pill + bottom-hand row on narrow screens.
-              if (isSideLayout)
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Left: vertical score panel.
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 4, 12),
-                      child: CapturesBar(
-                        captures: match.captures,
-                        completedTricks: match.completedTricksCount,
-                        myTeam: app.myTeam,
-                        powerSuit: match.powerSuit,
-                        trickWinnerMessage: _trickWinnerMessage,
-                        lastTrickWinnerLabel: _lastTrickLabel,
-                        vertical: true,
-                        compact: isShortSideLayout,
-                      ),
-                    ),
-                    // Centre: the table, with the power-suit picker
-                    // overlaid at the bottom when it is time to choose.
-                    Expanded(
-                      child: Stack(
-                        children: [
-                          Positioned.fill(
-                            child: GameTable(
-                              match: match,
-                              mySeat: app.mySeat,
-                              onCardPlayed: app.playCard,
-                              tilt3d: _tableTilt3d,
-                            ),
-                          ),
-                          Positioned(
-                            bottom: 10,
-                            right: 12,
-                            child: EmotePicker(onEmote: (code) => app.sendEmote(code)),
-                          ),
-                          if (app.latestEmote != null)
-                            Positioned(
-                              top: 12,
-                              left: 0,
-                              right: 0,
-                              child: Center(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
-                                  decoration: BoxDecoration(
-                                    color: ArenaColors.panel.withOpacity(0.92),
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: const Color(0xFF3FA97C).withOpacity(0.4), width: 1.5),
-                                    boxShadow: [
-                                      BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 14),
-                                    ],
-                                  ),
-                                  child: Text(
-                                    '${app.latestEmote!['username']}: ${_emoteEmoji(app.latestEmote!['emote'] as String? ?? '')}',
-                                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          if (match.phase == 'power-select')
-                            Positioned(
-                              left: 16,
-                              right: 16,
-                              bottom: 8,
-                              child: SizedBox(
-                                height: 160,
-                                child: (match.players.firstWhere((pl) => pl.userId == app.userId, orElse: () => match.players.first).seat == match.firstPlayerSeat)
-                                    ? PowerSuitPicker(onSelect: app.selectPower)
-                                    : Center(
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                          decoration: BoxDecoration(
-                                            color: ArenaColors.panel.withOpacity(0.9),
-                                            borderRadius: BorderRadius.circular(16),
-                                            border: Border.all(color: Colors.white.withOpacity(0.1)),
-                                          ),
-                                          child: Text(
-                                            'Waiting for ${match.players.firstWhere((pl) => pl.seat == match.firstPlayerSeat).username} to select Power Suit...',
-                                            style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
-                                      ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    // Right: hand fanned vertically — never clipped
-                    // by the bottom edge, because there is no bottom row.
-                    // Round 8: on short windows the cards and the fan
-                    // overlap shrink so the whole 13-card hand fits
-                    // inside the rail without scrolling: at 506px tall
-                    // the hand is 12×22 + 69 ≈ 333px, inside the
-                    // ~390px the rail has after its header.
-                    Container(
-                      width: 104,
-                      padding: const EdgeInsets.fromLTRB(4, 10, 12, 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const Text(
-                            'YOUR HAND',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.5,
-                              color: ArenaColors.gold,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            isMyTurnNow ? 'Your turn' : 'Waiting…',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: isMyTurnNow ? ArenaColors.emerald : Colors.white54,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Expanded(
-                            child: _showDealAnimation
-                                ? const SizedBox.shrink()
-                                : _HandArea(
-                                    app: app,
-                                    cardWidth: viewport.height < 560
-                                        ? 48.0
-                                        : viewport.height < 700
-                                            ? 56.0
-                                            : 68.0,
-                                    verticalOverlap: viewport.height < 560
-                                        ? 22.0
-                                        : viewport.height < 700
-                                            ? 26.0
-                                            : 30.0,
-                                    autoSort: _autoSortHand,
-                                    highlightLegal: _highlightLegal,
-                                    vertical: true,
-                                    onIllegalTap: (reason) => _showBannerAlert(
-                                      reason,
-                                      Icons.info_outline_rounded,
-                                      const Color(0xFFFFD166),
-                                      sticky: true,
-                                    ),
-                                    onLegalPlay: () {
-                                      if (_bannerSticky) {
-                                        setState(() {
-                                          _bannerAlert = null;
-                                          _bannerSticky = false;
-                                        });
-                                      }
-                                    },
-                                  ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                )
-              else
+              // Main game area — the previous table layout on
+              // every width: centred score pill on top, oval table
+              // in the centre, hand fanned along the bottom.
               Column(
                 children: [
                   // Esports HUD Scoreboard
@@ -792,8 +626,8 @@ class _GameScreenState extends State<GameScreen> {
               // margin, never over the centre cards or the hand.
               Positioned(
                 top: 52,
-                left: isSideLayout ? 240 : 20,
-                right: isSideLayout ? 120 : 20,
+                left: 20,
+                right: 20,
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 300),
                   transitionBuilder: (child, animation) {
@@ -1106,8 +940,6 @@ class _HandArea extends StatelessWidget {
     required this.highlightLegal,
     this.onIllegalTap,
     this.onLegalPlay,
-    this.vertical = false,
-    this.verticalOverlap = 30.0,
   });
 
   final AppState app;
@@ -1121,16 +953,6 @@ class _HandArea extends StatelessWidget {
   /// it to clear a sticky illegal-tap hint, so a stale hint ("You must
   /// follow the lead suit") cannot linger after the player complied.
   final VoidCallback? onLegalPlay;
-
-  /// Round 7: side-panel layout — the hand fans VERTICALLY down the
-  /// right side of the screen instead of in a row along the bottom,
-  /// so it can never be clipped by the bottom edge.
-  final bool vertical;
-
-  /// Overlap between stacked cards in the vertical fan. Round 8:
-  /// shrinks on short windows so the whole 13-card hand fits in the
-  /// rail without scrolling.
-  final double verticalOverlap;
 
   static const _rankValues = {
     'A': 14, 'K': 13, 'Q': 12, 'J': 11, '10': 10,
@@ -1174,8 +996,8 @@ class _HandArea extends StatelessWidget {
   }
 
   /// Plain-words reason a card cannot be played right now. Shared by
-  /// the tap handler below so the message is identical in the
-  /// vertical and horizontal fans.
+  /// the tap handler below so the message is identical wherever a
+  /// card is tapped.
   static String? _illegalReasonFor(
     ArenaCard card,
     MatchState match,
@@ -1250,43 +1072,6 @@ class _HandArea extends StatelessWidget {
     }
 
     final N = hand.length;
-
-    if (vertical) {
-      // Vertical fan: cards stacked top to bottom, each one peeking
-      // out below the last (visible strip, rank + suit readable).
-      // Same tap / illegal-tap / drag-free logic as the horizontal row.
-      final cardHeight = cardWidth * 1.428;
-      final overlap = verticalOverlap;
-      final totalHeight = (N - 1) * overlap + cardHeight;
-      return SingleChildScrollView(
-        child: SizedBox(
-          width: cardWidth + 16,
-          height: totalHeight,
-          child: Stack(
-            children: List.generate(N, (index) {
-              final card = hand[index];
-              final isLegal = _isCardLegal(card, match.currentTrick, match.hand, match: match);
-              return Positioned(
-                top: index * overlap,
-                left: 8,
-                child: ArenaCardWidget(
-                  card: card,
-                  powerSuit: match.powerSuit,
-                  isLegal: highlightLegal ? isLegal : true,
-                  // One tap path for both outcomes: _handleCardTap
-                  // re-checks playability at tap time (Round 8), so
-                  // a tap is never judged on stale build-time state.
-                  onPlay: () => _handleCardTap(app, card),
-                  onIllegalTap: () => _handleCardTap(app, card),
-                  dimmed: !isMyTurn,
-                  width: cardWidth,
-                ),
-              );
-            }),
-          ),
-        ),
-      );
-    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
