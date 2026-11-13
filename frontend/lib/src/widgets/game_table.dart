@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../models/match_state.dart';
 import '../services/audio_service.dart';
+import '../theme.dart';
 import 'trick_area.dart';
 
 /// Oval poker table, following the reference table Sumit shared:
@@ -85,7 +86,7 @@ class GameTable extends StatelessWidget {
         final double chipH = ovalHeight < 200
             ? (mobileLayout ? 47.0 : 51.0)
             : (mobileLayout ? 53.0 : 59.0);
-        final double chipW = 116.0;
+        final double chipW = 150.0;
         const double chipGap = 8.0; // clear space between a chip and a played card
 
         Offset chipPosition(MatchPlayer player) {
@@ -148,7 +149,7 @@ class GameTable extends StatelessWidget {
                           const Color(0xFF072A20),
                         ],
                       ),
-                      border: Border.all(color: const Color(0xFFFFC857).withOpacity(0.22), width: 1),
+                      border: Border.all(color: const Color(0xFFFFC857).withOpacity(0.45), width: 1.5),
                       boxShadow: [
                         BoxShadow(color: Colors.black.withOpacity(0.35), blurRadius: 12, offset: const Offset(0, 2)),
                       ],
@@ -180,11 +181,11 @@ class GameTable extends StatelessWidget {
                       decoration: BoxDecoration(
                         borderRadius: const BorderRadius.all(Radius.elliptical(999, 999)),
                         color: isHoveredWithCard
-                            ? const Color(0xFF48E5C2).withOpacity(0.14)
+                            ? ArenaColors.gold.withOpacity(0.12)
                             : Colors.transparent,
                         border: Border.all(
                           color: isHoveredWithCard
-                              ? const Color(0xFF48E5C2)
+                              ? ArenaColors.gold
                               : Colors.white.withOpacity(0.05),
                           width: isHoveredWithCard ? 2 : 1,
                         ),
@@ -199,7 +200,7 @@ class GameTable extends StatelessWidget {
                               child: Text(
                                 'RELEASE TO PLAY',
                                 style: TextStyle(
-                                  color: Color(0xFF48E5C2),
+                                  color: ArenaColors.gold,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w900,
                                   letterSpacing: 2,
@@ -306,7 +307,7 @@ class _TableCenterEmblem extends StatelessWidget {
         style: TextStyle(
           fontSize: 11,
           fontWeight: isMyTurn ? FontWeight.w900 : FontWeight.w600,
-          color: isMyTurn ? const Color(0xFF48E5C2) : Colors.white24,
+          color: isMyTurn ? ArenaColors.gold : Colors.white24,
           letterSpacing: 1.0,
         ),
       );
@@ -347,9 +348,9 @@ class _PlayerChip extends StatelessWidget {
 
   Color _teamAccent(int relativeSeat) {
     return switch (relativeSeat) {
-      0 => const Color(0xFF48E5C2), // Self = Teal
-      2 => const Color(0xFF38BDF8), // Partner = Sky Blue
-      _ => const Color(0xFFFF6B6B), // Opponents = Crimson/Ruby
+      0 => ArenaColors.gold, // You = Gold
+      2 => ArenaColors.emerald, // Partner = Felt green
+      _ => ArenaColors.ruby, // Opponents = Muted ruby
     };
   }
 
@@ -466,7 +467,7 @@ class _NamePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(maxWidth: 110),
+      constraints: const BoxConstraints(maxWidth: 140),
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: const Color(0xFF070B13).withOpacity(0.88),

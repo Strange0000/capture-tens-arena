@@ -48,6 +48,15 @@ class _GameScreenState extends State<GameScreen> {
 
   // HUD Banner Alert (Top notification - never covers the cards!)
   String? _bannerAlert;
+  /// True when the banner is a sticky illegal-tap hint: it stays until
+  /// the player's turn starts (or they play a legal card), instead of
+  /// auto-clearing after 3s.
+  bool _bannerSticky = false;
+  /// Turn state on the previous build — a sticky hint clears only when
+  /// the turn CHANGES to the player, not on every build during their
+  /// own turn (an illegal tap on their own turn, e.g. wrong suit, must
+  /// keep its hint visible until they play a legal card).
+  bool _wasMyTurn = false;
   IconData? _bannerIcon;
   Color? _bannerColor;
 
@@ -72,13 +81,16 @@ class _GameScreenState extends State<GameScreen> {
     });
   }
 
-  void _showBannerAlert(String message, IconData icon, Color color) {
+  void _showBannerAlert(String message, IconData icon, Color color,
+      {bool sticky = false}) {
     if (!mounted) return;
     setState(() {
       _bannerAlert = message;
       _bannerIcon = icon;
       _bannerColor = color;
+      _bannerSticky = sticky;
     });
+    if (sticky) return; // Cleared when the player can act again (below).
     Future.delayed(const Duration(milliseconds: 3000), () {
       if (mounted && _bannerAlert == message) {
         setState(() => _bannerAlert = null);
@@ -144,7 +156,7 @@ class _GameScreenState extends State<GameScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (!_waitTimedOut) ...[
-                const CircularProgressIndicator(color: Color(0xFF48E5C2)),
+                const CircularProgressIndicator(color: Color(0xFF3FA97C)),
                 const SizedBox(height: 20),
                 Text(
                   'Setting up arena...',
@@ -171,7 +183,7 @@ class _GameScreenState extends State<GameScreen> {
                 const SizedBox(height: 24),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF48E5C2),
+                    backgroundColor: const Color(0xFFFFC857),
                     foregroundColor: const Color(0xFF070B13),
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -209,6 +221,18 @@ class _GameScreenState extends State<GameScreen> {
       _lastMatchId = match.id;
       _resultDismissed = false;
     }
+
+    // A sticky illegal-tap hint ("Wait — it's not your turn yet.")
+    // clears the moment the turn changes to the player.
+    final isMyTurnNow = match.players.any(
+      (pl) => pl.userId == app.userId && pl.seat == match.currentTurnSeat,
+    );
+    if (_bannerSticky && isMyTurnNow && !_wasMyTurn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() { _bannerAlert = null; _bannerSticky = false; });
+      });
+    }
+    _wasMyTurn = isMyTurnNow;
 
     // Detect trick winner
     if (match.completedTricksCount > _lastTrickCount) {
@@ -308,7 +332,7 @@ class _GameScreenState extends State<GameScreen> {
                       ? const Color(0xFFFFD166)
                       : match.mode == 'private'
                           ? const Color(0xFFD4A017)
-                          : const Color(0xFF48E5C2))
+                          : const Color(0xFF3FA97C))
                   .withOpacity(0.12),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
@@ -316,7 +340,7 @@ class _GameScreenState extends State<GameScreen> {
                         ? const Color(0xFFFFD166)
                         : match.mode == 'private'
                             ? const Color(0xFFD4A017)
-                            : const Color(0xFF48E5C2))
+                            : const Color(0xFF3FA97C))
                     .withOpacity(0.35),
                 width: 1.0,
               ),
@@ -332,7 +356,7 @@ class _GameScreenState extends State<GameScreen> {
                         ? const Color(0xFFFFD166)
                         : match.mode == 'private'
                             ? const Color(0xFFD4A017)
-                            : const Color(0xFF48E5C2),
+                            : const Color(0xFF3FA97C),
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -347,7 +371,7 @@ class _GameScreenState extends State<GameScreen> {
                         ? const Color(0xFFFFD166)
                         : match.mode == 'private'
                             ? const Color(0xFFD4A017)
-                            : const Color(0xFF48E5C2),
+                            : const Color(0xFF3FA97C),
                   ),
                 ),
               ],
@@ -389,7 +413,7 @@ class _GameScreenState extends State<GameScreen> {
                         AudioService.instance.soundEnabled
                             ? Icons.volume_up_rounded
                             : Icons.volume_off_rounded,
-                        color: const Color(0xFF48E5C2),
+                        color: const Color(0xFF3FA97C),
                         size: 18,
                       ),
                       const SizedBox(width: 10),
@@ -417,7 +441,7 @@ class _GameScreenState extends State<GameScreen> {
                 tooltip: AudioService.instance.soundEnabled ? 'Mute Sound' : 'Unmute Sound',
                 icon: Icon(
                   AudioService.instance.soundEnabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
-                  color: AudioService.instance.soundEnabled ? const Color(0xFF48E5C2) : Colors.white38,
+                  color: AudioService.instance.soundEnabled ? const Color(0xFF3FA97C) : Colors.white38,
                   size: 20,
                 ),
                 onPressed: () {
@@ -484,7 +508,7 @@ class _GameScreenState extends State<GameScreen> {
                                 decoration: BoxDecoration(
                                   color: const Color(0xFF10192A).withOpacity(0.92),
                                   borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.4), width: 1.5),
+                                  border: Border.all(color: const Color(0xFF3FA97C).withOpacity(0.4), width: 1.5),
                                   boxShadow: [
                                     BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 14),
                                   ],
@@ -547,7 +571,16 @@ class _GameScreenState extends State<GameScreen> {
                                   reason,
                                   Icons.info_outline_rounded,
                                   const Color(0xFFFFD166),
+                                  sticky: true,
                                 ),
+                                onLegalPlay: () {
+                                  if (_bannerSticky) {
+                                    setState(() {
+                                      _bannerAlert = null;
+                                      _bannerSticky = false;
+                                    });
+                                  }
+                                },
                               ),
                       );
                     },
@@ -722,7 +755,7 @@ class _GameScreenState extends State<GameScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(isFinished ? 'Stay Here' : 'Stay in Game', style: const TextStyle(color: Color(0xFF48E5C2), fontWeight: FontWeight.w700)),
+            child: Text(isFinished ? 'Stay Here' : 'Stay in Game', style: const TextStyle(color: Color(0xFFFFC857), fontWeight: FontWeight.w700)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -856,6 +889,7 @@ class _HandArea extends StatelessWidget {
     required this.autoSort,
     required this.highlightLegal,
     this.onIllegalTap,
+    this.onLegalPlay,
   });
 
   final AppState app;
@@ -865,6 +899,10 @@ class _HandArea extends StatelessWidget {
   /// Called (with a plain-words reason) when the player taps a card
   /// they cannot play. Previously such taps did nothing at all.
   final void Function(String reason)? onIllegalTap;
+  /// Called when the player plays a legal card — the game screen uses
+  /// it to clear a sticky illegal-tap hint, so a stale hint ("You must
+  /// follow the lead suit") cannot linger after the player complied.
+  final VoidCallback? onLegalPlay;
 
   static const _rankValues = {
     'A': 14, 'K': 13, 'Q': 12, 'J': 11, '10': 10,
@@ -941,7 +979,7 @@ class _HandArea extends StatelessWidget {
           final maxOverlap = (aw - cardWidth) / (N - 1);
           // At least 20px of each card stays visible — the corner pip
           // (rank + suit) needs ~16px, so a card is always readable.
-          final overlapWidth = maxOverlap.clamp(20.0, cardWidth + 4.0);
+          final overlapWidth = maxOverlap.clamp(20.0, cardWidth);
           widthFactor = overlapWidth / cardWidth;
         }
 
@@ -984,6 +1022,7 @@ class _HandArea extends StatelessWidget {
                         ? () {
                             AudioService.instance.playCardPlace();
                             AudioService.instance.hapticLight();
+                            onLegalPlay?.call();
                             app.playCard(card.id);
                           }
                         : null,

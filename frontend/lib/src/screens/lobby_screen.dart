@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../theme.dart';
 import '../widgets/arena_loading.dart';
+import '../widgets/royal_widgets.dart';
 
 import '../models/rank_info.dart';
 import '../services/audio_service.dart';
@@ -183,8 +185,8 @@ class _LobbyScreenState extends State<LobbyScreen>
                 center: const Alignment(0, -0.2),
                 radius: 1.2,
                 colors: [
-                  const Color(0xFF10182E).withOpacity(0.70),
-                  const Color(0xFF070B13).withOpacity(0.95),
+                  const Color(0xFF0E3A28).withOpacity(0.70),
+                  const Color(0xFF060D0A).withOpacity(0.95),
                 ],
               ),
             ),
@@ -289,6 +291,12 @@ class _LobbyScreenState extends State<LobbyScreen>
                 const SizedBox(height: 16),
                 _PartyBanner(party: app.party!, onLeave: app.leaveParty),
               ],
+              const SizedBox(height: 16),
+              _FriendsPanel(
+                app: app,
+                onAdd: () => _showFriendsSheet(context),
+                onRemove: (friendId, username) => _confirmRemoveFriend(context, app, friendId, username),
+              ),
             ],
           ),
         ),
@@ -329,7 +337,59 @@ class _LobbyScreenState extends State<LobbyScreen>
         _buildSectionHeader('SELECT ARENA', 'Choose your game mode'),
         const SizedBox(height: 16),
         _buildGamePortals(context, app),
+        const SizedBox(height: 16),
+        _FriendsPanel(
+          app: app,
+          onAdd: () => _showFriendsSheet(context),
+          onRemove: (friendId, username) => _confirmRemoveFriend(context, app, friendId, username),
+        ),
       ],
+    );
+  }
+
+  /// Remove a friend from the lobby's Friends panel (not only from
+  /// inside the sheet): confirm first, then show plain-words feedback.
+  Future<void> _confirmRemoveFriend(
+    BuildContext context,
+    AppState app,
+    String friendId,
+    String username,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF0F2018),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: ArenaColors.gold.withOpacity(0.35)),
+        ),
+        title: const Text('Remove friend?', style: TextStyle(color: Colors.white)),
+        content: Text('Remove $username from your friends list?',
+            style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep friend'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    final ok = await app.removeFriend(friendId);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? 'Friend removed' : (app.friendActionError ?? 'Could not remove friend')),
+        backgroundColor: ok ? const Color(0xFF167D68) : Colors.redAccent.shade700,
+      ),
     );
   }
 
@@ -340,11 +400,11 @@ class _LobbyScreenState extends State<LobbyScreen>
           width: 4,
           height: 22,
           decoration: BoxDecoration(
-            color: const Color(0xFF48E5C2),
+            color: const Color(0xFFFFC857),
             borderRadius: BorderRadius.circular(2),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF48E5C2).withOpacity(0.6),
+                color: const Color(0xFFFFC857).withOpacity(0.6),
                 blurRadius: 10,
               ),
             ],
@@ -394,7 +454,7 @@ class _LobbyScreenState extends State<LobbyScreen>
 
         // ── Bot Match Portal ────────────────────────────────────────────────
         _GamePortalCard(
-          themeColor: const Color(0xFF48E5C2),
+          themeColor: const Color(0xFF3FA97C),
           badgeTag: 'SOLO PRACTICE',
           title: 'Bot Practice',
           subtitle: 'Hone your strategy against advanced neural AI bots',
@@ -446,7 +506,7 @@ class _LobbyScreenState extends State<LobbyScreen>
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: () => Navigator.pushNamed(context, '/tutorial'),
-                icon: const Icon(Icons.school_rounded, color: Color(0xFF48E5C2), size: 20),
+                icon: const Icon(Icons.school_rounded, color: Color(0xFFFFC857), size: 20),
                 label: const Text('Interactive Tutorial'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.white,
@@ -640,9 +700,9 @@ class _LobbyTopBar extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF48E5C2).withOpacity(0.12),
+                  color: const Color(0xFFFFC857).withOpacity(0.12),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.3)),
+                  border: Border.all(color: const Color(0xFFFFC857).withOpacity(0.3)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -651,7 +711,7 @@ class _LobbyTopBar extends StatelessWidget {
                       width: 7,
                       height: 7,
                       decoration: const BoxDecoration(
-                        color: Color(0xFF48E5C2),
+                        color: Color(0xFFFFC857),
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -661,7 +721,7 @@ class _LobbyTopBar extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w900,
-                        color: Color(0xFF48E5C2),
+                        color: Color(0xFFFFC857),
                         letterSpacing: 1.2,
                       ),
                     ),
@@ -692,6 +752,7 @@ class _LobbyTopBar extends StatelessWidget {
                 _TopIconButton(
                   tooltip: 'Interactive Tutorial',
                   icon: Icons.school_rounded,
+                  iconColor: const Color(0xFFFFC857),
                   onTap: onTutorial,
                 ),
                 _TopIconButton(
@@ -726,7 +787,7 @@ class _LobbyTopBar extends StatelessWidget {
                     const PopupMenuItem(
                       value: 'tutorial',
                       child: Row(children: [
-                        Icon(Icons.school_rounded, color: Color(0xFF48E5C2), size: 18),
+                        Icon(Icons.school_rounded, color: Color(0xFFFFC857), size: 18),
                         SizedBox(width: 10),
                         Text('Tutorial', style: TextStyle(color: Colors.white, fontSize: 13)),
                       ]),
@@ -745,7 +806,7 @@ class _LobbyTopBar extends StatelessWidget {
               _TopIconButton(
                 tooltip: 'Friends',
                 icon: Icons.people_alt_rounded,
-                iconColor: const Color(0xFF48E5C2),
+                iconColor: const Color(0xFFFFC857),
                 onTap: onFriends,
               ),
               _TopIconButton(
@@ -770,8 +831,8 @@ class _LobbyTopBar extends StatelessWidget {
                     children: [
                       CircleAvatar(
                         radius: 12,
-                        backgroundColor: const Color(0xFF48E5C2).withOpacity(0.2),
-                        child: const Icon(Icons.person, size: 14, color: Color(0xFF48E5C2)),
+                        backgroundColor: const Color(0xFFFFC857).withOpacity(0.2),
+                        child: const Icon(Icons.person, size: 14, color: Color(0xFFFFC857)),
                       ),
                       if (!isCompact) ...[
                         const SizedBox(width: 8),
@@ -985,7 +1046,7 @@ class _RankShowcaseCard extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _StatCell(label: 'WINS', value: '${rank.wins}', color: const Color(0xFF48E5C2)),
+                _StatCell(label: 'WINS', value: '${rank.wins}', color: const Color(0xFF3FA97C)),
                 Container(width: 1, height: 26, color: Colors.white10),
                 _StatCell(label: 'LOSSES', value: '${rank.losses}', color: Colors.redAccent),
                 Container(width: 1, height: 26, color: Colors.white10),
@@ -1336,7 +1397,7 @@ class _QueueBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return GlassPanel(
       backgroundColor: const Color(0xFF0A2B1D).withOpacity(0.6),
-      border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.5)),
+      border: Border.all(color: const Color(0xFF3FA97C).withOpacity(0.5)),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       child: Row(
         children: [
@@ -1345,7 +1406,7 @@ class _QueueBanner extends StatelessWidget {
             height: 20,
             child: CircularProgressIndicator(
               strokeWidth: 2.5,
-              color: Color(0xFF48E5C2),
+              color: Color(0xFF3FA97C),
             ),
           ),
           const SizedBox(width: 14),
@@ -1359,7 +1420,7 @@ class _QueueBanner extends StatelessWidget {
                     fontSize: 11,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 1.5,
-                    color: Color(0xFF48E5C2),
+                    color: Color(0xFFFFC857),
                   ),
                 ),
                 Text(
@@ -1962,10 +2023,10 @@ class _FriendsSheetState extends State<_FriendsSheet> {
     return Stack(
       children: [
         CircleAvatar(
-          backgroundColor: const Color(0xFF48E5C2).withOpacity(0.15),
+          backgroundColor: const Color(0xFFFFC857).withOpacity(0.15),
           child: Text(
             username.trim().isEmpty ? "?" : username.trim()[0].toUpperCase(),
-            style: const TextStyle(color: Color(0xFF48E5C2), fontWeight: FontWeight.w800),
+            style: const TextStyle(color: Color(0xFFFFC857), fontWeight: FontWeight.w800),
           ),
         ),
         if (online)
@@ -1974,9 +2035,9 @@ class _FriendsSheetState extends State<_FriendsSheet> {
             child: Container(
               width: 11, height: 11,
               decoration: BoxDecoration(
-                color: const Color(0xFF48E5C2),
+                color: const Color(0xFF3FA97C),
                 shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF101826), width: 2),
+                border: Border.all(color: const Color(0xFF0F2018), width: 2),
               ),
             ),
           ),
@@ -2019,7 +2080,7 @@ class _FriendsSheetState extends State<_FriendsSheet> {
         IconButton(
           tooltip: "Accept request",
           onPressed: busy || friendId.isEmpty ? null : () => _runAction("search:$id", () => app.acceptFriendRequest(friendId), "Friend request accepted"),
-          icon: const Icon(Icons.check_circle_outline, color: Color(0xFF48E5C2)),
+          icon: const Icon(Icons.check_circle_outline, color: Color(0xFF3FA97C)),
         ),
         IconButton(
           tooltip: "Decline request",
@@ -2038,8 +2099,8 @@ class _FriendsSheetState extends State<_FriendsSheet> {
       action = ElevatedButton(
         onPressed: busy ? null : () => _runAction("search:$id", () => app.sendFriendRequest(username), "Friend request sent"),
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF48E5C2).withOpacity(0.15),
-          foregroundColor: const Color(0xFF48E5C2),
+          backgroundColor: const Color(0xFFFFC857).withOpacity(0.15),
+          foregroundColor: const Color(0xFFFFC857),
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         ),
@@ -2079,7 +2140,7 @@ class _FriendsSheetState extends State<_FriendsSheet> {
         IconButton(
           tooltip: "Accept request",
           onPressed: busy ? null : () => _runAction("friend:$friendId", () => app.acceptFriendRequest(friendId), "Friend request accepted"),
-          icon: const Icon(Icons.check_circle_outline, color: Color(0xFF48E5C2)),
+          icon: const Icon(Icons.check_circle_outline, color: Color(0xFF3FA97C)),
         ),
         IconButton(
           tooltip: "Decline request",
@@ -2169,6 +2230,20 @@ class _FriendsSheetState extends State<_FriendsSheet> {
               const SizedBox(height: 5),
               const Text("Find players, manage requests, and invite friends to your party.", style: TextStyle(color: Colors.white54, fontSize: 12)),
               const SizedBox(height: 14),
+              if (app.isGuest)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: ArenaColors.gold.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: ArenaColors.gold.withOpacity(0.25)),
+                  ),
+                  child: const Text(
+                    'You are playing as a guest. Friends you add here stay in this browser only — sign in with Google to keep them on every device.',
+                    style: TextStyle(fontSize: 11, color: Colors.white70, height: 1.4),
+                  ),
+                ),
+              if (app.isGuest) const SizedBox(height: 10),
               TextField(
                 controller: widget.controller,
                 textCapitalization: TextCapitalization.none,
@@ -2195,6 +2270,21 @@ class _FriendsSheetState extends State<_FriendsSheet> {
                 const SizedBox(height: 6),
                 Text(app.friendActionError!, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
               ],
+              // Direct add: type the exact username and send — no need
+              // to wait for search results first.
+              const SizedBox(height: 10),
+              RoyalGoldButton(
+                label: 'Send friend request',
+                icon: Icons.person_add_alt_1_rounded,
+                height: 46,
+                onTap: widget.controller.text.trim().length < 2
+                    ? null
+                    : () => _runAction(
+                          "direct:${widget.controller.text.trim()}",
+                          () => context.read<AppState>().sendFriendRequest(widget.controller.text.trim()),
+                          "Friend request sent",
+                        ),
+              ),
               const SizedBox(height: 8),
               Expanded(
                 child: ListView(
@@ -2232,6 +2322,202 @@ class _FriendsSheetState extends State<_FriendsSheet> {
     );
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Friends Panel — visible in the lobby body (mockup), not only behind a
+// small top-bar icon. This is why "friend list add n remove" looked
+// broken: the only entry point was a tiny icon, and the sheet it opened
+// gave no feedback when a guest's friends lived only in one browser.
+// The panel lists accepted friends with a Remove button each, an Add
+// button that opens the sheet, and a plain-words guest note.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _FriendsPanel extends StatelessWidget {
+  const _FriendsPanel({
+    required this.app,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  final AppState app;
+  final VoidCallback onAdd;
+  final void Function(String friendId, String username) onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final accepted = app.friends.where((f) => f["status"] == "accepted").toList();
+    final incoming = app.friends.where((f) => f["status"] == "pending" && f["isRequester"] != true).toList();
+    final onlineCount = accepted.where((f) {
+      final user = f["user"];
+      final id = user is Map ? user["id"]?.toString() ?? "" : "";
+      return (user is Map && user["status"] == "online") || app.friendOnlineStatus[id] == true;
+    }).length;
+
+    return RoyalPanel(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.people_alt_rounded, color: ArenaColors.gold, size: 20),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Friends',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: ArenaColors.emerald.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '$onlineCount Online',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: ArenaColors.emerald,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          if (incoming.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                '${incoming.length} friend request${incoming.length == 1 ? '' : 's'} waiting — tap Add to reply.',
+                style: const TextStyle(fontSize: 12, color: ArenaColors.goldSoft, fontWeight: FontWeight.w700),
+              ),
+            ),
+          if (app.isGuest)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                'You are playing as a guest. Sign in with Google to keep your friends on every device.',
+                style: TextStyle(fontSize: 11, color: Colors.white54, height: 1.35),
+              ),
+            ),
+          if (app.friendsLoading && app.friends.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: ArenaColors.gold))),
+            )
+          else if (accepted.isEmpty && incoming.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              child: Text(
+                'No friends yet. Add a friend by their username to play together.',
+                style: TextStyle(fontSize: 12, color: Colors.white54, height: 1.4),
+              ),
+            )
+          else
+            ...accepted.take(4).map((f) {
+              final rawUser = f["user"];
+              final user = rawUser is Map ? Map<String, dynamic>.from(rawUser) : <String, dynamic>{};
+              final username = user["username"]?.toString() ?? "Unknown player";
+              final id = user["id"]?.toString() ?? "";
+              final friendId = f["id"]?.toString() ?? "";
+              final online = (user["status"] == "online") || app.friendOnlineStatus[id] == true;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    Stack(
+                      children: [
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundColor: ArenaColors.gold.withOpacity(0.15),
+                          child: Text(
+                            username.isEmpty ? "?" : username[0].toUpperCase(),
+                            style: const TextStyle(color: ArenaColors.gold, fontWeight: FontWeight.w900, fontSize: 14),
+                          ),
+                        ),
+                        if (online)
+                          Positioned(
+                            right: 0,
+                            bottom: 0,
+                            child: Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: ArenaColors.emerald,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: ArenaColors.panel, width: 2),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            username,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13),
+                          ),
+                          Text(
+                            online ? 'Online' : 'Offline',
+                            style: const TextStyle(color: Colors.white54, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Remove friend',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: friendId.isEmpty ? null : () => onRemove(friendId, username),
+                      icon: const Icon(Icons.person_remove_alt_1_rounded, color: Colors.white54, size: 18),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          if (accepted.length > 4)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                '+ ${accepted.length - 4} more friends',
+                style: const TextStyle(fontSize: 11, color: Colors.white54),
+              ),
+            ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: RoyalGoldButton(
+                  label: 'Add',
+                  icon: Icons.person_add_alt_1_rounded,
+                  onTap: onAdd,
+                  height: 44,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: RoyalGoldButton(
+                  label: 'Remove',
+                  icon: Icons.person_remove_alt_1_rounded,
+                  onTap: onAdd,
+                  primary: false,
+                  height: 44,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Glass Container Component
 // ═══════════════════════════════════════════════════════════════════════════════

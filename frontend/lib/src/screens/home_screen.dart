@@ -58,7 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Capture Tens', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, height: 1)),
-                        Text('Arena', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xFF48E5C2), height: 1)),
+                        Text('Arena', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xFFFFC857), height: 1)),
                       ],
                     ),
                   ),
@@ -190,12 +190,12 @@ class _QueueBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(color: const Color(0xFF48E5C2).withOpacity(0.1), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.3))),
+      decoration: BoxDecoration(color: const Color(0xFF3FA97C).withOpacity(0.1), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFF3FA97C).withOpacity(0.3))),
       child: Row(
         children: [
-          const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF48E5C2))),
+          const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF3FA97C))),
           const SizedBox(width: 12),
-          const Expanded(child: Text('Searching for players…', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF48E5C2)))),
+          const Expanded(child: Text('Searching for players…', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF3FA97C)))),
           TextButton(onPressed: onCancel, child: const Text('Cancel')),
         ],
       ),

@@ -96,6 +96,12 @@ class AppState extends ChangeNotifier {
 
   bool get isLoggedIn => token != null;
 
+  /// Guests get usernames like "GuestAb12Cd" (backend authService
+  /// createGuest). Friends added as a guest live only in this
+  /// browser's cached session — the UI says so in plain words.
+  bool get isGuest =>
+      username != null && username!.startsWith('Guest');
+
   // ── Cached session check ───────────────────────────────────────────────────
 
   Future<void> _checkCachedSession() async {
@@ -509,7 +515,11 @@ class AppState extends ChangeNotifier {
 
   Future<bool> sendFriendRequest(String targetUsername) async {
     final sessionToken = token;
-    if (sessionToken == null) return false;
+    if (sessionToken == null) {
+      friendActionError = "Sign in to manage friends";
+      notifyListeners();
+      return false;
+    }
     friendActionError = null;
     try {
       await auth.sendFriendRequest(sessionToken, targetUsername.trim());
@@ -526,7 +536,11 @@ class AppState extends ChangeNotifier {
 
   Future<bool> acceptFriendRequest(String friendId) async {
     final sessionToken = token;
-    if (sessionToken == null) return false;
+    if (sessionToken == null) {
+      friendActionError = "Sign in to manage friends";
+      notifyListeners();
+      return false;
+    }
     friendActionError = null;
     try {
       await auth.acceptFriendRequest(sessionToken, friendId);
@@ -543,7 +557,11 @@ class AppState extends ChangeNotifier {
 
   Future<bool> removeFriend(String friendId) async {
     final sessionToken = token;
-    if (sessionToken == null) return false;
+    if (sessionToken == null) {
+      friendActionError = "Sign in to manage friends";
+      notifyListeners();
+      return false;
+    }
     friendActionError = null;
     try {
       await auth.removeFriend(sessionToken, friendId);

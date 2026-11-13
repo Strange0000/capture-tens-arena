@@ -116,7 +116,7 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
                   color: isPower
                       ? const Color(0xFFFFD166)
                       : isTen
-                          ? const Color(0xFF48E5C2)
+                          ? const Color(0xFFD4A017)
                           : (isPlayable
                               ? const Color(0xFFFFC857)
                               : const Color(0xFFCCCCCC)),
@@ -136,7 +136,7 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
                       color: isPower
                           ? const Color(0xFFFFD166).withOpacity(isHovered ? 0.6 : 0.25)
                           : isTen
-                              ? const Color(0xFF48E5C2).withOpacity(isHovered ? 0.6 : 0.25)
+                              ? const Color(0xFFD4A017).withOpacity(isHovered ? 0.6 : 0.25)
                               : const Color(0xFFFFC857).withOpacity(isHovered ? 0.45 : 0.18),
                       blurRadius: isHovered ? 18 : 8,
                       spreadRadius: isHovered ? 2 : 0,
@@ -152,7 +152,7 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
                       color: isPower
                           ? const Color(0xFFFFD166).withOpacity(0.3)
                           : isTen
-                              ? const Color(0xFF48E5C2).withOpacity(0.25)
+                              ? const Color(0xFFD4A017).withOpacity(0.25)
                               : Colors.black.withOpacity(0.12),
                       blurRadius: isPower ? 10 : 5,
                       offset: const Offset(0, 2),
@@ -300,7 +300,7 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
   }
 }
 
-/// Card back design — premium navy with gold pattern
+/// Card back design — green felt with a gold pattern, Royal Casino.
 class _CardBack extends StatelessWidget {
   const _CardBack({required this.width, required this.height});
   final double width;
@@ -317,7 +317,7 @@ class _CardBack extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF1A2744), Color(0xFF0E1A2E), Color(0xFF162240)],
+          colors: [Color(0xFF11543F), Color(0xFF0B3D2E), Color(0xFF072A20)],
         ),
         border: Border.all(color: const Color(0xFFD4A017).withOpacity(0.4), width: 1.5),
         boxShadow: [

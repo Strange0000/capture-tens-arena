@@ -156,8 +156,8 @@ class _MatchResultOverlayState extends State<MatchResultOverlay>
                 blastDirectionality: BlastDirectionality.explosive,
                 numberOfParticles: 35,
                 colors: const [
-                  Color(0xFFFFC857), Color(0xFF48E5C2), Colors.white,
-                  Color(0xFFFF6B6B), Color(0xFFD4A017),
+                  Color(0xFFFFC857), Color(0xFF3FA97C), Colors.white,
+                  Color(0xFFD96A6A), Color(0xFFD4A017),
                 ],
                 gravity: 0.18,
                 emissionFrequency: 0.06,
@@ -186,7 +186,7 @@ class _MatchResultOverlayState extends State<MatchResultOverlay>
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 20),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF101826),
+                  color: const Color(0xFF0F2018),
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(
                     color: _won ? const Color(0xFFFFC857).withOpacity(0.6) : Colors.white12,
@@ -340,7 +340,7 @@ class _RankChangeWidget extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.04),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: gained ? const Color(0xFF48E5C2).withOpacity(0.3) : Colors.redAccent.withOpacity(0.3)),
+        border: Border.all(color: gained ? const Color(0xFFFFC857).withOpacity(0.3) : Colors.redAccent.withOpacity(0.3)),
       ),
       child: Column(
         children: [
@@ -352,7 +352,7 @@ class _RankChangeWidget extends StatelessWidget {
                 const SizedBox(width: 4),
                 Text(oldRank.displayName, style: TextStyle(color: oldRank.color, fontWeight: FontWeight.w700, fontSize: 13)),
                 const SizedBox(width: 8),
-                Icon(Icons.arrow_forward_rounded, size: 16, color: gained ? const Color(0xFF48E5C2) : Colors.redAccent),
+                Icon(Icons.arrow_forward_rounded, size: 16, color: gained ? const Color(0xFFFFC857) : Colors.redAccent),
                 const SizedBox(width: 8),
                 Image.asset(newRank.icon, height: 24, width: 24),
                 const SizedBox(width: 4),
@@ -365,7 +365,7 @@ class _RankChangeWidget extends StatelessWidget {
             '${gained ? "+" : ""}$delta MMR',
             style: TextStyle(
               fontSize: 22, fontWeight: FontWeight.w900,
-              color: gained ? const Color(0xFF48E5C2) : Colors.redAccent,
+              color: gained ? const Color(0xFFFFC857) : Colors.redAccent,
             ),
           ),
         ],

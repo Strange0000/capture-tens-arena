@@ -84,11 +84,15 @@ class CapturesBar extends StatelessWidget {
               vertical: 7,
             ),
             decoration: BoxDecoration(
-              color: const Color(0xFF10192A).withOpacity(0.94),
+              gradient: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFF123527), Color(0xFF0B241A)],
+              ),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: ArenaColors.gold.withOpacity(0.35),
-                width: 1,
+                color: ArenaColors.gold.withOpacity(0.55),
+                width: 1.5,
               ),
               boxShadow: [
                 BoxShadow(
@@ -98,200 +102,44 @@ class CapturesBar extends StatelessWidget {
                 ),
               ],
             ),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              child: trickWinnerMessage != null
-                  ? SizedBox(
-                      key: ValueKey(trickWinnerMessage),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text('👑', style: TextStyle(fontSize: 14)),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              trickWinnerMessage!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: ArenaColors.goldSoft,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _ScoreRows(
+                  captures: captures,
+                  completedTricks: completedTricks,
+                  isMobile: isMobile,
+                  powerSuit: powerSuit,
+                  lastTrickWinnerLabel: lastTrickWinnerLabel,
+                  tiebreakerText: _tiebreakerText(),
+                ),
+                if (trickWinnerMessage != null) ...[
+                  const SizedBox(height: 5),
+                  Container(height: 1, color: Colors.white10),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('👑', style: TextStyle(fontSize: 14)),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          trickWinnerMessage!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: ArenaColors.goldSoft,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
                           ),
-                        ],
-                      ),
-                    )
-                  : Column(
-                      key: const ValueKey('score_card'),
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // 1) Tens score — the headline. Fixed Team A /
-                            // Team B order (not swapped by myTeam), so
-                            // "A 2 — 1 B" always means the same thing.
-                            // The leading side is gold.
-                            Flexible(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Text(
-                                    'TENS CAPTURED',
-                                    style: TextStyle(
-                                      fontSize: 8,
-                                      fontWeight: FontWeight.w800,
-                                      color: Colors.white38,
-                                      letterSpacing: 1.2,
-                                    ),
-                                  ),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        'A ${captures.a.tens}',
-                                        style: TextStyle(
-                                          fontSize: 19,
-                                          fontWeight: FontWeight.w900,
-                                          color: aLeads
-                                              ? ArenaColors.gold
-                                              : Colors.white,
-                                        ),
-                                      ),
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(horizontal: 4),
-                                        child: Text(
-                                          '—',
-                                          style: TextStyle(fontSize: 13, color: Colors.white38),
-                                        ),
-                                      ),
-                                      Text(
-                                        '${captures.b.tens} B',
-                                        style: TextStyle(
-                                          fontSize: 19,
-                                          fontWeight: FontWeight.w900,
-                                          color: bLeads
-                                              ? ArenaColors.gold
-                                              : Colors.white,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            // Plain-words leader / tie state.
-                            _StatusPill(text: statusText, isTie: tensTied),
-                            const SizedBox(width: 10),
-                            const _Divider(),
-                            const SizedBox(width: 10),
-                            // 2) Trump — the only trump indicator; the
-                            // floating "SPADES TRUMP" pill that used to
-                            // sit over the hand is gone.
-                            if (powerSuit != null)
-                              _TrumpChip(suit: powerSuit!)
-                            else
-                              const Text(
-                                'Trump\nnot chosen yet',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w800,
-                                  color: ArenaColors.gold,
-                                  height: 1.2,
-                                ),
-                              ),
-                            const SizedBox(width: 10),
-                            const _Divider(),
-                            const SizedBox(width: 10),
-                            // 3) Trick progress — plain words + a bar,
-                            // not just "13 / 13".
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Trick $trickNumber of 13',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                    color: ArenaColors.cyan,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Container(
-                                  width: isMobile ? 44 : 64,
-                                  height: 4,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white12,
-                                    borderRadius: BorderRadius.circular(2),
-                                  ),
-                                  alignment: Alignment.centerLeft,
-                                  child: FractionallySizedBox(
-                                    widthFactor: progress,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: ArenaColors.gold,
-                                        borderRadius: BorderRadius.circular(2),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
                         ),
-                        // 4) Secondary line — only what matters now.
-                        // Last trick, plus the tiebreaker in plain
-                        // words, ONLY when tens are tied.
-                        if (lastTrickWinnerLabel != null || tensTied) ...[
-                          const SizedBox(height: 5),
-                          Container(
-                            height: 1,
-                            color: Colors.white10,
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (lastTrickWinnerLabel != null)
-                                Flexible(
-                                  child: Text(
-                                    'Last trick won by $lastTrickWinnerLabel',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      color: ArenaColors.goldSoft,
-                                    ),
-                                  ),
-                                ),
-                              if (lastTrickWinnerLabel != null && tensTied)
-                                const SizedBox(width: 8),
-                              if (tensTied)
-                                Flexible(
-                                  child: Text(
-                                    _tiebreakerText(),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white54,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
             ),
           ),
         ),
@@ -308,6 +156,199 @@ class CapturesBar extends StatelessWidget {
       return '$cards · Aces: Team A ${captures.a.aces}, Team B ${captures.b.aces}';
     }
     return cards;
+  }
+}
+
+
+/// The score rows — always visible, even while the trick-winner banner
+/// shows below them. (Round 4 bug: the banner REPLACED the whole pill,
+/// so the score vanished for a few seconds every trick.)
+class _ScoreRows extends StatelessWidget {
+  const _ScoreRows({
+    required this.captures,
+    required this.completedTricks,
+    required this.isMobile,
+    required this.powerSuit,
+    required this.lastTrickWinnerLabel,
+    required this.tiebreakerText,
+  });
+
+  final MatchCaptures captures;
+  final int completedTricks;
+  final bool isMobile;
+  final String? powerSuit;
+  final String? lastTrickWinnerLabel;
+  final String tiebreakerText;
+
+  @override
+  Widget build(BuildContext context) {
+    final aLeads = captures.a.tens > captures.b.tens;
+    final bLeads = captures.b.tens > captures.a.tens;
+    final tensTied = !aLeads && !bLeads;
+    final trickNumber = (completedTricks + 1).clamp(1, 13);
+    final progress = (completedTricks.clamp(0, 13)) / 13;
+    final statusText = tensTied
+        ? 'Tied ${captures.a.tens}–${captures.b.tens}'
+        : aLeads
+            ? 'Team A leads'
+            : 'Team B leads';
+
+    return Column(
+      key: const ValueKey('score_card'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 1) Tens score — the headline. Fixed Team A / Team B order
+            // (not swapped by myTeam), so "A 2 — 1 B" always means the
+            // same thing. The leading side is gold.
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'TENS CAPTURED',
+                    style: TextStyle(
+                      fontSize: 8,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white38,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'A ${captures.a.tens}',
+                        style: TextStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                          color: aLeads ? ArenaColors.gold : Colors.white,
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 4),
+                        child: Text(
+                          '—',
+                          style: TextStyle(fontSize: 13, color: Colors.white38),
+                        ),
+                      ),
+                      Text(
+                        '${captures.b.tens} B',
+                        style: TextStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                          color: bLeads ? ArenaColors.gold : Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Plain-words leader / tie state.
+            _StatusPill(text: statusText, isTie: tensTied),
+            const SizedBox(width: 10),
+            const _Divider(),
+            const SizedBox(width: 10),
+            // 2) Trump — the only trump indicator.
+            if (powerSuit != null)
+              _TrumpChip(suit: powerSuit!)
+            else
+              const Text(
+                'Trump\nnot chosen yet',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  color: ArenaColors.gold,
+                  height: 1.2,
+                ),
+              ),
+            const SizedBox(width: 10),
+            const _Divider(),
+            const SizedBox(width: 10),
+            // 3) Trick progress — plain words + a bar, not just "13 / 13".
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Trick $trickNumber of 13',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: ArenaColors.gold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  width: isMobile ? 44 : 64,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white12,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: progress,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: ArenaColors.gold,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        // 4) Secondary line — only what matters now. Last trick, plus
+        // the tiebreaker in plain words, ONLY when tens are tied.
+        if (lastTrickWinnerLabel != null || tensTied) ...[
+          const SizedBox(height: 5),
+          Container(height: 1, color: Colors.white10),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (lastTrickWinnerLabel != null)
+                Flexible(
+                  child: Text(
+                    'Last trick won by $lastTrickWinnerLabel',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: ArenaColors.goldSoft,
+                    ),
+                  ),
+                ),
+              if (lastTrickWinnerLabel != null && tensTied)
+                const SizedBox(width: 8),
+              if (tensTied)
+                Flexible(
+                  child: Text(
+                    tiebreakerText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white54,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
   }
 }
 
