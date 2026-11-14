@@ -203,6 +203,16 @@ async function main(): Promise<number> {
         );
         return 1;
       }
+      // A non-unique googleId_1 index may already exist (created by the old
+      // model). MongoDB refuses a second index with the same name but
+      // different options (code 86), so drop the old one first. This is
+      // safe here: we just verified there are no duplicate googleIds.
+      const existing = await collection.listIndexes().toArray();
+      const oldGoogle = existing.find((ix) => ix.name === "googleId_1");
+      if (oldGoogle && !oldGoogle.unique) {
+        await collection.dropIndex("googleId_1");
+        console.log("[username-migration] dropped old non-unique index googleId_1");
+      }
       await collection.createIndex({ googleId: 1 }, { unique: true, sparse: true, name: "googleId_1" });
       console.log("[username-migration] created unique sparse index googleId_1");
     } else {
