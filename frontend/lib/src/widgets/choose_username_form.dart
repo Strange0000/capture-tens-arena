@@ -197,7 +197,13 @@ class _ChooseUsernameFormState extends State<ChooseUsernameForm> {
               const SizedBox(height: 20),
               TextField(
                 controller: _controller,
-                autofocus: true,
+                // No autofocus: on the web the programmatic focus the
+                // autofocus path requests never properly attached the
+                // engine's text input (the live debug readout stayed
+                // txt="" while the box showed the typed name, even after
+                // tapping the field). The lobby search — same field, no
+                // autofocus — works, because the user's tap drives focus.
+                // So the player taps this box, like the lobby search.
                 maxLength: 24,
                 textCapitalization: TextCapitalization.none,
                 autocorrect: false,
