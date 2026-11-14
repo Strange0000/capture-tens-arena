@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:google_sign_in_web/web_only.dart' as google_sign_in_web;
+
+import 'gis_button.dart';
 
 /// Callback used to exchange Google's signed ID token for the game's session.
 typedef GoogleIdTokenCallback = Future<void> Function(
@@ -10,19 +11,34 @@ typedef GoogleIdTokenCallback = Future<void> Function(
   String username,
 );
 
+/// What the player chose in the "Continue as …?" confirmation dialog.
+enum _ConfirmChoice { cont, switchAccount, dismissed }
+
 /// Uses the official Google Identity Services button on web.
 ///
 /// The Google web plugin's deprecated signIn() flow only returns an access
 /// token. The rendered GIS button emits an authenticated account with an ID
 /// token, which the game's backend can securely verify.
+///
+/// PR-A: the account the GIS button emits is NEVER exchanged automatically.
+/// The browser may pick whichever Google account it likes (including the
+/// wrong one); the player must first confirm "Continue as <name> (<email>)?"
+/// — only then is [onIdToken] called. "Use a different account" signs the
+/// cached Google account out so the button offers the account chooser again.
 class GoogleSignInWebButton extends StatefulWidget {
   const GoogleSignInWebButton({
     super.key,
+    required this.googleSignIn,
     required this.onIdToken,
     required this.onError,
     this.compact = false,
   });
 
+  /// The single shared GoogleSignIn instance owned by [AuthService].
+  /// Do NOT create a second instance here: the GIS button's credential
+  /// only arrives via this instance's onCurrentUserChanged stream, and a
+  /// second instance would never see it (and would fight over the cache).
+  final GoogleSignIn googleSignIn;
   final GoogleIdTokenCallback onIdToken;
   final ValueChanged<Object> onError;
   final bool compact;
@@ -32,45 +48,56 @@ class GoogleSignInWebButton extends StatefulWidget {
 }
 
 class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
-  // On web, the client ID is read from web/index.html's google-signin-client_id
-  // meta tag. Do not provide serverClientId; that parameter is unsupported on web.
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: <String>['email', 'profile', 'openid'],
-  );
-
   StreamSubscription<GoogleSignInAccount?>? _subscription;
-  bool _handlingSignIn = false;
+
+  /// A confirmation dialog is on screen for a streamed account.
+  bool _confirming = false;
+
+  /// A user-confirmed exchange (fetching the ID token / calling onIdToken)
+  /// is running.
+  bool _exchanging = false;
 
   @override
   void initState() {
     super.initState();
-    _subscription = _googleSignIn.onCurrentUserChanged.listen(
+    // KEEP this subscription: the GIS button's credential only arrives via
+    // this stream — deleting it breaks the button. The stream is only a
+    // trigger for the confirmation dialog now, never an auto sign-in.
+    _subscription = widget.googleSignIn.onCurrentUserChanged.listen(
       _handleAccountChanged,
       onError: _handleStreamError,
     );
-    // Ensure the plugin is initialized before renderButton asks it to draw GIS.
-    unawaited(_initializePlugin());
   }
 
-  Future<void> _initializePlugin() async {
-    // Round 7: this is only a quiet "are we already signed in?" check
-    // when the screen first loads — the user has NOT tried to sign in
-    // yet, so a failure here must never surface as a red error banner.
-    // Google's web SDK throws "Bad state: Future already completed"
-    // when isSignedIn() races with the GIS button's own init; that is
-    // a harmless background race, not a failed sign-in. Log it and
-    // carry on as a signed-out user.
-    try {
-      await _googleSignIn.isSignedIn();
-    } catch (error) {
-      debugPrint('GoogleSignInWebButton: silent sign-in check failed: $error');
-    }
-  }
+  bool get _signInInProgress => _confirming || _exchanging;
 
   Future<void> _handleAccountChanged(GoogleSignInAccount? account) async {
-    if (account == null || _handlingSignIn || !mounted) return;
+    if (account == null || _signInInProgress || !mounted) return;
 
-    setState(() => _handlingSignIn = true);
+    // G2: gate the token exchange behind an explicit confirmation.
+    // A streamed account means "the browser picked this Google account",
+    // not "the player wants to play as this account".
+    setState(() => _confirming = true);
+    final choice = await _showConfirmDialog(account);
+    if (!mounted) return;
+    setState(() => _confirming = false);
+
+    if (choice == _ConfirmChoice.switchAccount) {
+      // Forget the cached Google account so the GIS button offers the
+      // account chooser again instead of silently re-picking this one.
+      // Errors here are background noise, never a sign-in failure.
+      try {
+        await widget.googleSignIn.signOut();
+      } catch (error) {
+        debugPrint('GoogleSignInWebButton: signOut for account switch failed: $error');
+      }
+      return;
+    }
+    if (choice != _ConfirmChoice.cont) return;
+
+    // G4: from here on the exchange IS user-confirmed, so a failure is a
+    // real sign-in failure and may surface via onError.
+    setState(() => _exchanging = true);
     try {
       final idToken = (await account.authentication).idToken;
       if (idToken == null || idToken.isEmpty) {
@@ -88,12 +115,46 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
     } catch (error) {
       if (mounted) widget.onError(error);
     } finally {
-      if (mounted) setState(() => _handlingSignIn = false);
+      if (mounted) setState(() => _exchanging = false);
     }
   }
 
+  Future<_ConfirmChoice> _showConfirmDialog(GoogleSignInAccount account) async {
+    final displayName = account.displayName?.trim();
+    final name = displayName != null && displayName.isNotEmpty
+        ? displayName
+        : account.email.split('@').first;
+    final result = await showDialog<_ConfirmChoice>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => AlertDialog(
+        title: const Text('Sign in with Google?'),
+        content: Text('Continue as $name (${account.email})?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(_ConfirmChoice.switchAccount),
+            child: const Text('Use a different account'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(_ConfirmChoice.cont),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    return result ?? _ConfirmChoice.dismissed;
+  }
+
   void _handleStreamError(Object error) {
-    if (mounted) widget.onError(error);
+    // G4: background stream failures (GIS auto-select, a stale cached
+    // account, the plugin racing its own init) are NOT a failed sign-in
+    // and must never surface as a red error banner. Only a failure while
+    // the player is actively signing in may reach onError.
+    if (_signInInProgress) {
+      if (mounted) widget.onError(error);
+    } else {
+      debugPrint('GoogleSignInWebButton: background stream error ignored: $error');
+    }
   }
 
   @override
@@ -118,22 +179,16 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
             alignment: Alignment.center,
             children: <Widget>[
               IgnorePointer(
-                ignoring: _handlingSignIn,
+                ignoring: _signInInProgress,
                 child: Opacity(
-                  opacity: _handlingSignIn ? 0.45 : 1,
-                  child: google_sign_in_web.renderButton(
-                    configuration: google_sign_in_web.GSIButtonConfiguration(
-                      type: google_sign_in_web.GSIButtonType.standard,
-                      theme: google_sign_in_web.GSIButtonTheme.filledBlack,
-                      size: google_sign_in_web.GSIButtonSize.large,
-                      text: google_sign_in_web.GSIButtonText.signinWith,
-                      shape: google_sign_in_web.GSIButtonShape.rectangular,
-                      minimumWidth: buttonWidth,
-                    ),
+                  opacity: _signInInProgress ? 0.45 : 1,
+                  child: GisButton(
+                    minimumWidth: buttonWidth,
+                    compact: widget.compact,
                   ),
                 ),
               ),
-              if (_handlingSignIn)
+              if (_exchanging)
                 const Positioned(
                   right: 8,
                   child: SizedBox(

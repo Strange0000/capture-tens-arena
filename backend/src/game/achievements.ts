@@ -1,6 +1,6 @@
 import { AchievementModel } from "../models/Achievement.js";
 import { FriendModel } from "../models/Friend.js";
-import { env } from "../config/env.js";
+import { isOfflineDevMode } from "../config/env.js";
 import { MatchState } from "./types.js";
 import { teamForSeat } from "./deck.js";
 
@@ -37,7 +37,7 @@ export async function checkAndAwardAchievements(
   rankTier?: string,
   matchDurationMs?: number
 ): Promise<string[]> {
-  if (env.OFFLINE_DEV_MODE) return [];
+  if (isOfflineDevMode) return [];
 
   const newlyUnlocked: string[] = [];
   const existing = await AchievementModel.find({ userId }).select("code");

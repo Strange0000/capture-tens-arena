@@ -26,6 +26,9 @@ class _LoginScreenState extends State<LoginScreen>
   /// to wake, and a bare "Connecting…" gives the player no explanation.
   bool _showSlowHint = false;
   bool _buttonsVisible = false;
+  // Bumped after "Use a different Google account" so the GIS button is
+  // rendered fresh (PR-A G3).
+  int _googleButtonKey = 0;
   double _mouseX = 0.0;
   double _mouseY = 0.0;
 
@@ -61,8 +64,31 @@ class _LoginScreenState extends State<LoginScreen>
         app.cachedUsername = null;
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _showSlowHint = false;
+        });
+      }
     }
+  }
+
+  /// PR-A (G3): forget the cached Google account and re-render the GIS
+  /// button, so the player can pick a different Google account instead of
+  /// being silently signed into the one the browser last picked.
+  Future<void> _switchGoogleAccount() async {
+    final app = context.read<AppState>();
+    await app.auth.switchGoogleAccount();
+    if (mounted) setState(() => _googleButtonKey++);
+  }
+
+  /// Shows the "waking up the server" hint after ~6s of waiting. Shared by
+  /// the guest and Google paths (PR-A G6): the Render free tier can take
+  /// ~25-30s to wake for either one.
+  void _startSlowHintTimer() {
+    Future.delayed(const Duration(seconds: 6), () {
+      if (mounted && _loading) setState(() => _showSlowHint = true);
+    });
   }
 
   Future<void> _loginAsGuest() async {
@@ -70,9 +96,7 @@ class _LoginScreenState extends State<LoginScreen>
       _loading = true;
       _showSlowHint = false;
     });
-    Future.delayed(const Duration(seconds: 6), () {
-      if (mounted && _loading) setState(() => _showSlowHint = true);
-    });
+    _startSlowHintTimer();
     final app = context.read<AppState>();
     try {
       await app.bootGuest();
@@ -90,7 +114,11 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _loginWithGoogle() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _showSlowHint = false;
+    });
+    _startSlowHintTimer();
     final app = context.read<AppState>();
     try {
       await app.loginWithGoogle();
@@ -108,7 +136,12 @@ class _LoginScreenState extends State<LoginScreen>
           );
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _showSlowHint = false;
+        });
+      }
     }
   }
 
@@ -349,20 +382,48 @@ class _LoginScreenState extends State<LoginScreen>
     if (msg.contains('network') || msg.contains('Failed to fetch')) {
       return 'Could not reach Google. Check your connection and try again.';
     }
+    // PR-A (G4): backend failures, told apart by status / machine code.
+    // The backend returns a `code` (token_expired / invalid_audience /
+    // invalid_token) with its 401s, and the message carries the status.
+    if (msg.contains('500') || msg.contains('not configured')) {
+      return "Google login isn't set up on the server yet — please play as a guest.";
+    }
+    if (msg.contains('401') ||
+        msg.contains('token_expired') ||
+        msg.contains('invalid_audience') ||
+        msg.contains('invalid_token')) {
+      return "Google couldn't verify that account — try a different Google account.";
+    }
+    if (msg.contains('TimeoutException')) {
+      return 'The server is waking up — try again in a few seconds.';
+    }
     return 'Google sign-in did not work. You can still play as a guest.';
   }
 
   Widget _buildGoogleButton(AppState app, {bool compact = false}) {
     if (kIsWeb) {
       return google_web.GoogleSignInWebButton(
+        // Remounted after "Use a different Google account" so the GIS
+        // button renders fresh (PR-A G3).
+        key: ValueKey('google-$_googleButtonKey'),
+        googleSignIn: app.auth.googleSignIn,
         compact: compact,
         onIdToken: (idToken, username) async {
-          setState(() => _loading = true);
+          setState(() {
+            _loading = true;
+            _showSlowHint = false;
+          });
+          _startSlowHintTimer();
           try {
             await app.loginWithGoogleIdToken(idToken, username: username);
             if (mounted) Navigator.pushReplacementNamed(context, '/lobby');
           } finally {
-            if (mounted) setState(() => _loading = false);
+            if (mounted) {
+              setState(() {
+                _loading = false;
+                _showSlowHint = false;
+              });
+            }
           }
         },
         onError: (error) {
@@ -386,6 +447,19 @@ class _LoginScreenState extends State<LoginScreen>
       loading: _loading,
       onTap: _loginWithGoogle,
       primary: false,
+    );
+  }
+
+  /// PR-A (G3): lets the player pick a different Google account than the
+  /// one the browser would otherwise auto-select. Signs the cached Google
+  /// account out and re-renders the GIS button; never signs out on mount.
+  Widget _buildSwitchGoogleAccountButton() {
+    return TextButton(
+      onPressed: _switchGoogleAccount,
+      child: const Text(
+        'Use a different Google account',
+        style: TextStyle(fontSize: 12),
+      ),
     );
   }
 
@@ -433,12 +507,16 @@ class _LoginScreenState extends State<LoginScreen>
           const SizedBox(width: 10),
           Expanded(child: _buildGoogleButton(app, compact: true)),
         ]),
+        const SizedBox(height: 6),
+        _buildSwitchGoogleAccountButton(),
       ]);
     }
     return Column(children: [
       // "Welcome back" card: Google first, guest below, plain words.
       _buildGoogleButton(app),
-      const SizedBox(height: 14),
+      const SizedBox(height: 6),
+      _buildSwitchGoogleAccountButton(),
+      const SizedBox(height: 8),
       RoyalGoldButton(
         label: 'Play as Guest',
         icon: Icons.play_arrow_rounded,

@@ -10,3 +10,9 @@ services:
         value: production
       - key: PORT
         value: 10000
+      # PR-A: public Web OAuth client ID (same value already shipped in
+      # frontend/web/index.html's google-signin-client_id meta tag). The
+      # backend needs it to verify Google ID tokens; never put JWT_SECRET
+      # or any other secret in this file.
+      - key: GOOGLE_CLIENT_ID
+        value: 925721095742-omjs30pn4s3lcag3r8pr5grl514voisn.apps.googleusercontent.com

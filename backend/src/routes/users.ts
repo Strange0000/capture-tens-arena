@@ -5,7 +5,7 @@ import { RankingModel } from "../models/Ranking.js";
 import { StatisticsModel } from "../models/Statistics.js";
 import { FriendModel } from "../models/Friend.js";
 import { UserModel } from "../models/User.js";
-import { env } from "../config/env.js";
+import { isOfflineDevMode } from "../config/env.js";
 import { rankForMmr, TIERS } from "../services/rankingService.js";
 import { AchievementModel } from "../models/Achievement.js";
 import { ACHIEVEMENTS } from "../game/achievements.js";
@@ -14,7 +14,7 @@ import { classifyFriendRequest, friendshipPairKey } from "../services/friendship
 export const usersRouter = Router();
 
 usersRouter.get("/me", requireAuth, async (req, res, next) => {
-  if (env.OFFLINE_DEV_MODE) {
+  if (isOfflineDevMode) {
     const rank = rankForMmr(0);
     return res.json({ user: req.user, ranking: { ...rank, wins: 0, losses: 0, peakMmr: 0 }, statistics: null });
   }
@@ -50,7 +50,7 @@ usersRouter.get("/me", requireAuth, async (req, res, next) => {
 });
 
 usersRouter.get("/rank/:userId", requireAuth, async (req, res, next) => {
-  if (env.OFFLINE_DEV_MODE) {
+  if (isOfflineDevMode) {
     return res.json({ rank: rankForMmr(0) });
   }
   try {
@@ -67,7 +67,7 @@ usersRouter.get("/tiers", (_req, res) => {
 });
 
 usersRouter.get("/achievements", requireAuth, async (req, res, next) => {
-  if (env.OFFLINE_DEV_MODE) {
+  if (isOfflineDevMode) {
     return res.json({ achievements: ACHIEVEMENTS.map(a => ({ ...a, unlocked: false, unlockedAt: null })) });
   }
   try {
@@ -85,7 +85,7 @@ usersRouter.get("/achievements", requireAuth, async (req, res, next) => {
 });
 
 usersRouter.get("/leaderboard", async (_req, res, next) => {
-  if (env.OFFLINE_DEV_MODE) {
+  if (isOfflineDevMode) {
     return res.json({ season: currentSeason(), leaders: [] });
   }
   try {
@@ -103,7 +103,7 @@ usersRouter.get("/leaderboard", async (_req, res, next) => {
 });
 
 usersRouter.get("/search", requireAuth, async (req, res, next) => {
-  if (env.OFFLINE_DEV_MODE) return res.json({ users: [] });
+  if (isOfflineDevMode) return res.json({ users: [] });
   try {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     if (q.length < 2) return res.json({ users: [] });
@@ -132,7 +132,7 @@ usersRouter.get("/search", requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 usersRouter.get("/friends", requireAuth, async (req, res, next) => {
-  if (env.OFFLINE_DEV_MODE) {
+  if (isOfflineDevMode) {
     return res.json({ friends: [] });
   }
   try {
@@ -170,7 +170,7 @@ usersRouter.get("/friends", requireAuth, async (req, res, next) => {
 });
 
 usersRouter.post("/friends/request", requireAuth, async (req, res, next) => {
-  if (env.OFFLINE_DEV_MODE) return res.status(400).json({ error: "Friend requests are unavailable in offline dev mode" });
+  if (isOfflineDevMode) return res.status(400).json({ error: "Friend requests are unavailable in offline dev mode" });
   try {
     const raw = req.body?.username;
     const username = typeof raw === "string" ? raw.trim() : "";
@@ -233,7 +233,7 @@ usersRouter.post("/friends/request", requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 usersRouter.post("/friends/accept", requireAuth, async (req, res, next) => {
-  if (env.OFFLINE_DEV_MODE) return res.status(400).json({ error: "Friend requests are unavailable in offline dev mode" });
+  if (isOfflineDevMode) return res.status(400).json({ error: "Friend requests are unavailable in offline dev mode" });
   try {
     const friendId = typeof req.body?.friendId === "string" ? req.body.friendId : "";
     if (!friendId) return res.status(400).json({ error: "Friend request ID is required" });
@@ -249,7 +249,7 @@ usersRouter.post("/friends/accept", requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 usersRouter.delete("/friends/:id", requireAuth, async (req, res, next) => {
-  if (env.OFFLINE_DEV_MODE) return res.status(400).json({ error: "Friend requests are unavailable in offline dev mode" });
+  if (isOfflineDevMode) return res.status(400).json({ error: "Friend requests are unavailable in offline dev mode" });
   try {
     // Delete atomically so accept/remove races cannot double-adjust friendCount.
     const friend = await FriendModel.findOneAndDelete({

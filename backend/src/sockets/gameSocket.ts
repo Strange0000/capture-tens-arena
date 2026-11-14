@@ -1,6 +1,6 @@
 import { Server } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
-import { env } from "../config/env.js";
+import { env, isOfflineDevMode } from "../config/env.js";
 import { redisPub, redisSub } from "../db/redis.js";
 import { chooseBotCard } from "../game/bot.js";
 import { createMatch, dealFirstFive, dealRemainingCards, playCard, publicStateForSeat, selectPowerSuit, startNextTrick, assertUniqueCards } from "../game/engine.js";
@@ -28,7 +28,7 @@ function currentSeason() {
 }
 
 export function registerGameSockets(io: Server) {
-  if (!env.OFFLINE_DEV_MODE) {
+  if (!isOfflineDevMode) {
     io.adapter(createAdapter(redisPub, redisSub));
   }
   io.use(authenticateSocket);
@@ -293,7 +293,7 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("friends:status", async () => {
-      if (env.OFFLINE_DEV_MODE) return socket.emit("friends:statusList", { statuses: [] });
+      if (isOfflineDevMode) return socket.emit("friends:statusList", { statuses: [] });
       try {
         const friends = await FriendModel.find({
           status: "accepted",
@@ -611,7 +611,7 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
     const tensCapturedThisMatch = teamCaptures?.tens?.length ?? 0;
     const acesCapturedThisMatch = teamCaptures?.aces ?? 0;
 
-    if (!env.OFFLINE_DEV_MODE) {
+    if (!isOfflineDevMode) {
       try {
         const stats = await StatisticsModel.findOneAndUpdate(
           { userId: player.userId },
@@ -663,7 +663,7 @@ async function persistIfComplete(io: Server, state: ReturnType<typeof requireMat
     matchStore.delete(state.id);
   }, 10000);
 
-  if (env.OFFLINE_DEV_MODE) return;
+  if (isOfflineDevMode) return;
   await MatchModel.create({
     mode: state.mode,
     state,
@@ -693,7 +693,7 @@ function seatForUser(players: PlayerSeat[], userId: string) {
 }
 
 async function broadcastFriendStatus(io: Server, userId: string, status: "online" | "offline") {
-  if (env.OFFLINE_DEV_MODE) return;
+  if (isOfflineDevMode) return;
   try {
     const friends = await FriendModel.find({
       status: "accepted",

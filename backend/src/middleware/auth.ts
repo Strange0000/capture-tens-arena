@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import jwt, { SignOptions } from "jsonwebtoken";
-import { env } from "../config/env.js";
+import { env, isOfflineDevMode } from "../config/env.js";
 
 export interface AuthUser {
   id: string;
@@ -25,7 +25,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     req.user = jwt.verify(token, env.JWT_SECRET) as AuthUser;
     next();
   } catch {
-    if (env.OFFLINE_DEV_MODE) {
+    if (isOfflineDevMode) {
       const decoded = jwt.decode(token) as AuthUser | null;
       if (decoded && decoded.id) {
         req.user = decoded;

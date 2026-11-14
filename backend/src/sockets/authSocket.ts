@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import { Socket } from "socket.io";
-import { env } from "../config/env.js";
+import { env, isOfflineDevMode } from "../config/env.js";
 import { AuthUser } from "../middleware/auth.js";
 
 export interface AuthedSocket extends Socket {
@@ -10,7 +10,7 @@ export interface AuthedSocket extends Socket {
 export function authenticateSocket(socket: AuthedSocket, next: (error?: Error) => void) {
   const token = socket.handshake.auth?.token || socket.handshake.headers.authorization?.toString().replace("Bearer ", "");
   if (!token) {
-    if (env.OFFLINE_DEV_MODE) {
+    if (isOfflineDevMode) {
       socket.user = { id: `dev-${socket.id.slice(-6)}`, username: "Player", roles: ["user"] };
       return next();
     }
@@ -20,7 +20,7 @@ export function authenticateSocket(socket: AuthedSocket, next: (error?: Error) =
     socket.user = jwt.verify(token, env.JWT_SECRET) as AuthUser;
     next();
   } catch {
-    if (env.OFFLINE_DEV_MODE) {
+    if (isOfflineDevMode) {
       const decoded = jwt.decode(token) as AuthUser | null;
       if (decoded && decoded.id) {
         socket.user = decoded;

@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -24,6 +24,44 @@ class AuthService {
     : baseUrl = baseUrl ?? 'https://capture-tens-arena.onrender.com';
 
   final String baseUrl;
+
+  // PR-A (G3): ONE shared GoogleSignIn for the whole app, owned here and
+  // injected into the web GIS button widget. A second instance would never
+  // see the button's credential (it only arrives via this instance's
+  // onCurrentUserChanged stream) and would fight over the cached account.
+  //
+  // Web construction stays client-ID-free: the client ID comes from
+  // web/index.html's google-signin-client_id meta tag. The ID is only
+  // passed on native, where there is no meta tag to read it from.
+  static const String _envClientId =
+      String.fromEnvironment('GOOGLE_CLIENT_ID', defaultValue: '');
+  static const String _defaultClientId =
+      '925721095742-omjs30pn4s3lcag3r8pr5grl514voisn.apps.googleusercontent.com';
+  static String get _nativeClientId =>
+      _envClientId.isNotEmpty ? _envClientId : _defaultClientId;
+
+  final GoogleSignIn googleSignIn = GoogleSignIn(
+    clientId: kIsWeb ? null : _nativeClientId,
+    serverClientId: kIsWeb ? null : _nativeClientId,
+    scopes: const ['email', 'profile', 'openid'],
+  );
+
+  /// Signs the cached Google account out and revokes its grant, so the
+  /// next Google sign-in offers the account chooser instead of silently
+  /// re-picking the same account. Failures are swallowed: there may simply
+  /// be no cached account, and that is not an error.
+  Future<void> switchGoogleAccount() async {
+    try {
+      await googleSignIn.signOut();
+    } catch (error) {
+      debugPrint('AuthService: Google signOut for account switch failed: $error');
+    }
+    try {
+      await googleSignIn.disconnect();
+    } catch (error) {
+      debugPrint('AuthService: Google disconnect for account switch failed: $error');
+    }
+  }
 
   // Render's free service can take longer than 15 seconds to wake from idle.
   // Allow enough time for the backend cold start before treating login as failed.
@@ -82,18 +120,10 @@ class AuthService {
   }
 
   Future<GuestSession> googleLogin() async {
-    const envClientId = String.fromEnvironment('GOOGLE_CLIENT_ID', defaultValue: '');
-    const defaultClientId =
-        '925721095742-omjs30pn4s3lcag3r8pr5grl514voisn.apps.googleusercontent.com';
-    final clientId = envClientId.isNotEmpty ? envClientId : defaultClientId;
-
     // Web must use the Google Identity Services button widget. This method is
     // retained for native platforms; serverClientId is not supported on web.
-    final googleSignIn = GoogleSignIn(
-      clientId: clientId,
-      serverClientId: kIsWeb ? null : clientId,
-      scopes: ['email', 'profile', 'openid'],
-    );
+    // It uses the shared instance (PR-A G3): a fresh per-call instance
+    // would not share the cached account with the rest of the app.
     final account = await googleSignIn.signIn();
     if (account == null) throw Exception('Google Sign-In aborted');
 
@@ -125,7 +155,7 @@ class AuthService {
     final requestedName = username?.trim();
     final safeName = requestedName == null || requestedName.isEmpty
         ? 'Player'
-        : String.fromCharCodes(requestedName.runes.take(30));
+        : String.fromCharCodes(requestedName.runes.take(24));
 
     final response = await http.post(
       Uri.parse('$baseUrl/auth/google'),

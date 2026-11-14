@@ -1,14 +1,17 @@
 import { NextFunction, Request, Response } from "express";
 
 export class AppError extends Error {
-  constructor(public statusCode: number, message: string) {
+  constructor(public statusCode: number, message: string, public code?: string) {
     super(message);
   }
 }
 
 export function errorHandler(error: unknown, _req: Request, res: Response, _next: NextFunction) {
   if (error instanceof AppError) {
-    return res.status(error.statusCode).json({ error: error.message });
+    return res.status(error.statusCode).json({
+      error: error.message,
+      ...(error.code ? { code: error.code } : {}),
+    });
   }
   const message = error instanceof Error ? error.message : "Unexpected error";
   const isValidation = message.toLowerCase().includes('validation') || message.includes('Expected');
