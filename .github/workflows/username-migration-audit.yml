@@ -36,4 +36,4 @@ jobs:
         working-directory: backend
         run: npm run migrate:usernames -- apply
         env:
-          MONGO_URI: ${{ secr
+          MONGO_URI: ${{ secrets.MONGO_URI }}
