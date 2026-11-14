@@ -96,6 +96,12 @@ class AppState extends ChangeNotifier {
 
   bool get isLoggedIn => token != null;
 
+  /// Guests get usernames like "GuestAb12Cd" (backend authService
+  /// createGuest). Friends added as a guest live only in this
+  /// browser's cached session — the UI says so in plain words.
+  bool get isGuest =>
+      username != null && username!.startsWith('Guest');
+
   // ── Cached session check ───────────────────────────────────────────────────
 
   Future<void> _checkCachedSession() async {
@@ -249,10 +255,64 @@ class AppState extends ChangeNotifier {
   void _onMatchState(Map<String, dynamic> json) {
     // debug: print('[AppState] match:state received, phase=${json['phase']}, id=${json['id']}');
     final incoming = MatchState.fromJson(json);
-    // Ignore stale updates from a match we already left
-    if (_leftMatchId != null && incoming.id == _leftMatchId) return;
+    // Never resurrect a match we already left — regardless of the phase
+    // the re-broadcast claims. The old code cleared this guard on ANY
+    // non-'complete' state for the same id, and the server re-broadcasts
+    // a stored match on reconnect (reconnectMatch) — so after Home /
+    // Leave, and again after "Play as Guest" re-login, the finished
+    // match came back, the lobby auto-navigated to /game, and the
+    // victory modal reappeared on top of a dead game. A left match id
+    // is dead forever; a genuinely new match always gets a new id, and
+    // only then is the guard cleared.
+    if (_leftMatchId != null) {
+      if (incoming.id == _leftMatchId) return;
+      if (incoming.phase != 'complete') _leftMatchId = null;
+    }
+    // Stale-broadcast guard: the in-memory matchStore is per-process
+    // while the socket adapter is shared, so an older match:state can
+    // arrive after a newer one. A stale state must never rewind the
+    // game — it is what returned a played card to the hand and put the
+    // timer under the wrong player in Round 10 (trick 6). A new match
+    // always has a new id, so this only ever compares states of the
+    // same match.
+    if (match != null && incoming.id == match!.id) {
+      final current = match!;
+      if (incoming.turnGeneration < current.turnGeneration ||
+          (incoming.turnGeneration == current.turnGeneration &&
+              incoming.updatedAt < current.updatedAt)) {
+        debugPrint(
+            '[AppState] ignoring stale match:state '
+            '(gen ${incoming.turnGeneration}/${incoming.updatedAt} '
+            '< held ${current.turnGeneration}/${current.updatedAt})');
+        return;
+      }
+    }
+    // Duplicate-card detector (log only): hand + current trick must
+    // never contain the same card id twice. The engine simulation
+    // (300 games) and the server invariant say this cannot happen at
+    // state level, so if it ever appears on screen it is a rendering
+    // or stale-state problem — log it with the full ids instead of
+    // failing silently.
+    final seenIds = <String, String>{};
+    for (final card in incoming.hand) {
+      final prev = seenIds[card.id];
+      if (prev != null) {
+        debugPrint('[AppState] DUPLICATE card ${card.id} in hand (also in $prev)');
+      }
+      seenIds[card.id] = 'hand';
+    }
+    final trick = incoming.currentTrick;
+    if (trick != null) {
+      for (final play in trick.plays) {
+        final prev = seenIds[play.card.id];
+        if (prev != null) {
+          debugPrint(
+              '[AppState] DUPLICATE card ${play.card.id} in trick (also in $prev)');
+        }
+        seenIds[play.card.id] = 'trick';
+      }
+    }
     match = incoming;
-    _leftMatchId = null; // Clear since we're in a valid match now
     // Set inMatch for any active phase so reconnecting players are navigated correctly
     const activePhases = {'deal-five', 'power-select', 'deal-rest', 'playing', 'trick-resolving', 'complete'};
     if (activePhases.contains(match!.phase)) {
@@ -499,7 +559,11 @@ class AppState extends ChangeNotifier {
 
   Future<bool> sendFriendRequest(String targetUsername) async {
     final sessionToken = token;
-    if (sessionToken == null) return false;
+    if (sessionToken == null) {
+      friendActionError = "Sign in to manage friends";
+      notifyListeners();
+      return false;
+    }
     friendActionError = null;
     try {
       await auth.sendFriendRequest(sessionToken, targetUsername.trim());
@@ -516,7 +580,11 @@ class AppState extends ChangeNotifier {
 
   Future<bool> acceptFriendRequest(String friendId) async {
     final sessionToken = token;
-    if (sessionToken == null) return false;
+    if (sessionToken == null) {
+      friendActionError = "Sign in to manage friends";
+      notifyListeners();
+      return false;
+    }
     friendActionError = null;
     try {
       await auth.acceptFriendRequest(sessionToken, friendId);
@@ -533,7 +601,11 @@ class AppState extends ChangeNotifier {
 
   Future<bool> removeFriend(String friendId) async {
     final sessionToken = token;
-    if (sessionToken == null) return false;
+    if (sessionToken == null) {
+      friendActionError = "Sign in to manage friends";
+      notifyListeners();
+      return false;
+    }
     friendActionError = null;
     try {
       await auth.removeFriend(sessionToken, friendId);
@@ -639,7 +711,11 @@ class AppState extends ChangeNotifier {
 
   /// Called when player returns to home after a completed match.
   void leaveMatch() {
-    _leftMatchId = match?.id; // Remember so we ignore stale server updates
+    // Remember so we ignore stale server updates. Never overwrite the
+    // guard with null: a second leaveMatch() while match is already null
+    // (double-tap, queue cancel) used to wipe it and let the stale
+    // completed match come back.
+    if (match != null) _leftMatchId = match!.id;
     // Explicitly cancel any ranked search as well as marking a match leave.
     socket.cancelRankedQueue();
     socket.leaveMatch();

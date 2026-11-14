@@ -53,10 +53,17 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
   }
 
   Future<void> _initializePlugin() async {
+    // Round 7: this is only a quiet "are we already signed in?" check
+    // when the screen first loads — the user has NOT tried to sign in
+    // yet, so a failure here must never surface as a red error banner.
+    // Google's web SDK throws "Bad state: Future already completed"
+    // when isSignedIn() races with the GIS button's own init; that is
+    // a harmless background race, not a failed sign-in. Log it and
+    // carry on as a signed-out user.
     try {
       await _googleSignIn.isSignedIn();
     } catch (error) {
-      if (mounted) widget.onError(error);
+      debugPrint('GoogleSignInWebButton: silent sign-in check failed: $error');
     }
   }
 

@@ -118,7 +118,10 @@ class MatchState {
     this.currentTrick,
     this.turnDeadline,
     this.lastTrickWinner,
+    this.lastTrickWinnerTeam,
     required this.mode,
+    this.turnGeneration = 0,
+    this.updatedAt = 0,
   });
 
   final String id;
@@ -135,6 +138,15 @@ class MatchState {
   final int firstPlayerSeat;
   final int? turnDeadline;
   final String? lastTrickWinner;
+  final String? lastTrickWinnerTeam;
+  // Monotonic version of this state, from the server (see engine.ts
+  // publicStateForSeat). The client ignores a match:state whose
+  // (turnGeneration, updatedAt) is older than the one it already holds
+  // for the same match id — a stale broadcast must never rewind the
+  // game (Round 10, trick 6: a played card returned to the hand and
+  // the timer sat under the wrong player).
+  final int turnGeneration;
+  final int updatedAt;
 
   factory MatchState.fromJson(Map<String, dynamic> json) {
     final tricks = json['completedTricks'] as List<dynamic>? ?? [];
@@ -142,13 +154,17 @@ class MatchState {
         .map((item) => MatchPlayer.fromJson(item as Map<String, dynamic>))
         .toList();
 
-    // Extract last trick winner name
+    // Extract last trick winner name + team (for the persistent
+    // "Last trick" line on the game screen).
     String? lastWinner;
+    String? lastWinnerTeam;
     if (tricks.isNotEmpty) {
       final lastTrick = tricks.last as Map<String, dynamic>;
       final winnerSeat = lastTrick['winnerSeat'] as int?;
       if (winnerSeat != null) {
-        lastWinner = players.where((p) => p.seat == winnerSeat).firstOrNull?.username;
+        final winner = players.where((p) => p.seat == winnerSeat).firstOrNull;
+        lastWinner = winner?.username;
+        lastWinnerTeam = winner?.team;
       }
     }
 
@@ -214,7 +230,10 @@ class MatchState {
       completedTricksCount: tricks.length,
       firstPlayerSeat: json['firstPlayerSeat'] as int? ?? 0,
       turnDeadline: json['turnDeadline'] as int?,
+      turnGeneration: json['turnGeneration'] as int? ?? 0,
+      updatedAt: json['updatedAt'] as int? ?? 0,
       lastTrickWinner: lastWinner,
+      lastTrickWinnerTeam: lastWinnerTeam,
     );
   }
 }

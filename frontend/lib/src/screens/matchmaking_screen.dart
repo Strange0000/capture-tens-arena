@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
+import '../widgets/royal_widgets.dart';
 
 class MatchmakingScreen extends StatefulWidget {
   const MatchmakingScreen({super.key});
@@ -17,6 +18,10 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
   late final AnimationController _searchCtrl;
   int _elapsedSeconds = 0;
   bool _navigationTriggered = false;
+  /// Round 10: true once this screen has started leaving (a pop is
+  /// already in progress or was requested). The auto-pop branch below
+  /// must never fire during its own pop transition — see build().
+  bool _leaving = false;
 
   @override
   void initState() {
@@ -91,53 +96,83 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
     } else if (!_navigationTriggered &&
         app.lobbyStatus == LobbyStatus.idle &&
         app.match == null) {
-      _navigationTriggered = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) Navigator.of(context).pop();
-      });
+      // Round 10 — the black screen on browser Back: Back pops this
+      // route, then PopScope (below) cancels the queue, which sets
+      // lobbyStatus = idle and rebuilds THIS screen while its pop
+      // transition is still running. The unguarded post-frame pop
+      // below then fired a SECOND pop — popping the lobby route (or
+      // stalling the transition) and leaving this near-black
+      // Scaffold on screen with the URL already at #/lobby. Only
+      // auto-pop when this route is still current AND no leave is
+      // already in progress.
+      if (ModalRoute.of(context)?.isCurrent == true && !_leaving) {
+        _navigationTriggered = true;
+        _leaving = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (context.mounted) Navigator.of(context).pop();
+        });
+      }
     }
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF070B13),
-      body: Stack(
-        children: [
-          // Background
-          Positioned.fill(
-            child: Image.asset('assets/images/matchmaking_bg.png', fit: BoxFit.cover),
-          ),
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    const Color(0xFF070B13).withOpacity(0.5),
-                    const Color(0xFF070B13).withOpacity(0.85),
-                  ],
-                ),
-              ),
-            ),
-          ),
+    // Round 8: leaving this screen must always cancel the queue.
+    // Browser back used to just pop the route, leaving the search
+    // running — the lobby then showed "MATCHMAKING IN PROGRESS" and
+    // only its banner could stop it. PopScope cancels on any pop
+    // (back button, swipe, or programmatic) — but only while still
+    // searching: when a match was just found, the route is replaced
+    // by /game, and cancelling then would wipe the new match
+    // (cancelRankedQueue clears app.match), so that case is guarded.
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        // Round 10: mark the leave FIRST — the cancel below rebuilds
+        // this screen mid-pop with lobbyStatus == idle, and the
+        // auto-pop branch in build() must not fire a second pop.
+        if (didPop) _leaving = true;
+        if (didPop &&
+            app.match == null &&
+            app.lobbyStatus == LobbyStatus.queuing) {
+          app.cancelRankedQueue();
+        }
+      },
+      child: Scaffold(
+      backgroundColor: Colors.transparent,
+      // Round 11: the old photo background (matchmaking_bg.png)
+      // left the right ~2/3 of a desktop screen black, and the
+      // content was a narrow ~310px column of intrinsic-width
+      // children. The background is now the code-drawn casino
+      // felt (same as lobby/game), and the content sits in a
+      // centred max-width column, so the screen reads as one
+      // full-width panel instead of a thin strip.
+      body: RoyalBackground(
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isShort = constraints.maxHeight < 560;
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: constraints.maxHeight,
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 560),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                          SizedBox(height: isShort ? 8 : 24),
 
-          // Content
-          SafeArea(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Spacer(flex: 2),
+                          // Animated radar/portal
+                          _AnimatedPortal(
+                            pulseCtrl: _pulseCtrl,
+                            rotateCtrl: _rotateCtrl,
+                            searchCtrl: _searchCtrl,
+                            size: isShort ? 140 : 220,
+                          ),
 
-                    // Animated radar/portal
-                    _AnimatedPortal(
-                      pulseCtrl: _pulseCtrl,
-                      rotateCtrl: _rotateCtrl,
-                      searchCtrl: _searchCtrl,
-                    ),
-
-                    const SizedBox(height: 48),
+                          SizedBox(height: isShort ? 24 : 48),
 
                     // Searching text
                     Text(
@@ -167,7 +202,7 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
                       style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 14),
                     ),
 
-                    const SizedBox(height: 32),
+                    SizedBox(height: isShort ? 16 : 32),
 
                     // Timer
                     Container(
@@ -223,14 +258,16 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
                         ),
                       ),
 
-                    const Spacer(flex: 2),
+                    SizedBox(height: isShort ? 16 : 32),
 
                     // Dot animation
                     _DotLoader(),
 
-                    const SizedBox(height: 32),
+                    SizedBox(height: isShort ? 16 : 32),
 
-                    // Cancel button
+                    // Cancel button — always reachable now: the
+                    // scrollable layout guarantees it is on screen
+                    // (or one scroll away) at any window height.
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: Colors.redAccent, width: 1.2),
@@ -245,15 +282,20 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
                       label: const Text('Cancel Search', style: TextStyle(fontWeight: FontWeight.w800)),
                     ),
 
-                    const SizedBox(height: 40),
+                    SizedBox(height: isShort ? 16 : 40),
                   ],
                 ),
               ),
             ),
           ),
-        ],
+        ),
+      );
+            },
+          ),
+        ),
       ),
-    );
+    ),
+);
   }
 }
 
@@ -264,17 +306,23 @@ class _AnimatedPortal extends StatelessWidget {
     required this.pulseCtrl,
     required this.rotateCtrl,
     required this.searchCtrl,
+    this.size = 220,
   });
 
   final AnimationController pulseCtrl;
   final AnimationController rotateCtrl;
   final AnimationController searchCtrl;
 
+  /// Outer diameter. Round 8: shrinks on short screens (140px) so
+  /// the Cancel button still fits in the viewport.
+  final double size;
+
   @override
   Widget build(BuildContext context) {
+    final f = size / 220;
     return SizedBox(
-      width: 220,
-      height: 220,
+      width: size,
+      height: size,
       child: AnimatedBuilder(
         animation: Listenable.merge([pulseCtrl, rotateCtrl, searchCtrl]),
         builder: (context, _) {
@@ -284,8 +332,8 @@ class _AnimatedPortal extends StatelessWidget {
             children: [
               // Outer glow ring
               Container(
-                width: 220,
-                height: 220,
+                width: size,
+                height: size,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
@@ -303,8 +351,8 @@ class _AnimatedPortal extends StatelessWidget {
               ),
               // Middle ring
               Container(
-                width: 160,
-                height: 160,
+                width: 160 * f,
+                height: 160 * f,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
@@ -317,14 +365,14 @@ class _AnimatedPortal extends StatelessWidget {
               Transform.rotate(
                 angle: rotateCtrl.value * 2 * pi,
                 child: CustomPaint(
-                  size: const Size(140, 140),
+                  size: Size(140 * f, 140 * f),
                   painter: _ArcPainter(),
                 ),
               ),
               // Inner core
               Container(
-                width: 80,
-                height: 80,
+                width: 80 * f,
+                height: 80 * f,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
@@ -339,10 +387,10 @@ class _AnimatedPortal extends StatelessWidget {
                     width: 2,
                   ),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.search_rounded,
-                  color: Color(0xFF48E5C2),
-                  size: 32,
+                  color: const Color(0xFF48E5C2),
+                  size: 32 * f,
                 ),
               ),
               // Scanning line
@@ -350,8 +398,8 @@ class _AnimatedPortal extends StatelessWidget {
                 angle: searchCtrl.value * 2 * pi,
                 child: Container(
                   width: 1.5,
-                  height: 80,
-                  margin: const EdgeInsets.only(bottom: 80),
+                  height: 80 * f,
+                  margin: EdgeInsets.only(bottom: 80 * f),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,

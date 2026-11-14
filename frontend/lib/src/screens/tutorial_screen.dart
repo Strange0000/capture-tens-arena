@@ -23,14 +23,14 @@ class _TutorialScreenState extends State<TutorialScreen> {
     _TutorialStep(
       emoji: '🎯',
       title: 'Capture the 10s',
-      description: 'The team that captures the most 10-value cards wins the match. There are four 10s in the deck — one per suit.',
-      tip: 'Tiebreaker: total cards captured, then aces',
+      description: 'The team that captures the most 10-value cards over 13 tricks wins the match. There are four 10s in the deck — one per suit.',
+      tip: 'Tiebreakers: most 10s, then most cards, then most aces',
       color: Color(0xFFFFC857),
     ),
     _TutorialStep(
       emoji: '⚡',
       title: 'The Power Suit',
-      description: 'Before play begins, the dealer chooses a Power Suit (trump). Cards of this suit beat ALL other suits!',
+      description: 'Before play begins, the first player chooses a Power Suit (trump) after seeing their first 5 cards. Cards of this suit beat ALL other suits!',
       tip: 'Choose the suit you have the most cards in',
       color: Color(0xFFFF6B6B),
     ),
@@ -45,8 +45,8 @@ class _TutorialScreenState extends State<TutorialScreen> {
       emoji: '⬆️',
       title: 'Play Higher',
       description: 'If following the lead suit, you must play a HIGHER card than the current highest — unless your teammate is already winning!',
-      tip: 'Card order: 2, 3, 4 ... 10, J, Q, K, A',
-      color: Color(0xFFB9F2FF),
+      tip: 'Card order: A > K > Q > J > 10 > 9 > 8 > 7 > 6 > 5 > 4 > 3 > 2',
+      color: Color(0xFF48E5C2),
     ),
     _TutorialStep(
       emoji: '🛡️',

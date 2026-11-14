@@ -4,14 +4,61 @@ import '../models/match_state.dart';
 import '../services/audio_service.dart';
 import 'arena_card_widget.dart';
 
+/// Sizing for the trick cluster, shared with [GameTable] so the player
+/// chips can be positioned around it with a guaranteed clear lane.
+///
+/// Round 3: the old cluster was 220×185 with 58px cards — the four
+/// played cards piled into one overlapping blob in the middle of a
+/// small oval. The cluster is now ~176×160 (44px cards on desktop),
+/// and the cards sit further apart (±0.6 vertically) so there is a real
+/// gap between them instead of a pile.
+///
+/// Round 8 — why the height is 160, not 132: with the old 132px box
+/// and ±0.75 vertical alignment, the top card's centre sat at
+/// y = 0.125 × 132 = 16.5px, so a 63px-tall card spanned y −15…48 —
+/// the top 15px (the corner pip: rank + suit) was clipped off by the
+/// Stack, and the bottom card lost its bottom pip the same way. A
+/// trick card with no readable corner pip is easy to misread — the
+/// Round 7 test reported a "duplicate 2♣" that the engine cannot
+/// produce (see the backend regression test), and clipped pips are
+/// the most likely cause. The box is now tall enough that every
+/// card's corner pips are fully visible at every scale.
+({double width, double height, double cardWidth}) trickAreaMetrics(
+  double screenWidth, {
+  double scale = 1.0,
+}) {
+  final bool isMobile = screenWidth < 450;
+  final bool extraNarrowPhone = screenWidth < 360;
+  final double width = extraNarrowPhone
+      ? 120.0
+      : isMobile
+          ? 150.0
+          : 176.0;
+  final double height = extraNarrowPhone
+      ? 112.0
+      : isMobile
+          ? 130.0
+          : 160.0;
+  final double cardWidth = extraNarrowPhone
+      ? 32.0
+      : isMobile
+          ? 36.0
+          : 44.0;
+  return (width: width * scale, height: height * scale, cardWidth: cardWidth * scale);
+}
+
 /// Renders the 4 cards of the current trick in a cross layout.
 /// New cards fly in from the player's seat direction with a smooth animation.
 class TrickArea extends StatefulWidget {
-  const TrickArea({super.key, required this.trick, required this.powerSuit, required this.mySeat});
+  const TrickArea({super.key, required this.trick, required this.powerSuit, required this.mySeat, this.scale = 1.0});
 
   final CurrentTrick trick;
   final String? powerSuit;
   final int mySeat;
+
+  /// Shrink factor for short tables — [GameTable] passes 0.8 when the
+  /// oval is too short for the full-size cluster plus the rim chips.
+  final double scale;
 
   @override
   State<TrickArea> createState() => _TrickAreaState();
@@ -147,24 +194,10 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
     }
 
     final double sw = MediaQuery.sizeOf(context).width;
-    final bool isMobile = sw < 450;
-    // The four played cards need their own clear center lane on phones.
-    final bool extraNarrowPhone = sw < 360;
-    final double width = extraNarrowPhone
-        ? (sw * 0.38).clamp(120.0, 136.0)
-        : isMobile
-            ? (sw * 0.40).clamp(150.0, 176.0)
-            : (sw * 0.46).clamp(180.0, 220.0);
-    final double height = extraNarrowPhone
-        ? 124.0
-        : isMobile
-            ? (width * 0.84).clamp(128.0, 150.0)
-            : (width * 0.85).clamp(150.0, 185.0);
-    final double cardWidth = extraNarrowPhone
-        ? 34.0
-        : isMobile
-            ? (width * 0.25).clamp(40.0, 46.0)
-            : (width * 0.26).clamp(48.0, 58.0);
+    final metrics = trickAreaMetrics(sw, scale: widget.scale);
+    final double width = metrics.width;
+    final double height = metrics.height;
+    final double cardWidth = metrics.cardWidth;
 
     return SizedBox(
       width: width,
@@ -172,31 +205,33 @@ class _TrickAreaState extends State<TrickArea> with TickerProviderStateMixin {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Relative Seat 2 → top (Partner)
+          // Relative Seat 2 → top (Partner). ±0.6, not ±0.75: at
+          // ±0.75 the top/bottom cards' corner pips were clipped by
+          // the cluster box (see trickAreaMetrics).
           if (byRelativeSeats[2] != null)
             Align(
-              alignment: const Alignment(0.0, -0.62),
+              alignment: const Alignment(0.0, -0.6),
               child: _buildAnimatedCard(byRelativeSeats[2]!.seat, byRelativeSeats[2]!, cardWidth),
             ),
 
           // Relative Seat 1 → right (Opponent 2)
           if (byRelativeSeats[1] != null)
             Align(
-              alignment: const Alignment(0.68, 0.0),
+              alignment: const Alignment(0.75, 0.0),
               child: _buildAnimatedCard(byRelativeSeats[1]!.seat, byRelativeSeats[1]!, cardWidth),
             ),
 
           // Relative Seat 3 → left (Opponent 1)
           if (byRelativeSeats[3] != null)
             Align(
-              alignment: const Alignment(-0.68, 0.0),
+              alignment: const Alignment(-0.75, 0.0),
               child: _buildAnimatedCard(byRelativeSeats[3]!.seat, byRelativeSeats[3]!, cardWidth),
             ),
 
           // Relative Seat 0 → bottom (You)
           if (byRelativeSeats[0] != null)
             Align(
-              alignment: const Alignment(0.0, 0.62),
+              alignment: const Alignment(0.0, 0.6),
               child: _buildAnimatedCard(byRelativeSeats[0]!.seat, byRelativeSeats[0]!, cardWidth),
             ),
 

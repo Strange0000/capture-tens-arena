@@ -3,7 +3,7 @@ import { createAdapter } from "@socket.io/redis-adapter";
 import { env } from "../config/env.js";
 import { redisPub, redisSub } from "../db/redis.js";
 import { chooseBotCard } from "../game/bot.js";
-import { createMatch, dealFirstFive, dealRemainingCards, playCard, publicStateForSeat, selectPowerSuit, startNextTrick } from "../game/engine.js";
+import { createMatch, dealFirstFive, dealRemainingCards, playCard, publicStateForSeat, selectPowerSuit, startNextTrick, assertUniqueCards } from "../game/engine.js";
 import { legalCardsForSeat } from "../game/rules.js";
 import { MatchMode, PlayerSeat, Suit } from "../game/types.js";
 import { teamForSeat } from "../game/deck.js";
@@ -421,6 +421,14 @@ function startMatch(io: Server, players: PlayerSeat[], mode: MatchMode) {
 
 function broadcastState(io: Server, matchId: string) {
   const state = requireMatch(matchId);
+  // Log-only invariant: a state-level duplicate is supposed to be
+  // impossible (single 52-card deck, each card dealt once). If it ever
+  // does happen, say so in the server log instead of silently serving
+  // a duplicated card to the table. Never throw here.
+  const invariantError = assertUniqueCards(state);
+  if (invariantError) {
+    console.error(`[INVARIANT] match ${matchId}: ${invariantError}`);
+  }
   console.log(`[GAME] Broadcasting state for match ${matchId}, phase: ${state.phase}`);
   for (const player of state.players) {
     io.to(`user:${player.userId}`).emit("match:state", publicStateForSeat(state, player.seat));
@@ -469,26 +477,62 @@ function maybeBotPowerSelect(io: Server, matchId: string) {
   }, env.BOT_THINK_MS);
 }
 
-function maybeBotTurn(io: Server, matchId: string) {
+// Bot-turn watchdog. The previous version had no retry: if
+// chooseBotCard threw and no legal fallback card was found, the bot
+// simply never played and the game stalled until the 45s turn timeout
+// (Round 10, trick 6: Vector never played for ~11s, the timer sat
+// under the wrong player, and the game only continued after the human
+// re-played). Likewise a throw from playCard inside the setTimeout
+// was uncaught and ended the bot's turn silently. Retries are bounded
+// (3) and guarded by turnGeneration: if the turn has moved on since
+// this call was scheduled, the retry does nothing, so a late retry
+// can never play out of turn (playCard also throws when it is not
+// the bot's turn, which is caught below).
+function maybeBotTurn(io: Server, matchId: string, attempt = 0) {
   const state = matchStore.get(matchId);
   if (!state || state.phase !== "playing") return;
   const player = state.players[state.currentTurnSeat];
   if (!player?.isBot) return;
+  const generationAtSchedule = state.turnGeneration;
+  const retry = () => {
+    if (attempt < 3) {
+      console.error(
+        `[BOT] retrying bot turn for match ${matchId} (attempt ${attempt + 1}/3)`
+      );
+      maybeBotTurn(io, matchId, attempt + 1);
+    } else {
+      console.error(
+        `[BOT] giving up bot turn for match ${matchId} after 3 attempts; the turn timeout will advance the game`
+      );
+    }
+  };
   setTimeout(() => {
     const fresh = matchStore.get(matchId);
     if (!fresh || fresh.phase !== "playing") return;
     const bot = fresh.players[fresh.currentTurnSeat];
     if (!bot?.isBot) return;
+    // The turn moved on while we were waiting: nothing to do.
+    if (fresh.turnGeneration !== generationAtSchedule) return;
     let card;
     try {
       card = chooseBotCard(fresh, fresh.currentTurnSeat, bot.botDifficulty ?? "medium");
     } catch (err) {
       console.error(`[BOT] chooseBotCard failed for seat ${fresh.currentTurnSeat}, falling back:`, err);
       const legal = legalCardsForSeat(fresh, fresh.currentTurnSeat);
-      if (!legal || legal.length === 0) return;
+      if (!legal || legal.length === 0) {
+        retry();
+        return;
+      }
       card = legal[0];
     }
-    const result = playCard(fresh, fresh.currentTurnSeat, card.id);
+    let result;
+    try {
+      result = playCard(fresh, fresh.currentTurnSeat, card.id);
+    } catch (err) {
+      console.error(`[BOT] playCard failed for match ${matchId}:`, err);
+      retry();
+      return;
+    }
     matchStore.set(fresh);
     broadcastState(io, matchId);
     void persistIfComplete(io, fresh);

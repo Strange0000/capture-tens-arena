@@ -1,27 +1,42 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
 import '../models/match_state.dart';
-import '../services/audio_service.dart';
+import '../theme.dart';
 import 'trick_area.dart';
 
-/// Clean arena game table that layers directly and seamlessly over the cyber-velvet table art.
-/// Positions 4 player seat pods naturally around the rails with illuminated drop zone in the spotlight.
+/// Oval poker table, following the reference table Sumit shared:
+/// a big green felt oval with a wooden rim, players seated around the
+/// perimeter in small circular avatar chips (name + card count in a
+/// compact pill under the avatar), and the played cards in the centre
+/// of the table — nothing full-screen, nothing blocking the game.
+///
+/// Round 3 — why the screen was crowded (see the screenshot):
+/// the player chips were positioned with `Align(±0.88)` against the
+/// WHOLE table area, not against the oval. When the table area was
+/// short (tall score bar + huge hand), the top/bottom chips collapsed
+/// toward the centre and landed on top of the played cards, and the
+/// "PARTNER N…" / "YOU G…" pills covered the centre cards. The chips
+/// are now positioned with explicit coordinates computed FROM the oval
+/// and the trick cluster: the partner pill always ends 8px above the
+/// top played card, the self pill always starts 8px below the bottom
+/// played card, and the side chips sit on the left/right rim — so no
+/// chip can ever cover a played card, on any screen size. The score
+/// bar is slim and the hand cards are smaller, so the table area (and
+/// the oval) is much taller than before, which is what makes the
+/// clearance possible in the first place.
 class GameTable extends StatelessWidget {
   const GameTable({
     super.key,
     required this.match,
     required this.mySeat,
-    this.onCardPlayed,
     this.tilt3d = false,
   });
 
   final MatchState match;
   final int mySeat;
-  final ValueChanged<String>? onCardPlayed;
   final bool tilt3d;
 
   @override
@@ -29,16 +44,107 @@ class GameTable extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final mobileLayout = constraints.maxWidth < 450;
-        final availableWidth = (constraints.maxWidth - (mobileLayout ? 12.0 : 32.0))
+        final stackW = constraints.maxWidth;
+        final stackH = constraints.maxHeight;
+        final centreX = stackW / 2;
+        final centreY = stackH / 2;
+        final availableWidth = (stackW - (mobileLayout ? 12.0 : 32.0))
             .clamp(100.0, double.infinity)
             .toDouble();
-        final availableHeight = (constraints.maxHeight - (mobileLayout ? 8.0 : 16.0))
+        final availableHeight = (stackH - (mobileLayout ? 8.0 : 16.0))
             .clamp(100.0, double.infinity)
             .toDouble();
-        final tableDiameter = math.min(
-          210.0,
-          math.min(availableWidth, availableHeight * 0.84),
-        ).toDouble();
+        // Oval, not a small circle: fill the table area like a real
+        // poker table. Clamped so the oval (and the rim chips) always
+        // fit inside this area.
+        var ovalWidth = math.min(availableWidth, availableHeight * 1.6);
+        var ovalHeight = ovalWidth * 0.60;
+        if (ovalHeight > availableHeight * 0.92) {
+          ovalHeight = availableHeight * 0.92;
+          ovalWidth = ovalHeight / 0.60;
+        }
+        ovalHeight = math.max(160.0, ovalHeight);
+        final ovalLeft = (stackW - ovalWidth) / 2;
+
+        // Trick cluster size — shared with TrickArea via trickAreaMetrics,
+        // so the chip positions below are computed from the REAL card
+        // positions. On a short oval the cluster shrinks (0.8 / 0.7) so
+        // the rim chips still have a clear lane around it.
+        final trickScale = ovalHeight < 200
+            ? 0.7
+            : ovalHeight < 260
+                ? 0.8
+                : 1.0;
+        final trickMetrics = trickAreaMetrics(stackW, scale: trickScale);
+        final trickHalfH = trickMetrics.height / 2;
+
+        // Chip slot: avatar + name pill (+ timer bar when active).
+        // Smaller on short ovals so the lane around the cards survives.
+        final double chipH = ovalHeight < 200
+            ? (mobileLayout ? 47.0 : 51.0)
+            : (mobileLayout ? 53.0 : 59.0);
+        final double chipW = ovalHeight < 200 ? 132.0 : 150.0;
+        const double chipGap = 8.0; // clear space between a chip and a played card
+
+        // Height of one player's chip (the active player's chip is
+        // taller: it carries the timer badge + progress bar).
+        double chipHeightFor(MatchPlayer player) {
+          final isActiveTurn = player.seat == match.currentTurnSeat;
+          return isActiveTurn && match.turnDeadline != null ? chipH + 32 : chipH;
+        }
+
+        // Top (partner) and bottom (you) chip tops, from the trick
+        // cluster — computed once, so the side chips can be clamped
+        // between them and never overlap either of them. (Round 7:
+        // during power-suit selection the name plate truncated to
+        // "…st wXYm…" and overlapped the opponent's label — the side
+        // chips were vertically centred with no regard for the
+        // top/bottom chips, and a chip could also sit half off the
+        // left edge, which is what makes a name read middle-truncated.)
+        final topPlayer = match.players.firstWhere(
+          (p) => (p.seat - mySeat + 4) % 4 == 2,
+          orElse: () => match.players.first,
+        );
+        final bottomPlayer = match.players.firstWhere(
+          (p) => (p.seat - mySeat + 4) % 4 == 0,
+          orElse: () => match.players.first,
+        );
+        final double topChipTop = math.max(
+            2.0, centreY - trickHalfH - chipGap - chipHeightFor(topPlayer));
+        final double topChipBottom = topChipTop + chipHeightFor(topPlayer);
+        final double bottomChipTop = math.min(
+            centreY + trickHalfH + chipGap,
+            stackH - chipHeightFor(bottomPlayer) - 2);
+
+        Offset chipPosition(MatchPlayer player) {
+          final relativeSeat = (player.seat - mySeat + 4) % 4;
+          final double h = chipHeightFor(player);
+          double left;
+          double top;
+          switch (relativeSeat) {
+            case 0: // You — bottom rim, pill starts below the bottom card.
+              top = bottomChipTop;
+              left = centreX - chipW / 2;
+            case 2: // Partner — top rim, pill ends above the top card.
+              top = topChipTop;
+              left = centreX - chipW / 2;
+            case 1: // Opponent — right rim, avatar centred on the rim.
+              left = ovalLeft + ovalWidth - chipW / 2;
+              // Clamped between the top and bottom chips, so this chip
+              // can never slide up over the partner's label or down
+              // over yours on a short table.
+              top = (centreY - h / 2).clamp(
+                  topChipBottom + 4, math.max(topChipBottom + 4, bottomChipTop - h - 4));
+            default: // Opponent — left rim, avatar centred on the rim.
+              left = ovalLeft - chipW / 2;
+              top = (centreY - h / 2).clamp(
+                  topChipBottom + 4, math.max(topChipBottom + 4, bottomChipTop - h - 4));
+          }
+          // Never let a chip sit half off the left/right edge: a
+          // clipped name pill reads as middle-truncated ("…st wXYm…").
+          left = left.clamp(2.0, math.max(2.0, stackW - chipW - 2));
+          return Offset(left, top);
+        }
 
         return Padding(
           padding: EdgeInsets.symmetric(
@@ -46,126 +152,146 @@ class GameTable extends StatelessWidget {
             vertical: mobileLayout ? 4 : 8,
           ),
           child: Stack(
-        children: [
-          // Center Trick Area & Drag-and-Drop Drop Zone
-          Center(
-            child: DragTarget<String>(
-              onWillAcceptWithDetails: (_) => match.phase == 'playing',
-              onAcceptWithDetails: (details) {
-                AudioService.instance.playCardPlace();
-                AudioService.instance.hapticMedium();
-                onCardPlayed?.call(details.data);
-              },
-              builder: (context, candidateData, rejectedData) {
-                final isHoveredWithCard = candidateData.isNotEmpty;
-                final ringSize = isHoveredWithCard
-                    ? tableDiameter * 0.94
-                    : tableDiameter * (mobileLayout ? 0.86 : 1.0);
-
-                return Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    // Illuminated drop zone ring when dragging a card
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      width: ringSize,
-                      height: ringSize,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isHoveredWithCard
-                            ? const Color(0xFF48E5C2).withOpacity(0.18)
-                            : Colors.transparent,
-                        border: Border.all(
-                          color: isHoveredWithCard
-                              ? const Color(0xFF48E5C2)
-                              : Colors.white.withOpacity(0.06),
-                          width: isHoveredWithCard ? 2.5 : 1.0,
-                        ),
-                        boxShadow: isHoveredWithCard
-                            ? [
-                                BoxShadow(
-                                  color: const Color(0xFF48E5C2).withOpacity(0.4),
-                                  blurRadius: 32,
-                                  spreadRadius: 4,
-                                ),
-                              ]
-                            : null,
-                      ),
-                      child: isHoveredWithCard
-                          ? Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.arrow_downward_rounded,
-                                      color: Color(0xFF48E5C2), size: 30),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    'RELEASE TO PLAY',
-                                    style: TextStyle(
-                                      color: const Color(0xFF48E5C2),
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 2,
-                                      shadows: [
-                                        Shadow(
-                                          color: const Color(0xFF48E5C2).withOpacity(0.8),
-                                          blurRadius: 10,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : null,
+            alignment: Alignment.center,
+            clipBehavior: Clip.none,
+            children: [
+              // ── Oval table: wooden rim + green felt ──
+              Center(
+                child: Container(
+                  width: ovalWidth,
+                  height: ovalHeight,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.all(
+                      Radius.elliptical(ovalWidth / 2, ovalHeight / 2),
                     ),
-
-                    // Trick cards in centre
-                    if (match.currentTrick != null &&
-                        (match.phase == 'playing' || match.phase == 'trick-resolving'))
-                      TrickArea(
-                        key: ValueKey(match.currentTrick!.index),
-                        trick: match.currentTrick!,
-                        powerSuit: match.powerSuit,
-                        mySeat: mySeat,
-                      )
-                    else
-                      _TableCenterEmblem(
-                        match: match,
-                        isMyTurn: match.players.any(
-                          (p) => p.seat == match.currentTurnSeat && p.seat == mySeat,
+                    // Light wood rim, like the poker reference —
+                    // warm tan wood, not the old dark brown.
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFFB07A45), Color(0xFF7A4E24), Color(0xFF4A2C14)],
+                    ),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withOpacity(0.55), blurRadius: 28, offset: const Offset(0, 10)),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(12),
+                  // Gold pinstripe ring between the wood rim and the
+                  // felt, like the reference table.
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: const BoxDecoration(
+                      borderRadius: BorderRadius.all(Radius.elliptical(999, 999)),
+                      border: Border.fromBorderSide(
+                          BorderSide(color: Color(0xFFFFC857), width: 2)),
+                    ),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.all(Radius.elliptical(999, 999)),
+                        // Brighter mid-green felt, like the reference —
+                        // the old felt was so dark it read as black.
+                        gradient: const RadialGradient(
+                          center: Alignment(0, -0.25),
+                          radius: 1.1,
+                          colors: [
+                            Color(0xFF1B7A4D),
+                            Color(0xFF0E5C38),
+                            Color(0xFF0B3D2E),
+                          ],
                         ),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black, blurRadius: 12, offset: Offset(0, 2)),
+                        ],
                       ),
-                  ],
-                );
-              },
-            ),
-          ),
+                    ),
+                  ),
+                ),
+              ),
 
-          // Four Player Seat Pods positioned directly on the table rails
-          for (final player in match.players)
-            _PlayerBadge(
-              player: player,
-              mySeat: mySeat,
-              active: player.seat == match.currentTurnSeat,
-              deadline: player.seat == match.currentTurnSeat ? match.turnDeadline : null,
-              isLead: match.currentTrick != null &&
-                  match.currentTrick!.plays.isEmpty &&
-                  player.seat == match.currentTurnSeat,
-              mobileLayout: mobileLayout,
-              compactSide: mobileLayout &&
-                  ((player.seat - mySeat + 4) % 4 == 1 ||
-                      (player.seat - mySeat + 4) % 4 == 3),
-            ),
-        ],
-      ),
-    );
+              // ── Centre: trick cards only ──
+              // No trump pill here any more: trump lives in the slim
+              // score strip at the top, and the old centre pill used to
+              // float down over the hand cards. (Round 11: the
+              // DragTarget that used to wrap this zone is gone —
+              // drag-to-play was removed because its recognizer
+              // swallowed mouse taps; see _HandArea.)
+              Center(
+                child: Container(
+                  width: ovalWidth * 0.78,
+                  // No fixed height: the trick cards size the zone,
+                  // so nothing is clipped on short screens.
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    borderRadius:
+                        const BorderRadius.all(Radius.elliptical(999, 999)),
+                    color: Colors.transparent,
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.05),
+                      width: 1,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                          if (match.currentTrick != null &&
+                              (match.phase == 'playing' || match.phase == 'trick-resolving'))
+                            TrickArea(
+                              key: ValueKey(match.currentTrick!.index),
+                              trick: match.currentTrick!,
+                              powerSuit: match.powerSuit,
+                              mySeat: mySeat,
+                              scale: trickScale,
+                            )
+                          else
+                            _TableCenterEmblem(
+                              match: match,
+                              isMyTurn: match.players.any(
+                                (p) => p.seat == match.currentTurnSeat && p.seat == mySeat,
+                              ),
+                            ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // ── Player chips around the rim, anchored to the oval ──
+              for (final player in match.players)
+                Builder(
+                  builder: (context) {
+                    final pos = chipPosition(player);
+                    return Positioned(
+                      left: pos.dx,
+                      top: pos.dy,
+                      width: chipW,
+                      child: _PlayerChip(
+                        player: player,
+                        mySeat: mySeat,
+                        active: player.seat == match.currentTurnSeat,
+                        deadline: player.seat == match.currentTurnSeat ? match.turnDeadline : null,
+                        isLead: match.currentTrick != null &&
+                            match.currentTrick!.plays.isEmpty &&
+                            player.seat == match.currentTurnSeat,
+                        mobileLayout: mobileLayout,
+                        avatarSize: ovalHeight < 200
+                            ? 30.0
+                            : mobileLayout
+                                ? 32.0
+                                : 36.0,
+                        chipWidth: chipW,
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+        );
       },
     );
   }
 }
 
-// ── Table Center Emblem ──────────────────────────────────────────────────────
+// ── Table Center Emblem (no trick in progress) ──────────────────────────────
 
 class _TableCenterEmblem extends StatelessWidget {
   const _TableCenterEmblem({required this.match, required this.isMyTurn});
@@ -174,89 +300,23 @@ class _TableCenterEmblem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (match.phase == 'power-select') {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0F1A2C).withOpacity(0.7),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFFFD166).withOpacity(0.3)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: const [
-            Text('👑', style: TextStyle(fontSize: 18)),
-            SizedBox(width: 8),
-            Text(
-              'SELECTING TRUMP SUIT',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w900,
-                color: Color(0xFFFFD166),
-                letterSpacing: 1.5,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+    // Round 11: the power-select emblem used to render here, in the
+    // table centre — but during power-select the table area is only
+    // ~135px tall (picker + hand eat the rest) while the active bottom
+    // chip is 91px tall, so the chip was pulled up into the emblem and
+    // the banner covered the bottom player's avatar/name. The banner
+    // now lives above the table in the game screen Column instead.
+    if (match.phase == 'power-select') return const SizedBox.shrink();
 
     if (match.powerSuit != null) {
-      final suit = match.powerSuit!;
-      final symbol = switch (suit) {
-        'hearts' => '♥',
-        'diamonds' => '♦',
-        'clubs' => '♣',
-        _ => '♠',
-      };
-      final color = switch (suit) {
-        'hearts' => const Color(0xFFFF5252),
-        'diamonds' => const Color(0xFFFF7043),
-        'clubs' => const Color(0xFF81D4FA),
-        _ => const Color(0xFFB388FF),
-      };
-
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0A1220).withOpacity(0.65),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: color.withOpacity(0.35), width: 1.2),
-              boxShadow: [
-                BoxShadow(color: color.withOpacity(0.15), blurRadius: 16),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(symbol, style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(width: 8),
-                Text(
-                  '${suit.toUpperCase()} TRUMP',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    color: color,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            isMyTurn ? 'YOUR TURN · PLAY A CARD' : 'Waiting for turn...',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: isMyTurn ? FontWeight.w900 : FontWeight.w600,
-              color: isMyTurn ? const Color(0xFF48E5C2) : Colors.white24,
-              letterSpacing: 1.0,
-            ),
-          ),
-        ],
+      return Text(
+        isMyTurn ? 'YOUR TURN · PLAY A CARD' : 'Waiting for turn...',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: isMyTurn ? FontWeight.w900 : FontWeight.w600,
+          color: isMyTurn ? ArenaColors.gold : Colors.white24,
+          letterSpacing: 1.0,
+        ),
       );
     }
 
@@ -264,17 +324,18 @@ class _TableCenterEmblem extends StatelessWidget {
   }
 }
 
-// ── Player Seat Badge ────────────────────────────────────────────────────────
+// ── Player Chip (circular avatar on the rim, like the reference) ────────────
 
-class _PlayerBadge extends StatelessWidget {
-  const _PlayerBadge({
+class _PlayerChip extends StatelessWidget {
+  const _PlayerChip({
     required this.player,
     required this.mySeat,
     required this.active,
     this.deadline,
     this.isLead = false,
     this.mobileLayout = false,
-    this.compactSide = false,
+    this.avatarSize = 36.0,
+    this.chipWidth = 150.0,
   });
 
   final MatchPlayer player;
@@ -283,17 +344,8 @@ class _PlayerBadge extends StatelessWidget {
   final int? deadline;
   final bool isLead;
   final bool mobileLayout;
-  final bool compactSide;
-
-  Alignment get _alignment {
-    final relativeSeat = (player.seat - mySeat + 4) % 4;
-    return switch (relativeSeat) {
-      0 => Alignment(0.0, mobileLayout ? 0.78 : 0.98),
-      1 => compactSide ? const Alignment(0.78, 0.0) : const Alignment(0.94, 0.0),
-      2 => Alignment(0.0, mobileLayout ? -0.78 : -0.90),
-      _ => compactSide ? const Alignment(-0.78, 0.0) : const Alignment(-0.94, 0.0),
-    };
-  }
+  final double avatarSize;
+  final double chipWidth;
 
   String _seatRole(int relativeSeat) {
     return switch (relativeSeat) {
@@ -305,9 +357,9 @@ class _PlayerBadge extends StatelessWidget {
 
   Color _teamAccent(int relativeSeat) {
     return switch (relativeSeat) {
-      0 => const Color(0xFF48E5C2), // Self = Teal
-      2 => const Color(0xFF38BDF8), // Partner = Sky Blue
-      _ => const Color(0xFFFF6B6B), // Opponents = Crimson/Ruby
+      0 => ArenaColors.gold, // You = Gold
+      2 => ArenaColors.emerald, // Partner = Felt green
+      _ => ArenaColors.ruby, // Opponents = Muted ruby
     };
   }
 
@@ -316,135 +368,185 @@ class _PlayerBadge extends StatelessWidget {
     final relativeSeat = (player.seat - mySeat + 4) % 4;
     final role = _seatRole(relativeSeat);
     final accent = _teamAccent(relativeSeat);
+    final borderColor = !player.connected
+        ? Colors.redAccent.withOpacity(0.8)
+        : active
+            ? accent
+            : Colors.white.withOpacity(0.25);
 
-    return Align(
-      alignment: _alignment,
-      child: active && deadline != null
-          ? _TimedBadge(
-              player: player,
-              deadline: deadline!,
-              role: role,
-              accentColor: accent,
-              isLead: isLead,
-              isSelf: relativeSeat == 0,
-              compactSide: compactSide,
-            )
-          : _StaticBadge(
-              player: player,
-              active: active,
-              role: role,
-              accentColor: accent,
-              isLead: isLead,
-              isSelf: relativeSeat == 0,
-              compactSide: compactSide,
-            ),
+    if (active && deadline != null) {
+      return _TimedChip(
+        player: player,
+        deadline: deadline!,
+        role: role,
+        accentColor: accent,
+        borderColor: borderColor,
+        isLead: isLead,
+        avatarSize: avatarSize,
+        chipWidth: chipWidth,
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _AvatarCircle(
+          player: player,
+          accentColor: accent,
+          borderColor: borderColor,
+          active: active,
+          isLead: isLead,
+          size: avatarSize,
+        ),
+        const SizedBox(height: 3),
+        _NamePill(player: player, role: role, accentColor: accent, maxWidth: chipWidth),
+      ],
     );
   }
 }
 
-// ── Static Badge ─────────────────────────────────────────────────────────────
-
-class _StaticBadge extends StatelessWidget {
-  const _StaticBadge({
+/// Circular avatar: initial letter (or bot icon) in a gold/teal ring,
+/// exactly like the reference table's seat chips.
+class _AvatarCircle extends StatelessWidget {
+  const _AvatarCircle({
     required this.player,
-    required this.active,
-    required this.role,
     required this.accentColor,
+    required this.borderColor,
+    required this.active,
     required this.isLead,
-    required this.isSelf,
-    this.compactSide = false,
+    this.size = 36.0,
   });
 
   final MatchPlayer player;
-  final bool active;
-  final String role;
   final Color accentColor;
+  final Color borderColor;
+  final bool active;
   final bool isLead;
-  final bool isSelf;
-  final bool compactSide;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = !player.connected
-        ? Colors.redAccent.withOpacity(0.8)
-        : active
-            ? accentColor
-            : Colors.white.withOpacity(0.12);
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          padding: EdgeInsets.symmetric(
-            horizontal: compactSide ? 6 : 12,
-            vertical: compactSide ? 5 : 7,
-          ),
-          constraints: compactSide ? const BoxConstraints.tightFor(width: 76) : null,
+    final initial = player.username.isNotEmpty
+        ? player.username[0].toUpperCase()
+        : '?';
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: size,
+          height: size,
           decoration: BoxDecoration(
-            color: active
-                ? accentColor.withOpacity(0.25)
-                : const Color(0xFF0B1424).withOpacity(0.85),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: borderColor, width: active ? 1.8 : 1.0),
+            shape: BoxShape.circle,
+            color: const Color(0xFF0B1424),
+            border: Border.all(color: borderColor, width: active ? 2.5 : 1.5),
             boxShadow: active
-                ? [
-                    BoxShadow(
-                      color: accentColor.withOpacity(0.4),
-                      blurRadius: 18,
-                      spreadRadius: 1,
-                    )
-                  ]
-                : [
-                    BoxShadow(color: Colors.black.withOpacity(0.35), blurRadius: 8),
-                  ],
+                ? [BoxShadow(color: accentColor.withOpacity(0.5), blurRadius: 14, spreadRadius: 1)]
+                : [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 8)],
           ),
-          child: compactSide
-              ? _CompactBadgeRow(player: player, accentColor: accentColor)
-              : _BadgeRow(
-                  player: player,
-                  role: role,
-                  accentColor: accentColor,
-                  active: active,
-                  isLead: isLead,
-                  isSelf: isSelf,
-                ),
+          child: Center(
+            child: player.isBot
+                ? Icon(Icons.smart_toy_rounded, size: size * 0.48, color: accentColor)
+                : Text(
+                    initial,
+                    style: TextStyle(
+                      color: accentColor,
+                      fontSize: size * 0.44,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+          ),
         ),
+        if (isLead)
+          const Positioned(
+            top: -6,
+            right: -4,
+            child: Icon(Icons.star_rounded, color: Color(0xFFFFD166), size: 16),
+          ),
+      ],
+    );
+  }
+}
+
+/// Name + card count pill under the avatar — compact, never covering cards.
+class _NamePill extends StatelessWidget {
+  const _NamePill({required this.player, required this.role, required this.accentColor, this.maxWidth = 150});
+  final MatchPlayer player;
+  final String role;
+  final Color accentColor;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFF070B13).withOpacity(0.88),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withOpacity(0.12)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            role,
+            style: TextStyle(color: accentColor, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              player.username,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
+            ),
+          ),
+          const SizedBox(width: 4),
+          // A real icon, not the 🂠 emoji: that glyph is missing from
+          // the font and rendered as a tofu box ("■ 8") in the screenshot.
+          const Icon(Icons.style_rounded, size: 10, color: Colors.white70),
+          const SizedBox(width: 2),
+          Text(
+            '${player.cardCount}',
+            style: const TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.w800),
+          ),
+        ],
       ),
     );
   }
 }
 
-// ── Timed Badge with Animated Timer ──────────────────────────────────────────
-
-class _TimedBadge extends StatefulWidget {
-  const _TimedBadge({
+/// Active-turn chip: same circular avatar + pill, with a thin timer bar.
+class _TimedChip extends StatefulWidget {
+  const _TimedChip({
     required this.player,
     required this.deadline,
     required this.role,
     required this.accentColor,
+    required this.borderColor,
     required this.isLead,
-    required this.isSelf,
-    this.compactSide = false,
+    this.avatarSize = 36.0,
+    this.chipWidth = 150.0,
   });
 
   final MatchPlayer player;
   final int deadline;
   final String role;
   final Color accentColor;
+  final Color borderColor;
   final bool isLead;
-  final bool isSelf;
-  final bool compactSide;
+  final double avatarSize;
+  final double chipWidth;
 
   @override
-  State<_TimedBadge> createState() => _TimedBadgeState();
+  State<_TimedChip> createState() => _TimedChipState();
 }
 
-class _TimedBadgeState extends State<_TimedBadge> {
+class _TimedChipState extends State<_TimedChip> {
   Timer? _timer;
   double _progress = 1.0;
-  int _secondsLeft = 18;
+  int _secondsLeft = 45;
+  int? _deadlineSeen;
+  int _totalMs = 45000;
 
   @override
   void initState() {
@@ -455,11 +557,19 @@ class _TimedBadgeState extends State<_TimedBadge> {
 
   void _tick() {
     final remainingMs = widget.deadline - DateTime.now().millisecondsSinceEpoch;
-    const totalMs = 18000;
+    // A new deadline means a new turn: the total is whatever the
+    // deadline was when it first appeared (server TURN_TIMEOUT_MS is
+    // 45000). The old code hard-coded 18000 and clamped the seconds
+    // to 0..18, so the chip hit 0s while the server still allowed
+    // ~27s more.
+    if (_deadlineSeen != widget.deadline) {
+      _deadlineSeen = widget.deadline;
+      _totalMs = math.max(remainingMs, 1000);
+    }
     if (!mounted) return;
     setState(() {
-      _progress = (remainingMs / totalMs).clamp(0.0, 1.0);
-      _secondsLeft = (remainingMs / 1000).ceil().clamp(0, 18);
+      _progress = (remainingMs / _totalMs).clamp(0.0, 1.0);
+      _secondsLeft = (remainingMs / 1000).ceil().clamp(0, 99);
     });
   }
 
@@ -476,53 +586,43 @@ class _TimedBadgeState extends State<_TimedBadge> {
         : _progress > 0.2
             ? const Color(0xFFFFD166)
             : const Color(0xFFFF5252);
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-            child: Container(
-              width: widget.compactSide ? 76 : null,
-              padding: EdgeInsets.symmetric(
-                horizontal: widget.compactSide ? 6 : 12,
-                vertical: widget.compactSide ? 5 : 7,
-              ),
-              decoration: BoxDecoration(
-                color: timerColor.withOpacity(0.24),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: timerColor.withOpacity(0.85), width: 1.8),
-                boxShadow: [
-                  BoxShadow(
-                    color: timerColor.withOpacity(0.4),
-                    blurRadius: 20,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              child: widget.compactSide
-                  ? _CompactBadgeRow(
-                      player: widget.player,
-                      accentColor: widget.accentColor,
-                      secondsLeft: _secondsLeft,
-                    )
-                  : _BadgeRow(
-                      player: widget.player,
-                      role: widget.role,
-                      accentColor: widget.accentColor,
-                      active: true,
-                      isLead: widget.isLead,
-                      isSelf: widget.isSelf,
-                      secondsLeft: _secondsLeft,
-                    ),
-            ),
+        _AvatarCircle(
+          player: widget.player,
+          accentColor: widget.accentColor,
+          borderColor: timerColor,
+          active: true,
+          isLead: widget.isLead,
+          size: widget.avatarSize,
+        ),
+        const SizedBox(height: 3),
+        _NamePill(
+          player: widget.player,
+          role: widget.role,
+          accentColor: widget.accentColor,
+          maxWidth: widget.chipWidth,
+        ),
+        const SizedBox(height: 3),
+        // Turn timer on its OWN line, below the name — it used to sit
+        // inside the name pill and squeeze the name out
+        // ("OPPONENT Ciph…", "YOU GuestIzH2…").
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xFF070B13).withOpacity(0.88),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: timerColor.withOpacity(0.5)),
+          ),
+          child: Text(
+            '⏱ ${_secondsLeft}s',
+            style: TextStyle(color: timerColor, fontSize: 10, fontWeight: FontWeight.w900),
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 3),
         SizedBox(
-          width: widget.compactSide ? 68 : 90,
+          width: 56,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
@@ -531,208 +631,6 @@ class _TimedBadgeState extends State<_TimedBadge> {
               backgroundColor: Colors.white.withOpacity(0.12),
               valueColor: AlwaysStoppedAnimation<Color>(timerColor),
             ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-
-/// Small side-seat chip used on portrait phones so names never cover trick cards.
-class _CompactBadgeRow extends StatelessWidget {
-  const _CompactBadgeRow({
-    required this.player,
-    required this.accentColor,
-    this.secondsLeft,
-  });
-
-  final MatchPlayer player;
-  final Color accentColor;
-  final int? secondsLeft;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            if (player.isBot)
-              Icon(Icons.smart_toy_rounded, size: 11, color: accentColor)
-            else
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(color: accentColor, shape: BoxShape.circle),
-              ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Text(
-                player.username,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 3),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              '🂠 ${player.cardCount}',
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            if (secondsLeft != null)
-              Text(
-                '${secondsLeft}s',
-                style: TextStyle(
-                  color: accentColor,
-                  fontSize: 9,
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-// ── Badge Inner Content ─────────────────────────────────────────────────────
-
-class _BadgeRow extends StatelessWidget {
-  const _BadgeRow({
-    required this.player,
-    required this.role,
-    required this.accentColor,
-    required this.active,
-    required this.isLead,
-    required this.isSelf,
-    this.secondsLeft,
-  });
-
-  final MatchPlayer player;
-  final String role;
-  final Color accentColor;
-  final bool active;
-  final bool isLead;
-  final bool isSelf;
-  final int? secondsLeft;
-
-  @override
-  Widget build(BuildContext context) {
-    final textColor = active ? Colors.white : Colors.white70;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Lead star badge
-        if (isLead) ...[
-          const Icon(Icons.star_rounded, color: Color(0xFFFFD166), size: 14),
-          const SizedBox(width: 3),
-        ],
-
-        // Role pill or Bot icon
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-          decoration: BoxDecoration(
-            color: accentColor.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: accentColor.withOpacity(0.4), width: 0.8),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (player.isBot) ...[
-                Icon(Icons.smart_toy_rounded, size: 11, color: accentColor),
-                const SizedBox(width: 3),
-              ],
-              Text(
-                role,
-                style: TextStyle(
-                  color: accentColor,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 9,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 6),
-
-        // Username
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 75),
-          child: Text(
-            player.username,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: textColor,
-              fontWeight: active ? FontWeight.w900 : FontWeight.w700,
-              fontSize: 12,
-            ),
-          ),
-        ),
-
-        // Seconds Left indicator when active
-        if (secondsLeft != null) ...[
-          const SizedBox(width: 5),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-            decoration: BoxDecoration(
-              color: const Color(0xFF070B13).withOpacity(0.6),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              '${secondsLeft}s',
-              style: TextStyle(
-                color: accentColor,
-                fontWeight: FontWeight.w900,
-                fontSize: 10,
-                fontFamily: 'monospace',
-              ),
-            ),
-          ),
-        ],
-
-        const SizedBox(width: 5),
-
-        // Card count in hand
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.08),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('🂠', style: TextStyle(fontSize: 10, color: Colors.white54)),
-              const SizedBox(width: 2),
-              Text(
-                '${player.cardCount}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 10,
-                ),
-              ),
-            ],
           ),
         ),
       ],

@@ -12,6 +12,7 @@ class ArenaCardWidget extends StatefulWidget {
     required this.card,
     required this.powerSuit,
     required this.onPlay,
+    this.onIllegalTap,
     this.dimmed = false,
     this.isLegal = true,
     this.small = false,
@@ -22,6 +23,13 @@ class ArenaCardWidget extends StatefulWidget {
   final ArenaCard card;
   final String? powerSuit;
   final VoidCallback? onPlay;
+  /// Called when the player taps this card but cannot play it.
+  /// Handled HERE, inside this widget's own tap path: the previous
+  /// design wrapped an outer GestureDetector around the card, but this
+  /// widget's own tap recogniser won the gesture arena first and then
+  /// did nothing because onTap was null — so illegal taps were
+  /// silently swallowed and no hint ever appeared.
+  final VoidCallback? onIllegalTap;
   final bool dimmed;
   final bool isLegal;
   final bool small;
@@ -35,6 +43,81 @@ class ArenaCardWidget extends StatefulWidget {
 class _ArenaCardWidgetState extends State<ArenaCardWidget> {
   bool _pressed = false;
   bool _hovered = false;
+
+  // Round 12: raw pointer tap tracking (see _fireTap). The tap used to
+  // go through a GestureDetector, whose TapGestureRecognizer can lose
+  // a tap silently in two ways — both proven in widget tests
+  // (test/swallowed_tap_test.dart):
+  //  * if the card's Element is unmounted and remounted between
+  //    pointer-down and pointer-up, the recognizer is disposed
+  //    mid-gesture and onTap never fires (the old fan gave the LAST
+  //    card a different wrapper than the rest, so the card that
+  //    became last when the hand shrank was remounted — fixed in
+  //    _HandArea by giving every card the same wrapper);
+  //  * if another recognizer wins the gesture arena (the Round 11
+  //    drag-to-play bug), onTapCancel fires instead of onTap.
+  // A Listener reads raw pointer events, which are not arena-competed
+  // and do not depend on a recognizer surviving a rebuild — a tap is
+  // a down and an up on the same card with almost no movement in
+  // between. A scroll-drag moves far more and must never play a card;
+  // the Listener does not consume the event, so the hand still scrolls
+  // on touch.
+  static const _kTapSlop = 12.0; // logical px
+  int? _downPointer;
+  Offset? _downPosition;
+
+  /// The card has a tap outcome at all (play, or a plain-words
+  /// reason). Decorative cards (lobby, trick cluster) pass neither
+  /// callback and stay inert, as before.
+  bool get _tappable => widget.onPlay != null || widget.onIllegalTap != null;
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (_downPointer != null || !_tappable) return;
+    _downPointer = event.pointer;
+    _downPosition = event.position;
+    setState(() => _pressed = true);
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _downPointer) return;
+    // Drifted past a tap: this is a scroll/drag — drop the press look.
+    if (_downPosition != null &&
+        (event.position - _downPosition!).distance > _kTapSlop) {
+      if (_pressed) setState(() => _pressed = false);
+    }
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    if (event.pointer != _downPointer) return;
+    final downPosition = _downPosition;
+    _downPointer = null;
+    _downPosition = null;
+    if (_pressed) setState(() => _pressed = false);
+    if (downPosition == null) return;
+    // A tap barely moves; a scroll-drag moves far more.
+    if ((event.position - downPosition).distance <= _kTapSlop) _fireTap();
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    if (event.pointer != _downPointer) return;
+    _downPointer = null;
+    _downPosition = null;
+    if (_pressed) setState(() => _pressed = false);
+  }
+
+  /// The single tap path for both outcomes — judged at release time
+  /// against the CURRENT widget state, exactly as the old onTap did:
+  /// playable -> play, otherwise explain why in plain words.
+  void _fireTap() {
+    if (!mounted) return;
+    final isPlayable =
+        widget.onPlay != null && widget.isLegal && !widget.dimmed;
+    if (isPlayable) {
+      widget.onPlay?.call();
+    } else {
+      widget.onIllegalTap?.call();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -50,44 +133,65 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
     final suitColor = isRed ? const Color(0xFFCC1111) : const Color(0xFF111122);
 
     final isPlayable = widget.onPlay != null && widget.isLegal && !widget.dimmed;
-    final effectivelyDimmed = widget.dimmed || (widget.onPlay != null && !widget.isLegal);
+    // An unplayable card is visibly dimmed — previously an illegal card
+    // on your turn was NOT dimmed (onPlay was null, so the old
+    // effectivelyDimmed test was false), so players tapped it expecting
+    // a play and got silence. Played trick cards pass isLegal=true, so
+    // they stay full opacity.
+    final effectivelyDimmed = widget.dimmed || !widget.isLegal;
     final isHovered = _hovered && isPlayable;
 
     return Opacity(
       opacity: effectivelyDimmed ? 0.38 : 1.0,
       child: MouseRegion(
-        onEnter: effectivelyDimmed
-            ? null
-            : (_) {
+        onEnter: isPlayable
+            ? (_) {
                 AudioService.instance.playCardClick();
                 setState(() => _hovered = true);
-              },
+              }
+            : null,
         onExit: (_) => setState(() => _hovered = false),
-        cursor: effectivelyDimmed
-            ? SystemMouseCursors.basic
-            : (widget.onPlay != null ? SystemMouseCursors.click : SystemMouseCursors.basic),
-        child: GestureDetector(
-          onTapDown: effectivelyDimmed ? null : (_) => setState(() => _pressed = true),
-          onTapUp: effectivelyDimmed ? null : (_) => setState(() => _pressed = false),
-          onTap: effectivelyDimmed ? null : widget.onPlay,
-          onTapCancel: () => setState(() => _pressed = false),
+        cursor: isPlayable
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
+        // Round 11: the hover raise (-12px) used to live on the
+        // AnimatedContainer INSIDE the GestureDetector, so the hit
+        // box stayed where the card was BEFORE the raise: the top
+        // 12px of a raised card could not be tapped, and the bottom
+        // 12px of the hit box overlapped the card below it in the
+        // fan. The raise now wraps the GestureDetector, so the hit
+        // box follows the visual card exactly.
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          transform: isHovered
+              ? (Matrix4.identity()
+                ..setEntry(3, 2, 0.003)
+                ..translate(0.0, -12.0, 30.0))
+              : Matrix4.identity(),
+          transformAlignment: Alignment.center,
+          // Round 12: no GestureDetector here any more (see _fireTap).
+          // Semantics keeps the tap action for assistive tech.
+          child: Semantics(
+            button: true,
+            label: '${widget.card.rank} of ${widget.card.suit}',
+            onTap: _fireTap,
+            child: Listener(
+          onPointerDown: _onPointerDown,
+          onPointerMove: _onPointerMove,
+          onPointerUp: _onPointerUp,
+          onPointerCancel: _onPointerCancel,
           child: AnimatedScale(
             scale: _pressed ? 0.93 : 1.0,
             duration: const Duration(milliseconds: 90),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeOutCubic,
-              transform: isHovered
-                  ? (Matrix4.identity()
-                    ..setEntry(3, 2, 0.003)
-                    ..translate(0.0, -12.0, 30.0))
-                  : Matrix4.identity(),
-              transformAlignment: Alignment.center,
               width: w,
               height: h,
               margin: EdgeInsets.symmetric(horizontal: 3 * scale),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8 * scale),
+                borderRadius: BorderRadius.circular(10 * scale),
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -97,9 +201,9 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
                   color: isPower
                       ? const Color(0xFFFFD166)
                       : isTen
-                          ? const Color(0xFF48E5C2)
+                          ? const Color(0xFFD4A017)
                           : (isPlayable
-                              ? const Color(0xFF64B5F6)
+                              ? const Color(0xFFFFC857)
                               : const Color(0xFFCCCCCC)),
                   width: (isPower || isTen)
                       ? 2.0
@@ -117,8 +221,8 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
                       color: isPower
                           ? const Color(0xFFFFD166).withOpacity(isHovered ? 0.6 : 0.25)
                           : isTen
-                              ? const Color(0xFF48E5C2).withOpacity(isHovered ? 0.6 : 0.25)
-                              : const Color(0xFF64B5F6).withOpacity(isHovered ? 0.45 : 0.15),
+                              ? const Color(0xFFD4A017).withOpacity(isHovered ? 0.6 : 0.25)
+                              : const Color(0xFFFFC857).withOpacity(isHovered ? 0.45 : 0.18),
                       blurRadius: isHovered ? 18 : 8,
                       spreadRadius: isHovered ? 2 : 0,
                     ),
@@ -133,7 +237,7 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
                       color: isPower
                           ? const Color(0xFFFFD166).withOpacity(0.3)
                           : isTen
-                              ? const Color(0xFF48E5C2).withOpacity(0.25)
+                              ? const Color(0xFFD4A017).withOpacity(0.25)
                               : Colors.black.withOpacity(0.12),
                       blurRadius: isPower ? 10 : 5,
                       offset: const Offset(0, 2),
@@ -148,7 +252,7 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
                 ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(7 * scale),
+                borderRadius: BorderRadius.circular(9 * scale),
                 child: Stack(
                   children: [
                     // Subtle inner texture
@@ -276,12 +380,14 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
             ),
           ),
         ),
+        ),
       ),
-    );
+    ),
+  );
   }
 }
 
-/// Card back design — premium navy with gold pattern
+/// Card back design — green felt with a gold pattern, Royal Casino.
 class _CardBack extends StatelessWidget {
   const _CardBack({required this.width, required this.height});
   final double width;
@@ -298,7 +404,7 @@ class _CardBack extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF1A2744), Color(0xFF0E1A2E), Color(0xFF162240)],
+          colors: [Color(0xFF11543F), Color(0xFF0B3D2E), Color(0xFF072A20)],
         ),
         border: Border.all(color: const Color(0xFFD4A017).withOpacity(0.4), width: 1.5),
         boxShadow: [

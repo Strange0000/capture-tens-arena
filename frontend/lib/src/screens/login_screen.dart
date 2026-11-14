@@ -1,11 +1,12 @@
-import 'dart:math';
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import '../theme.dart';
+import '../widgets/arena_loading.dart';
+import '../widgets/royal_widgets.dart';
 import '../widgets/google_sign_in_web_button_stub.dart'
     if (dart.library.html) '../widgets/google_sign_in_web_button.dart' as google_web;
 
@@ -21,6 +22,9 @@ class _LoginScreenState extends State<LoginScreen>
   late final AnimationController _fadeCtrl;
   late final AnimationController _pulseCtrl;
   bool _loading = false;
+  /// Shown after ~6s of waiting: the Render free tier can take ~25-30s
+  /// to wake, and a bare "Connecting…" gives the player no explanation.
+  bool _showSlowHint = false;
   bool _buttonsVisible = false;
   double _mouseX = 0.0;
   double _mouseY = 0.0;
@@ -62,7 +66,13 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _loginAsGuest() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _showSlowHint = false;
+    });
+    Future.delayed(const Duration(seconds: 6), () {
+      if (mounted && _loading) setState(() => _showSlowHint = true);
+    });
     final app = context.read<AppState>();
     try {
       await app.bootGuest();
@@ -70,7 +80,12 @@ class _LoginScreenState extends State<LoginScreen>
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login failed: $e'), backgroundColor: Colors.redAccent));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _showSlowHint = false;
+        });
+      }
     }
   }
 
@@ -82,12 +97,15 @@ class _LoginScreenState extends State<LoginScreen>
       if (mounted) Navigator.pushReplacementNamed(context, '/lobby');
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Google Sign-In failed: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(_friendlyGoogleError(e)),
+              backgroundColor: Colors.redAccent,
+              duration: const Duration(seconds: 4),
+            ),
+          );
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -98,7 +116,6 @@ class _LoginScreenState extends State<LoginScreen>
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final hasCached = app.hasCachedSession;
-    final screenHeight = MediaQuery.of(context).size.height;
 
     return Scaffold(
       body: MouseRegion(
@@ -119,91 +136,9 @@ class _LoginScreenState extends State<LoginScreen>
         },
         child: Stack(
           children: [
-            // Premium background image
-            Positioned(
-              top: -25,
-              left: -25,
-              right: -25,
-              bottom: -25,
-              child: RepaintBoundary(
-                child: TweenAnimationBuilder<Offset>(
-                  tween: Tween<Offset>(
-                    begin: Offset.zero,
-                    end: Offset(_mouseX * -15, _mouseY * -15),
-                  ),
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  builder: (context, offset, child) => Transform.translate(
-                    offset: offset,
-                    child: child,
-                  ),
-                  child: Image.asset('assets/images/login_bg.png', fit: BoxFit.cover),
-                ),
-              ),
-            ),
-            // Dark glass overlay
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      const Color(0xFF070B13).withOpacity(0.55),
-                      const Color(0xFF070B13).withOpacity(0.80),
-                      const Color(0xFF070B13).withOpacity(0.92),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            // Ambient glow spots
-            Positioned.fill(
-              child: RepaintBoundary(
-                child: TweenAnimationBuilder<Offset>(
-                  tween: Tween<Offset>(
-                    begin: Offset.zero,
-                    end: Offset(_mouseX * -25, _mouseY * -25),
-                  ),
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  builder: (context, offset, child) => Transform.translate(
-                    offset: offset,
-                    child: child,
-                  ),
-                  child: Stack(
-                    children: [
-                      Positioned(top: -120, right: -80, child: _GlowOrb(color: const Color(0xFF48E5C2), size: 350, opacity: 0.05)),
-                      Positioned(bottom: -100, left: -60, child: _GlowOrb(color: const Color(0xFFFFC857), size: 300, opacity: 0.04)),
-                      Positioned(top: screenHeight * 0.3, left: -140, child: _GlowOrb(color: const Color(0xFF7C4DFF), size: 280, opacity: 0.03)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            // Floating suit symbols
-            Positioned.fill(
-              child: RepaintBoundary(
-                child: TweenAnimationBuilder<Offset>(
-                  tween: Tween<Offset>(
-                    begin: Offset.zero,
-                    end: Offset(_mouseX * -8, _mouseY * -8),
-                  ),
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  builder: (context, offset, child) => Transform.translate(
-                    offset: offset,
-                    child: child,
-                  ),
-                  child: Stack(
-                    children: _buildFloatingSuits(),
-                  ),
-                ),
-              ),
-            ),
-
+            // Royal Casino felt background — deep green felt,
+            // soft gold light from above, faint suit glyphs.
+            const Positioned.fill(child: RoyalBackground(child: SizedBox.shrink())),
             // Main content
             Positioned.fill(
               child: RepaintBoundary(
@@ -236,26 +171,11 @@ class _LoginScreenState extends State<LoginScreen>
                                     _buildLogo(),
                                     const SizedBox(height: 24),
 
-                                    // Title
-                                    ShaderMask(
-                                      shaderCallback: (bounds) => const LinearGradient(
-                                        colors: [Colors.white, Color(0xFFB0BEC5)],
-                                      ).createShader(bounds),
-                                      child: const Text('Capture Tens', style: TextStyle(
-                                        fontSize: 38, fontWeight: FontWeight.w900, color: Colors.white, height: 1, letterSpacing: -1,
-                                      )),
-                                    ),
-                                    ShaderMask(
-                                      shaderCallback: (bounds) => const LinearGradient(
-                                        colors: [Color(0xFF48E5C2), Color(0xFF30B89C)],
-                                      ).createShader(bounds),
-                                      child: const Text('Arena', style: TextStyle(
-                                        fontSize: 38, fontWeight: FontWeight.w900, color: Colors.white, height: 1.2, letterSpacing: -1,
-                                      )),
-                                    ),
+                                    // Title — gold serif, like the mockup.
+                                    const RoyalTitle('Capture Tens Arena', fontSize: 36),
                                     const SizedBox(height: 8),
-                                    const Text('The ultimate trick-taking card game', style: TextStyle(
-                                      fontSize: 13, color: Colors.white30, fontWeight: FontWeight.w500, letterSpacing: 0.5,
+                                    const Text('Capture the most 10s. Win the table.', style: TextStyle(
+                                      fontSize: 13, color: Colors.white54, fontWeight: FontWeight.w600, letterSpacing: 0.5,
                                     )),
 
                                     const SizedBox(height: 24),
@@ -264,7 +184,8 @@ class _LoginScreenState extends State<LoginScreen>
                                     _buildSuitStrip(),
                                     const SizedBox(height: 28),
 
-                                    // Buttons
+                                    // Buttons — "Welcome back" card, like the
+                                    // mockup: Google first, guest below.
                                     AnimatedOpacity(
                                       opacity: _buttonsVisible ? 1.0 : 0.0,
                                       duration: const Duration(milliseconds: 700),
@@ -272,7 +193,30 @@ class _LoginScreenState extends State<LoginScreen>
                                         offset: _buttonsVisible ? Offset.zero : const Offset(0, 0.2),
                                         duration: const Duration(milliseconds: 700),
                                         curve: Curves.easeOutCubic,
-                                        child: _buildButtons(hasCached, app),
+                                        child: RoyalPanel(
+                                          padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Text(
+                                                'Welcome back',
+                                                style: TextStyle(
+                                                  fontFamily: 'Georgia',
+                                                  fontSize: 26,
+                                                  fontWeight: FontWeight.w900,
+                                                  color: ArenaColors.goldSoft,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              const Text(
+                                                'Multiplayer card game · Play now',
+                                                style: TextStyle(fontSize: 12, color: Colors.white54),
+                                              ),
+                                              const SizedBox(height: 18),
+                                              _buildButtons(hasCached, app),
+                                            ],
+                                          ),
+                                        ),
                                       ),
                                     ),
 
@@ -283,6 +227,11 @@ class _LoginScreenState extends State<LoginScreen>
                                       style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.15), letterSpacing: 1),
                                     ),
                                     const SizedBox(height: 10),
+                                    TextButton.icon(
+                                      onPressed: () => Navigator.pushNamed(context, '/tutorial'),
+                                      icon: const Icon(Icons.menu_book_rounded, size: 16),
+                                      label: const Text('How to Play'),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -295,6 +244,19 @@ class _LoginScreenState extends State<LoginScreen>
                 ),
               ),
             ),
+
+            // Full-screen branded loading while signing in. Previously
+            // only the button itself showed a small spinner + "Connecting…"
+            // while the guest backend woke up (~25s), which looked stuck.
+            if (_loading)
+              Positioned.fill(
+                child: ArenaLoading(
+                  message: 'Connecting to the Arena…',
+                  subMessage: _showSlowHint
+                      ? 'Waking up the server — this can take about 30 seconds on the free tier. Please wait, no need to tap again.'
+                      : 'Signing you in…',
+                ),
+              ),
           ],
         ),
       ),
@@ -330,7 +292,7 @@ class _LoginScreenState extends State<LoginScreen>
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF48E5C2).withOpacity(0.15 + t * 0.2),
+                          color: const Color(0xFFFFC857).withOpacity(0.15 + t * 0.2),
                       blurRadius: 30 + t * 20,
                       spreadRadius: t * 6,
                     ),
@@ -372,6 +334,24 @@ class _LoginScreenState extends State<LoginScreen>
 
   Widget _SuitIcon(String s, Color c) => Text(s, style: TextStyle(fontSize: 28, color: c.withOpacity(0.18)));
 
+  /// Plain-words version of a Google sign-in failure. The raw SDK
+  /// errors ("Bad state: Future already completed") mean nothing to a
+  /// player, and a stale one used to sit on screen as a red banner
+  /// even for guest play. A failed sign-in must never block guest play.
+  String _friendlyGoogleError(Object e) {
+    final msg = e.toString();
+    if (msg.contains('Future already completed') || msg.contains('Bad state')) {
+      return 'Google sign-in is busy right now. Please tap again.';
+    }
+    if (msg.contains('popup_closed') || msg.contains('cancelled')) {
+      return 'Google sign-in was cancelled. You can still play as a guest.';
+    }
+    if (msg.contains('network') || msg.contains('Failed to fetch')) {
+      return 'Could not reach Google. Check your connection and try again.';
+    }
+    return 'Google sign-in did not work. You can still play as a guest.';
+  }
+
   Widget _buildGoogleButton(AppState app, {bool compact = false}) {
     if (kIsWeb) {
       return google_web.GoogleSignInWebButton(
@@ -387,17 +367,20 @@ class _LoginScreenState extends State<LoginScreen>
         },
         onError: (error) {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Google Sign-In failed: $error'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              SnackBar(
+                content: Text(_friendlyGoogleError(error)),
+                backgroundColor: Colors.redAccent,
+                duration: const Duration(seconds: 4),
+              ),
+            );
         },
       );
     }
 
-    return _PremiumButton(
+    return RoyalGoldButton(
       label: compact ? 'Google' : 'Sign in with Google',
       icon: Icons.g_mobiledata,
       loading: _loading,
@@ -409,22 +392,42 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildButtons(bool hasCached, AppState app) {
     if (hasCached) {
       return Column(children: [
-        _PremiumButton(
+        RoyalGoldButton(
           label: 'Continue as ${app.cachedUsername}',
+          // Two-part label: plain "Continue as" + bold username, so
+          // the name can never read as run-on text.
+          labelWidget: RichText(
+            textAlign: TextAlign.center,
+            text: TextSpan(
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.4,
+                color: ArenaColors.ink,
+              ),
+              children: [
+                const TextSpan(text: 'Continue as  '),
+                TextSpan(
+                  text: app.cachedUsername,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ],
+            ),
+          ),
           icon: Icons.arrow_forward_rounded,
           loading: _loading,
           onTap: _continueAsExisting,
-          primary: true,
         ),
         const SizedBox(height: 10),
         Row(children: [
           Expanded(
-            child: _PremiumButton(
+            child: RoyalGoldButton(
               label: 'New Guest',
               icon: Icons.play_arrow_rounded,
               loading: false,
               onTap: _loginAsGuest,
               primary: false,
+              height: 50,
             ),
           ),
           const SizedBox(width: 10),
@@ -433,124 +436,16 @@ class _LoginScreenState extends State<LoginScreen>
       ]);
     }
     return Column(children: [
-      _PremiumButton(
+      // "Welcome back" card: Google first, guest below, plain words.
+      _buildGoogleButton(app),
+      const SizedBox(height: 14),
+      RoyalGoldButton(
         label: 'Play as Guest',
         icon: Icons.play_arrow_rounded,
         loading: _loading,
         onTap: _loginAsGuest,
-        primary: true,
+        primary: false,
       ),
-      const SizedBox(height: 14),
-      _buildGoogleButton(app),
     ]);
   }
-
-  List<Widget> _buildFloatingSuits() {
-    final rng = Random(42);
-    return List.generate(16, (i) {
-      final suit = ['♥', '♦', '♣', '♠'][i % 4];
-      final isRed = i % 4 < 2;
-      return Positioned(
-        left: rng.nextDouble() * 600,
-        top: rng.nextDouble() * 900,
-        child: Text(suit, style: TextStyle(
-          fontSize: 14 + rng.nextDouble() * 22,
-          color: (isRed ? const Color(0xFFE53935) : Colors.white).withOpacity(0.02 + rng.nextDouble() * 0.03),
-        )),
-      );
-    });
-  }
-}
-
-class _GlowOrb extends StatelessWidget {
-  const _GlowOrb({required this.color, required this.size, required this.opacity});
-  final Color color;
-  final double size;
-  final double opacity;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size, height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: RadialGradient(colors: [color.withOpacity(opacity), Colors.transparent]),
-      ),
-    );
-  }
-}
-
-class _PremiumButton extends StatefulWidget {
-  const _PremiumButton({required this.label, required this.icon, required this.loading, required this.onTap, required this.primary});
-  final String label;
-  final IconData icon;
-  final bool loading;
-  final VoidCallback onTap;
-  final bool primary;
-
-  @override
-  State<_PremiumButton> createState() => _PremiumButtonState();
-}
-
-class _PremiumButtonState extends State<_PremiumButton> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: GestureDetector(
-        onTapDown: (_) => setState(() => _pressed = true),
-        onTapUp: (_) { setState(() => _pressed = false); if (!widget.loading) widget.onTap(); },
-        onTapCancel: () => setState(() => _pressed = false),
-        child: AnimatedScale(
-          scale: _pressed ? 0.97 : 1.0,
-          duration: const Duration(milliseconds: 80),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            transform: _pressed
-                ? (Matrix4.identity()
-                  ..setEntry(3, 2, 0.002)
-                  ..rotateX(0.02))
-                : Matrix4.identity(),
-            transformAlignment: Alignment.center,
-            width: double.infinity,
-            height: widget.primary ? 58 : 50,
-            decoration: BoxDecoration(
-            gradient: widget.primary
-                ? const LinearGradient(colors: [Color(0xFF48E5C2), Color(0xFF30B89C)])
-                : null,
-            color: widget.primary ? null : Colors.transparent,
-            borderRadius: BorderRadius.circular(14),
-            border: widget.primary ? null : Border.all(color: Colors.white.withOpacity(0.12)),
-            boxShadow: widget.primary
-                ? [BoxShadow(color: const Color(0xFF48E5C2).withOpacity(_pressed ? 0.15 : 0.25), blurRadius: 20, spreadRadius: 2)]
-                : [],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (widget.loading)
-                SizedBox(width: 20, height: 20, child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: widget.primary ? const Color(0xFF070B13) : Colors.white70,
-                ))
-              else
-                Icon(widget.icon, size: widget.primary ? 24 : 20,
-                  color: widget.primary ? const Color(0xFF070B13) : Colors.white54),
-              const SizedBox(width: 10),
-              Text(
-                widget.loading ? 'Connecting…' : widget.label,
-                style: TextStyle(
-                  fontSize: widget.primary ? 17 : 14,
-                  fontWeight: FontWeight.w800,
-                  color: widget.primary ? const Color(0xFF070B13) : Colors.white60,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
-}
 }

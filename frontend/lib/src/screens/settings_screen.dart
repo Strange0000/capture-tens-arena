@@ -57,7 +57,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
           ],
         ),
-        backgroundColor: const Color(0xFF16233B),
+        backgroundColor: const Color(0xFF14291E),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 2),
@@ -73,7 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final safeShortId = userId.length > 16 ? '${userId.substring(0, 16)}…' : userId;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF070B14),
+      backgroundColor: const Color(0xFF060D0A),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -434,7 +434,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             final confirmed = await showDialog<bool>(
                               context: context,
                               builder: (ctx) => AlertDialog(
-                                backgroundColor: const Color(0xFF10192A),
+                                backgroundColor: const Color(0xFF0F2018),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(24),
                                   side: BorderSide(color: Colors.redAccent.withOpacity(0.3)),
@@ -592,7 +592,7 @@ class _ProfileHeroCard extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: [
             const Color(0xFF172844).withOpacity(0.9),
-            const Color(0xFF0F1A2E).withOpacity(0.9),
+            const Color(0xFF0F2018).withOpacity(0.9),
           ],
         ),
         border: Border.all(color: rankColor.withOpacity(0.3), width: 1.5),

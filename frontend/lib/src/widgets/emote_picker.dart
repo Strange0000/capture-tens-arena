@@ -83,9 +83,9 @@ class _EmotePickerState extends State<EmotePicker>
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF101826).withOpacity(0.95),
+                  color: const Color(0xFF0F2018).withOpacity(0.95),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.3)),
+                  border: Border.all(color: const Color(0xFF3FA97C).withOpacity(0.3)),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.4),
@@ -124,18 +124,18 @@ class _EmotePickerState extends State<EmotePicker>
             height: 40,
             decoration: BoxDecoration(
               color: _open
-                  ? const Color(0xFF48E5C2).withOpacity(0.2)
-                  : const Color(0xFF101826).withOpacity(0.8),
+                  ? const Color(0xFF3FA97C).withOpacity(0.2)
+                  : const Color(0xFF0F2018).withOpacity(0.8),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: _open
-                    ? const Color(0xFF48E5C2).withOpacity(0.5)
+                    ? const Color(0xFF3FA97C).withOpacity(0.5)
                     : Colors.white.withOpacity(0.1),
               ),
             ),
             child: Icon(
               _open ? Icons.close : Icons.emoji_emotions_outlined,
-              color: _open ? const Color(0xFF48E5C2) : Colors.white54,
+              color: _open ? const Color(0xFF3FA97C) : Colors.white54,
               size: 20,
             ),
           ),
@@ -211,9 +211,9 @@ class _FloatingEmoteState extends State<FloatingEmote>
               child: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF101826).withOpacity(0.9),
+                  color: const Color(0xFF0F2018).withOpacity(0.9),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFF48E5C2).withOpacity(0.3)),
+                  border: Border.all(color: const Color(0xFF3FA97C).withOpacity(0.3)),
                 ),
                 child: Text(widget.emoji, style: const TextStyle(fontSize: 32)),
               ),
