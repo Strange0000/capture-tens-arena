@@ -32,8 +32,8 @@ jobs:
         working-directory: backend
         run: npm ci
 
-      - name: Run username migration audit (read-only)
+      - name: Run username migration apply
         working-directory: backend
-        run: npm run migrate:usernames -- audit
+        run: npm run migrate:usernames -- apply
         env:
-          MONGO_URI: ${{ secrets.MONGO_URI }}
+          MONGO_URI: ${{ secr
