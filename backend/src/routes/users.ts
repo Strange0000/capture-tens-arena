@@ -19,17 +19,23 @@ usersRouter.get("/me", requireAuth, async (req, res, next) => {
     return res.json({ user: req.user, ranking: { ...rank, wins: 0, losses: 0, peakMmr: 0 }, statistics: null });
   }
   try {
-    const [ranking, statistics] = await Promise.all([
+    const [ranking, statistics, dbUser] = await Promise.all([
       RankingModel.findOne({ userId: req.user!.id, season: currentSeason() }),
-      StatisticsModel.findOne({ userId: req.user!.id })
+      StatisticsModel.findOne({ userId: req.user!.id }),
+      // PR-B (F10): the guest flag comes from the DB, not the username
+      // prefix and not the (7-day, possibly pre-PR-B) JWT — a guest who
+      // picked a non-"Guest" name in a later PR must still be a guest,
+      // and a Google user must never be mistaken for one.
+      UserModel.findById(req.user!.id).select("guest"),
     ]);
+    const user = { ...req.user, guest: dbUser?.guest ?? req.user!.guest ?? false };
     
     // Build rank detail even if no ranking doc exists yet
     const mmr = ranking?.mmr ?? 0;
     const rank = rankForMmr(mmr);
     
     res.json({
-      user: req.user,
+      user,
       ranking: ranking ? {
         ...rank,
         peakMmr: ranking.peakMmr ?? ranking.mmr,
@@ -131,6 +137,48 @@ usersRouter.get("/search", requireAuth, async (req, res, next) => {
     })) });
   } catch (error) { next(error); }
 });
+/**
+ * PR-B (F2/F3): exact-username lookup for the "Send friend request"
+ * confirm step. /search is a partial match (any substring) and
+ * /friends/request used to take a bare username and silently pick the
+ * first exact match — with duplicate usernames that could send the
+ * request to the wrong person. This endpoint matches the whole
+ * username (case-insensitive) and returns EVERY match, so the client
+ * can confirm the exact player — or ask the player to pick one when
+ * several accounts share the name. `createdAt` is included so
+ * duplicates can be told apart ("joined May 2026").
+ */
+usersRouter.get("/lookup", requireAuth, async (req, res, next) => {
+  if (isOfflineDevMode) return res.json({ users: [] });
+  try {
+    const q = typeof req.query.username === "string" ? req.query.username.trim() : "";
+    if (q.length < 2 || q.length > 24) return res.status(400).json({ error: "Enter a username between 2 and 24 characters" });
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const users = await UserModel.find({
+      username: { $regex: new RegExp("^" + escaped + "$", "i") },
+      _id: { $ne: req.user!.id },
+    }).select("username avatarUrl status createdAt").sort({ createdAt: 1 }).limit(10);
+    const ids = users.map((user) => user.id);
+    const relationships = ids.length ? await FriendModel.find({
+      $or: [
+        { requesterId: req.user!.id, addresseeId: { $in: ids } },
+        { addresseeId: req.user!.id, requesterId: { $in: ids } },
+      ],
+    }).select("requesterId addresseeId status") : [];
+    const byUser = new Map<string, { status: string; isRequester: boolean; friendId: string }>();
+    for (const relation of relationships) {
+      const isRequester = relation.requesterId.toString() === req.user!.id;
+      const otherId = isRequester ? relation.addresseeId.toString() : relation.requesterId.toString();
+      byUser.set(otherId, { status: relation.status, isRequester, friendId: relation.id });
+    }
+    res.json({ users: users.map((user) => ({
+      id: user.id, username: user.username, avatarUrl: user.avatarUrl, status: user.status,
+      createdAt: (user as any).createdAt?.toISOString?.() ?? null,
+      relationship: byUser.get(user.id) ?? null,
+    })) });
+  } catch (error) { next(error); }
+});
+
 usersRouter.get("/friends", requireAuth, async (req, res, next) => {
   if (isOfflineDevMode) {
     return res.json({ friends: [] });
@@ -172,12 +220,28 @@ usersRouter.get("/friends", requireAuth, async (req, res, next) => {
 usersRouter.post("/friends/request", requireAuth, async (req, res, next) => {
   if (isOfflineDevMode) return res.status(400).json({ error: "Friend requests are unavailable in offline dev mode" });
   try {
+    // PR-B (F2/F3): the client sends a userId once the player has seen
+    // and confirmed the exact account (lookup / search row). A bare
+    // username is still accepted for older clients, but it must match
+    // exactly ONE account — with duplicate usernames the request used
+    // to go to whichever account findOne returned first.
+    const rawUserId = req.body?.userId;
+    const userId = typeof rawUserId === "string" ? rawUserId.trim() : "";
     const raw = req.body?.username;
     const username = typeof raw === "string" ? raw.trim() : "";
-    if (username.length < 2 || username.length > 24) return res.status(400).json({ error: "Enter a username between 2 and 24 characters" });
-    const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const target = await UserModel.findOne({ username: { $regex: new RegExp("^" + escaped + "$", "i") } }).select("_id username");
-    if (!target) return res.status(404).json({ error: "User not found" });
+    if (!userId && (username.length < 2 || username.length > 24)) return res.status(400).json({ error: "Enter a username between 2 and 24 characters" });
+    let target: { id: string; username: string } | null = null;
+    if (userId) {
+      const found = await UserModel.findById(userId).select("_id username");
+      if (!found) return res.status(404).json({ error: "User not found" });
+      target = { id: found.id, username: found.username };
+    } else {
+      const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const matches = await UserModel.find({ username: { $regex: new RegExp("^" + escaped + "$", "i") } }).select("_id username").limit(2);
+      if (matches.length === 0) return res.status(404).json({ error: "User not found" });
+      if (matches.length > 1) return res.status(409).json({ error: "Several players have that username — search for the player and pick the exact one" });
+      target = { id: matches[0].id, username: matches[0].username };
+    }
     if (target.id === req.user!.id) return res.status(400).json({ error: "You cannot add yourself as a friend" });
     const requesterId = req.user!.id;
     const addresseeId = target.id;

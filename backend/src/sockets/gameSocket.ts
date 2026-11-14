@@ -81,30 +81,79 @@ export function registerGameSockets(io: Server) {
       console.log(`[RankedQueue] Cancelled search for ${[...queuedIds].join(", ")}`);
     });
 
-    socket.on("party:invite", ({ targetUserId }: { targetUserId: string }) => {
-      let existingParty = matchmaking.getPartyForUser(userId);
-      let partyId: string | null = null;
-      if (!existingParty) {
-        partyId = matchmaking.createParty({
+    // PR-B (F7): an invite is validated, recorded with a 60s expiry,
+    // acknowledged to the inviter, and can be declined. Previously the
+    // target id was trusted blindly, the inviter heard nothing back,
+    // and there was no decline path at all.
+    socket.on("party:invite", async ({ targetUserId }: { targetUserId: string }) => {
+      try {
+        if (typeof targetUserId !== "string" || !targetUserId.trim()) {
+          throw new Error("Pick a friend to invite");
+        }
+        const targetId = targetUserId.trim();
+        if (targetId === userId) throw new Error("You cannot invite yourself to a party");
+        if (isOfflineDevMode) throw new Error("Party invites are unavailable in offline dev mode");
+        const target = await UserModel.findById(targetId).select("_id username");
+        if (!target) throw new Error("That player could not be found");
+        const isFriend = await FriendModel.findOne({
+          status: "accepted",
+          $or: [
+            { requesterId: userId, addresseeId: targetId },
+            { requesterId: targetId, addresseeId: userId },
+          ],
+        }).select("_id");
+        if (!isFriend) throw new Error("You can only invite friends to your party");
+        if (matchmaking.getPartyForUser(targetId)) {
+          throw new Error(`${target.username} is already in a party`);
+        }
+        let existingParty = matchmaking.getPartyForUser(userId);
+        let partyId: string | null = null;
+        if (!existingParty) {
+          partyId = matchmaking.createParty({
+            userId,
+            username: socket.user!.username,
+            socketId: socket.id,
+            mmr: 0
+          });
+          socket.emit("party:updated", { party: matchmaking.getParty(partyId) });
+        } else if (existingParty.length >= 2) {
+          throw new Error("Your party is full");
+        }
+        // Get the partyId from userParty map
+        const activePartyId = partyId ?? matchmaking.getPartyIdForUser(userId);
+        if (!activePartyId) throw new Error("Could not create a party");
+        const invite = matchmaking.createPartyInvite(
           userId,
-          username: socket.user!.username,
-          socketId: socket.id,
-          mmr: 0
+          socket.user!.username,
+          targetId,
+          activePartyId,
+        );
+        const expiresInMs = Math.max(0, invite.expiresAt - Date.now());
+        socket.emit("party:inviteSent", {
+          targetUserId: targetId,
+          targetUsername: target.username,
+          partyId: activePartyId,
+          expiresInMs,
         });
-        socket.emit("party:updated", { party: matchmaking.getParty(partyId) });
-      }
-      // Get the partyId from userParty map
-      const activePartyId = partyId ?? matchmaking.getPartyIdForUser(userId);
-      if (activePartyId) {
-        io.to(`user:${targetUserId}`).emit("party:invited", {
+        io.to(`user:${targetId}`).emit("party:invited", {
           from: socket.user!.username,
-          partyId: activePartyId
+          fromUserId: userId,
+          partyId: activePartyId,
+          expiresInMs,
         });
+      } catch (err: any) {
+        socket.emit("error", { message: err?.message ?? "Could not send the party invite" });
       }
     });
 
     socket.on("party:accept", ({ partyId }: { partyId: string }) => {
       try {
+        if (typeof partyId !== "string" || !partyId) {
+          throw new Error("This party invite is missing — ask your friend to send a new one");
+        }
+        // Throws when there is no live invite (expired, declined, or
+        // withdrawn) so a stale invite can never join a party.
+        matchmaking.acceptPartyInvite(partyId, userId);
         const party = matchmaking.joinParty(partyId, {
           userId,
           username: socket.user!.username,
@@ -116,6 +165,24 @@ export function registerGameSockets(io: Server) {
         }
       } catch (err: any) {
         socket.emit("error", { message: err.message });
+      }
+    });
+
+    socket.on("party:decline", ({ partyId }: { partyId: string }) => {
+      // Declining never surfaces an error to the decliner — even a
+      // stale or missing invite is just "nothing to decline".
+      try {
+        if (typeof partyId !== "string" || !partyId) return;
+        const invite = matchmaking.declinePartyInvite(partyId, userId);
+        if (invite) {
+          io.to(`user:${invite.fromUserId}`).emit("party:declined", {
+            by: socket.user!.username,
+            byUserId: userId,
+            partyId,
+          });
+        }
+      } catch {
+        // Ignore: the dialog is already closed on the decliner's side.
       }
     });
 

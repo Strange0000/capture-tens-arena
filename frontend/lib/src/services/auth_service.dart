@@ -33,16 +33,68 @@ enum GoogleSwitchResult {
   timedOut,
 }
 
+/// Plain-words message for a failed friends HTTP call.
+///
+/// Friend error paths used to surface the raw `FormatException` from
+/// `jsonDecode` whenever the server answered with something that was
+/// not JSON (a Render error page, an empty body). Every friend call
+/// now goes through this, so the player always sees a sentence —
+/// never a stack trace or a raw exception type.
+String friendRequestErrorMessage({int? statusCode, String? body, Object? error}) {
+  if (error is TimeoutException || error is http.ClientException) {
+    return 'Could not reach the server — check your connection and try again.';
+  }
+  if (error != null) {
+    return 'Something went wrong — please try again.';
+  }
+  if (body != null && body.isNotEmpty) {
+    try {
+      final decoded = jsonDecode(body);
+      final message = decoded is Map ? decoded['error'] : null;
+      if (message is String && message.isNotEmpty) return message;
+    } catch (_) {
+      // Non-JSON body (e.g. an error page): fall through to the
+      // status-based message below instead of throwing FormatException.
+    }
+  }
+  switch (statusCode) {
+    case 400:
+      return 'That did not work — check the details and try again.';
+    case 401:
+      return 'Your session has expired — please sign in again.';
+    case 403:
+      return 'You cannot do that with this player.';
+    case 404:
+      return 'Player not found — check the spelling and try again.';
+    case 409:
+      return 'That friend request already exists.';
+    case 429:
+      return 'Too many tries — wait a moment and try again.';
+    default:
+      if (statusCode != null && statusCode >= 500) {
+        return 'The server is having trouble — please try again in a moment.';
+      }
+      return 'Something went wrong — please try again.';
+  }
+}
+
 class GuestSession {
   const GuestSession({
     required this.token,
     required this.userId,
     required this.username,
+    this.isGuest = false,
   });
 
   final String token;
   final String userId;
   final String username;
+
+  /// True for guest (anonymous) accounts, from the server — never
+  /// inferred from the username. PR-B (F10): a guest who later picks a
+  /// non-"Guest" name must still be a guest, and a Google user must
+  /// never be mistaken for one.
+  final bool isGuest;
 }
 
 class AuthService {
@@ -143,6 +195,8 @@ class AuthService {
     final cachedUser = prefs.getString('username');
     final cachedId = prefs.getString('userId');
     if (cached != null && cachedUser != null && cachedId != null) {
+      // isGuest is not cached — AppState refreshes it from /users/me
+      // (the authoritative DB flag) right after restoring the session.
       return GuestSession(token: cached, userId: cachedId, username: cachedUser);
     }
     return null;
@@ -179,7 +233,7 @@ class AuthService {
     await prefs.setString('userId', userId);
     await prefs.setString('username', username);
 
-    return GuestSession(token: token, userId: userId, username: username);
+    return GuestSession(token: token, userId: userId, username: username, isGuest: user['guest'] == true);
   }
 
   Future<GuestSession> googleLogin() async {
@@ -246,7 +300,7 @@ class AuthService {
     await prefs.setString('userId', userId);
     await prefs.setString('username', savedUsername);
 
-    return GuestSession(token: token, userId: userId, username: savedUsername);
+    return GuestSession(token: token, userId: userId, username: savedUsername, isGuest: user['guest'] == true);
   }
 
   Future<Map<String, dynamic>> fetchMe(String token) async {
@@ -258,64 +312,114 @@ class AuthService {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  /// Reads a JSON object body, or throws a plain-words error instead
+  /// of a raw FormatException when the server answered with something
+  /// that is not JSON. PR-B (F8).
+  Map<String, dynamic> _decodeJsonMap(String body) {
+    try {
+      return jsonDecode(body) as Map<String, dynamic>;
+    } catch (_) {
+      throw Exception('The server sent a reply we could not read — please try again.');
+    }
+  }
+
+  /// Runs a friends HTTP call and maps every failure — HTTP error,
+  /// unreadable body, timeout, lost connection — to a plain-words
+  /// message. PR-B (F8): callers used to get the raw FormatException.
+  Future<http.Response> _friendsCall(Future<http.Response> Function() call) async {
+    try {
+      return await call().timeout(_timeout);
+    } on TimeoutException {
+      throw Exception(friendRequestErrorMessage(error: TimeoutException('friends call timed out')));
+    } on http.ClientException {
+      throw Exception(friendRequestErrorMessage(error: http.ClientException('friends call failed')));
+    } catch (e) {
+      throw Exception(friendRequestErrorMessage(error: e));
+    }
+  }
+
   Future<List<Map<String, dynamic>>> fetchFriends(String token) async {
-    final response = await http.get(
+    final response = await _friendsCall(() => http.get(
       Uri.parse('$baseUrl/users/friends'),
       headers: _authHeaders(token),
-    ).timeout(_timeout);
-    if (response.statusCode >= 400) throw Exception('Failed to fetch friends');
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    ));
+    if (response.statusCode >= 400) {
+      throw Exception(friendRequestErrorMessage(statusCode: response.statusCode, body: response.body));
+    }
+    final data = _decodeJsonMap(response.body);
     return List<Map<String, dynamic>>.from(data['friends']);
   }
 
-  Future<void> sendFriendRequest(String token, String username) async {
-    final response = await http.post(
+  /// Exact-username lookup for the send-request confirm step.
+  /// Returns every account whose username matches exactly
+  /// (case-insensitive) — usually zero or one; more than one when
+  /// duplicate usernames exist, so the player can pick the right one.
+  /// PR-B (F2/F3).
+  Future<List<Map<String, dynamic>>> lookupUsers(String token, String username) async {
+    final response = await _friendsCall(() => http.get(
+      Uri.parse('$baseUrl/users/lookup').replace(queryParameters: {'username': username}),
+      headers: _authHeaders(token),
+    ));
+    if (response.statusCode >= 400) {
+      throw Exception(friendRequestErrorMessage(statusCode: response.statusCode, body: response.body));
+    }
+    final data = _decodeJsonMap(response.body);
+    return List<Map<String, dynamic>>.from(data['users']);
+  }
+
+  Future<void> sendFriendRequest(String token, String username, {String? userId}) async {
+    final response = await _friendsCall(() => http.post(
       Uri.parse('$baseUrl/users/friends/request'),
       headers: {
         'Content-Type': 'application/json',
         ..._authHeaders(token),
       },
-      body: jsonEncode({'username': username}),
-    ).timeout(_timeout);
+      // PR-B (F2/F3): send to the exact account the player confirmed.
+      // userId wins when given; the bare username path is only a
+      // fallback for older clients.
+      body: jsonEncode({
+        'username': username,
+        if (userId != null && userId.isNotEmpty) 'userId': userId,
+      }),
+    ));
     if (response.statusCode >= 400) {
-      final msg = jsonDecode(response.body)['error'] ?? 'Failed to send request';
-      throw Exception(msg);
+      throw Exception(friendRequestErrorMessage(statusCode: response.statusCode, body: response.body));
     }
   }
 
   Future<void> acceptFriendRequest(String token, String friendId) async {
-    final response = await http.post(
+    final response = await _friendsCall(() => http.post(
       Uri.parse('$baseUrl/users/friends/accept'),
       headers: {
         'Content-Type': 'application/json',
         ..._authHeaders(token),
       },
       body: jsonEncode({'friendId': friendId}),
-    ).timeout(_timeout);
+    ));
     if (response.statusCode >= 400) {
-      final msg = jsonDecode(response.body)['error'] ?? 'Failed to accept request';
-      throw Exception(msg);
+      throw Exception(friendRequestErrorMessage(statusCode: response.statusCode, body: response.body));
     }
   }
 
   Future<void> removeFriend(String token, String friendId) async {
-    final response = await http.delete(
+    final response = await _friendsCall(() => http.delete(
       Uri.parse('$baseUrl/users/friends/$friendId'),
       headers: _authHeaders(token),
-    ).timeout(_timeout);
+    ));
     if (response.statusCode >= 400) {
-      final msg = jsonDecode(response.body)['error'] ?? 'Failed to remove friend';
-      throw Exception(msg);
+      throw Exception(friendRequestErrorMessage(statusCode: response.statusCode, body: response.body));
     }
   }
 
   Future<List<Map<String, dynamic>>> searchUsers(String token, String query) async {
-    final response = await http.get(
+    final response = await _friendsCall(() => http.get(
       Uri.parse('$baseUrl/users/search').replace(queryParameters: {'q': query}),
       headers: _authHeaders(token),
-    ).timeout(_timeout);
-    if (response.statusCode >= 400) throw Exception('Search failed');
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    ));
+    if (response.statusCode >= 400) {
+      throw Exception(friendRequestErrorMessage(statusCode: response.statusCode, body: response.body));
+    }
+    final data = _decodeJsonMap(response.body);
     return List<Map<String, dynamic>>.from(data['users']);
   }
 

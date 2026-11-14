@@ -6,6 +6,10 @@ export interface AuthUser {
   id: string;
   username: string;
   roles: string[];
+  /** True for guest (anonymous) accounts. Present on tokens issued
+   * after PR-B; older tokens omit it and callers treat that as false
+   * (the /users/me response is authoritative — it reads the DB). */
+  guest?: boolean;
 }
 
 declare module "express-serve-static-core" {
