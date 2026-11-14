@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'state/app_state.dart';
 
+import 'screens/choose_username_screen.dart';
 import 'screens/game_screen.dart';
 import 'screens/lobby_screen.dart';
 import 'screens/login_screen.dart';
@@ -14,7 +15,6 @@ import 'screens/achievements_screen.dart';
 import 'screens/tutorial_screen.dart';
 import 'services/audio_service.dart';
 import 'theme.dart';
-import 'widgets/choose_username_dialog.dart';
 
 class CaptureTensApp extends StatelessWidget {
   const CaptureTensApp({super.key});
@@ -26,16 +26,26 @@ class CaptureTensApp extends StatelessWidget {
       title: 'Capture Tens Arena',
       theme: buildArenaTheme(),
       builder: (context, child) {
+        final app = context.watch<AppState>();
+        // PR-C: the "Choose your username" prompt is a full screen, not a
+        // floating dialog over the current screen. In the overlay the web
+        // text-input bridge never delivered keystrokes to the field's
+        // controller (the live debug readout stayed txt="" while the box
+        // showed the typed name), so no name could ever be typed. A normal
+        // screen works — the lobby search proves it — so when a username is
+        // required the chooser replaces the screen instead of covering it.
+        // It cannot be skipped: the name is picked once, at first game
+        // entry, and the held-back entry runs after a successful claim.
+        if (app.usernameChoiceRequested) {
+          return const _GlobalClickFeedback(
+            child: ChooseUsernameScreen(),
+          );
+        }
         return _GlobalClickFeedback(
           child: Stack(
             children: [
               if (child != null) child,
               const _AchievementToaster(),
-              // PR-C: the "Choose your username" prompt lives here so it can
-              // appear over whatever screen the player was on when they
-              // tried to enter a game (lobby or home). It cannot be
-              // dismissed — the name is picked once, at first game entry.
-              const _UsernameChoiceGate(),
             ],
           ),
         );
@@ -234,28 +244,6 @@ class _AchievementToasterState extends State<_AchievementToaster> with SingleTic
           ),
         ),
       ),
-    );
-  }
-}
-
-class _UsernameChoiceGate extends StatelessWidget {
-  const _UsernameChoiceGate();
-
-  @override
-  Widget build(BuildContext context) {
-    final app = context.watch<AppState>();
-    if (!app.usernameChoiceRequested) return const SizedBox.shrink();
-    return Stack(
-      children: [
-        // Blocks every tap behind the dialog — the name cannot be skipped.
-        const ModalBarrier(dismissible: false, color: Colors.black54),
-        ChooseUsernameDialog(
-          currentUsername: app.username,
-          isGuest: app.isGuest,
-          onCheckAvailability: app.checkUsernameAvailability,
-          onClaim: app.claimUsername,
-        ),
-      ],
     );
   }
 }
