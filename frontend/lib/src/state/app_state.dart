@@ -4,6 +4,7 @@ import '../models/match_state.dart';
 import '../models/rank_info.dart';
 import '../services/audio_service.dart';
 import '../services/auth_service.dart';
+import '../services/friend_lookup.dart';
 import '../services/socket_service.dart';
 
 enum LobbyStatus { idle, queuing, inRoom, inMatch }
@@ -81,6 +82,16 @@ class AppState extends ChangeNotifier {
   Map<String, bool> friendOnlineStatus = {}; // userId -> online
   List<dynamic>? party; // null if not in party
   Map<String, dynamic>? pendingPartyInvite;
+
+  /// Plain-words good news (new friend request, party invite sent /
+  /// declined). Shown as a green toast by the lobby — errors still go
+  /// through errorMessage (red). PR-B (F5/F7).
+  String? infoMessage;
+
+  /// Whether friends have been loaded at least once, so the "new
+  /// friend request" toast only fires for requests that arrived after
+  /// the first load — never for ones already waiting at login.
+  bool _friendsLoadedOnce = false;
   
   // Cached session info (for "Continue as" flow)
   String? cachedUsername;
@@ -96,13 +107,32 @@ class AppState extends ChangeNotifier {
 
   bool get isLoggedIn => token != null;
 
-  /// Guests get usernames like "GuestAb12Cd" (backend authService
-  /// createGuest). Friends added as a guest live only in this
-  /// browser's cached session — the UI says so in plain words.
+  /// True for guest (anonymous) accounts.
+  ///
+  /// PR-B (F10): this is the server's `guest` flag — from the session
+  /// at login, refreshed from /users/me (the DB) on every rank fetch.
+  /// The old username-prefix check is only a fallback for a cached
+  /// session restored before /users/me has answered.
+  bool? _isGuestFlag;
   bool get isGuest =>
-      username != null && username!.startsWith('Guest');
+      _isGuestFlag ?? (username != null && username!.startsWith('Guest'));
+
+  /// Incoming friend requests waiting for a reply — drives the lobby
+  /// Friends badge (F5).
+  int get incomingRequestCount => friends
+      .where((f) => f["status"] == "pending" && f["isRequester"] != true)
+      .length;
 
   // ── Cached session check ───────────────────────────────────────────────────
+
+  /// Stores a fresh session, including the server's real guest flag
+  /// (PR-B F10) — never inferred from the username here.
+  void _applySession(GuestSession session) {
+    token = session.token;
+    userId = session.userId;
+    username = session.username;
+    _isGuestFlag = session.isGuest;
+  }
 
   Future<void> _checkCachedSession() async {
     try {
@@ -114,9 +144,7 @@ class AppState extends ChangeNotifier {
           cachedUserId = session.userId;
           
           // Auto-restore session since it is valid
-          token = session.token;
-          userId = session.userId;
-          username = session.username;
+          _applySession(session);
           _connectSocket();
           _fetchInitialData();
         } catch (_) {
@@ -139,10 +167,8 @@ class AppState extends ChangeNotifier {
     
     // Validate the token with the backend first
     await auth.fetchMe(session.token);
-    
-    token = session.token;
-    userId = session.userId;
-    username = session.username;
+
+    _applySession(session);
     _connectSocket();
     // Fetch rank and friends in background
     _fetchInitialData();
@@ -152,9 +178,7 @@ class AppState extends ChangeNotifier {
   Future<void> tryRestoreSession() async {
     final session = await auth.getCachedSession();
     if (session == null) return;
-    token = session.token;
-    userId = session.userId;
-    username = session.username;
+    _applySession(session);
     _connectSocket();
     _fetchInitialData();
     notifyListeners();
@@ -162,9 +186,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> bootGuest() async {
     final session = await auth.guestLogin();
-    token = session.token;
-    userId = session.userId;
-    username = session.username;
+    _applySession(session);
     _connectSocket();
     _fetchInitialData();
     notifyListeners();
@@ -172,9 +194,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> loginWithGoogle() async {
     final session = await auth.googleLogin();
-    token = session.token;
-    userId = session.userId;
-    username = session.username;
+    _applySession(session);
     _connectSocket();
     _fetchInitialData();
     notifyListeners();
@@ -188,9 +208,7 @@ class AppState extends ChangeNotifier {
       idToken,
       username: username,
     );
-    token = session.token;
-    userId = session.userId;
-    this.username = session.username;
+    _applySession(session);
     _connectSocket();
     _fetchInitialData();
     notifyListeners();
@@ -199,6 +217,8 @@ class AppState extends ChangeNotifier {
   Future<void> _fetchInitialData() async {
     try { await fetchRankInfo(); } catch (_) {}
     try { await fetchFriends(); } catch (_) {}
+    // PR-B (F6): pull the initial online snapshot for the lobby dots.
+    requestFriendStatuses();
   }
 
   Future<void> logout() async {
@@ -216,6 +236,9 @@ class AppState extends ChangeNotifier {
     token = null;
     userId = null;
     username = null;
+    _isGuestFlag = null;
+    infoMessage = null;
+    _friendsLoadedOnce = false;
     match = null;
     rankInfo = null;
     lastRankUpdate = null;
@@ -253,10 +276,14 @@ class AppState extends ChangeNotifier {
       onRankUpdated: _onRankUpdated,
       onFriendStatus: _onFriendStatus,
       onFriendsChanged: _onFriendsChanged,
+      onFriendsStatusList: _onFriendsStatusList,
+      onPartyInviteSent: _onPartyInviteSent,
+      onPartyDeclined: _onPartyDeclined,
       onEmoteReceived: _onEmoteReceived,
       onAchievementUnlocked: _onAchievementUnlocked,
       onPlayerBotReplaced: _onPlayerBotReplaced,
       onError: _onError,
+      onConnected: _onSocketConnected,
     );
   }
 
@@ -424,6 +451,50 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// PR-B (F6): the initial online snapshot for every friend — the
+  /// answer to 'friends:status' that the client used to drop on the
+  /// floor. Individual 'friend:status' events keep it fresh afterwards.
+  void _onFriendsStatusList(Map<String, dynamic> json) {
+    final statuses = json['statuses'];
+    if (statuses is! List) return;
+    var changed = false;
+    for (final entry in statuses) {
+      if (entry is! Map) continue;
+      final id = entry['userId']?.toString();
+      if (id == null || id.isEmpty) continue;
+      final online = entry['online'] == true;
+      if (friendOnlineStatus[id] != online) {
+        friendOnlineStatus[id] = online;
+        changed = true;
+      }
+    }
+    if (changed) notifyListeners();
+  }
+
+  /// PR-B (F7): the server confirms the invite reached a live
+  /// account, so the inviter is not left guessing.
+  void _onPartyInviteSent(Map<String, dynamic> json) {
+    final name = json['targetUsername']?.toString() ?? 'your friend';
+    infoMessage = 'Party invite sent to $name';
+    notifyListeners();
+  }
+
+  /// PR-B (F7): the receiver declined — previously the inviter never
+  /// found out and the invite hung around forever.
+  void _onPartyDeclined(Map<String, dynamic> json) {
+    final name = json['by']?.toString() ?? 'Your friend';
+    infoMessage = '$name declined your party invite.';
+    notifyListeners();
+  }
+
+  /// A (re)connect is a fresh chance to pull friend state missed while
+  /// offline (F5). Harmless on first connect — _fetchInitialData
+  /// fetches the same data, and both are idempotent GETs.
+  void _onSocketConnected() {
+    fetchFriends();
+    requestFriendStatuses();
+  }
+
   void _onError(String msg) {
     errorMessage = msg;
     if (msg.contains('Invalid auth token') || msg.contains('Missing auth token')) {
@@ -482,6 +553,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearInfo() {
+    infoMessage = null;
+    notifyListeners();
+  }
+
   void clearRankUpdate() {
     lastRankUpdate = null;
     notifyListeners();
@@ -493,6 +569,11 @@ class AppState extends ChangeNotifier {
     if (token == null) return;
     try {
       final data = await auth.fetchMe(token!);
+      // PR-B (F10): /users/me carries the authoritative DB guest flag.
+      final meUser = data['user'];
+      if (meUser is Map && meUser.containsKey('guest')) {
+        _isGuestFlag = meUser['guest'] == true;
+      }
       final ranking = data['ranking'] as Map<String, dynamic>?;
       if (ranking != null) {
         rankInfo = RankInfo.fromJson(ranking);
@@ -518,6 +599,19 @@ class AppState extends ChangeNotifier {
     try {
       final loadedFriends = await auth.fetchFriends(sessionToken);
       if (token != sessionToken) return;
+      // PR-B (F5): only requests that arrived since the last refresh
+      // get a toast — the first load after login seeds the seen set
+      // silently, so old requests never spam the player.
+      final fresh = newIncomingFriendRequests(friends, loadedFriends);
+      if (_friendsLoadedOnce && fresh.isNotEmpty) {
+        final firstName = (fresh.first['user'] is Map)
+            ? (fresh.first['user'] as Map)['username']?.toString() ?? 'Someone'
+            : 'Someone';
+        infoMessage = fresh.length == 1
+            ? 'New friend request from $firstName'
+            : '${fresh.length} new friend requests';
+      }
+      _friendsLoadedOnce = true;
       friends = loadedFriends;
     } catch (e) {
       if (token != sessionToken) return;
@@ -567,7 +661,27 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> sendFriendRequest(String targetUsername) async {
+  /// Exact-username lookup for the send-request confirm step (F2/F3).
+  /// Returns the matches, or null when the lookup itself failed (the
+  /// plain-words reason is in [friendActionError]).
+  Future<List<Map<String, dynamic>>?> lookupExactFriend(String username) async {
+    final sessionToken = token;
+    if (sessionToken == null) {
+      friendActionError = "Sign in to manage friends";
+      notifyListeners();
+      return null;
+    }
+    friendActionError = null;
+    try {
+      return await auth.lookupUsers(sessionToken, username.trim());
+    } catch (e) {
+      friendActionError = e.toString().replaceFirst("Exception: ", "");
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<bool> sendFriendRequest(String targetUsername, {String? userId}) async {
     final sessionToken = token;
     if (sessionToken == null) {
       friendActionError = "Sign in to manage friends";
@@ -576,7 +690,9 @@ class AppState extends ChangeNotifier {
     }
     friendActionError = null;
     try {
-      await auth.sendFriendRequest(sessionToken, targetUsername.trim());
+      // PR-B (F2/F3): userId targets the exact account the player
+      // confirmed; the bare-username path is a fallback only.
+      await auth.sendFriendRequest(sessionToken, targetUsername.trim(), userId: userId);
       if (token != sessionToken) return false;
       await fetchFriends();
       await _refreshFriendSearchIfNeeded();
@@ -650,7 +766,14 @@ class AppState extends ChangeNotifier {
   }
 
   void declinePartyInvite() {
+    // PR-B (F7): declining now tells the server, so the inviter hears
+    // about it and the invite dies instead of hanging around.
+    final invite = pendingPartyInvite;
     pendingPartyInvite = null;
+    final partyId = invite?['partyId']?.toString();
+    if (partyId != null && partyId.isNotEmpty) {
+      socket.declinePartyInvite(partyId);
+    }
     notifyListeners();
   }
 

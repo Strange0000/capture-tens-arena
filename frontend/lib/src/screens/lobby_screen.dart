@@ -11,6 +11,7 @@ import '../widgets/royal_widgets.dart';
 
 import '../models/arena_card.dart';
 import '../models/rank_info.dart';
+import '../services/friend_lookup.dart';
 import '../widgets/arena_card_widget.dart';
 import '../services/audio_service.dart';
 import '../state/app_state.dart';
@@ -45,6 +46,16 @@ class _LobbyScreenState extends State<LobbyScreen>
     super.initState();
     AudioService.instance.playLobbyBgm();
 
+    // PR-B (F5): refresh friend state when entering the lobby, so a
+    // request that arrived while the player was in a game (or on a
+    // stale socket) shows up at once instead of waiting for the next
+    // friends:changed event.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final app = context.read<AppState>();
+      app.fetchFriends();
+      app.requestFriendStatuses();
+    });
     _entryCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -162,6 +173,23 @@ class _LobbyScreenState extends State<LobbyScreen>
           SnackBar(
             content: Text(msg),
             backgroundColor: Colors.redAccent,
+          ),
+        );
+      });
+    }
+
+    // Show good news (new friend request, party invite sent/declined)
+    // as a green toast. PR-B (F5/F7).
+    if (app.infoMessage != null) {
+      final msg = app.infoMessage!;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        app.clearInfo();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: const Color(0xFF167D68),
+            behavior: SnackBarBehavior.floating,
           ),
         );
       });
@@ -301,6 +329,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                 app: app,
                 onAdd: () => _showFriendsSheet(context),
                 onRemove: (friendId, username) => _confirmRemoveFriend(context, app, friendId, username),
+                onRemovePick: () => _showRemoveFriendPicker(context, app),
               ),
             ),
           ],
@@ -686,8 +715,67 @@ class _LobbyScreenState extends State<LobbyScreen>
           app: app,
           onAdd: () => _showFriendsSheet(context),
           onRemove: (friendId, username) => _confirmRemoveFriend(context, app, friendId, username),
+          onRemovePick: () => _showRemoveFriendPicker(context, app),
         ),
       ],
+    );
+  }
+
+  /// PR-B (F1): the panel footer "Remove" button used to call onAdd —
+  /// it opened the add-friend sheet and removed nothing. It now lists
+  /// the player's friends so they can pick one to remove (the confirm
+  /// step is the same as removing from a friend row).
+  Future<void> _showRemoveFriendPicker(BuildContext context, AppState app) async {
+    final accepted = app.friends.where((f) => f['status'] == 'accepted').toList();
+    if (accepted.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No friends to remove yet')),
+      );
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: ArenaColors.panel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: ArenaColors.gold.withOpacity(0.35)),
+        ),
+        title: const Text('Remove a friend', style: TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: accepted.length,
+            itemBuilder: (_, index) {
+              final f = accepted[index];
+              final rawUser = f['user'];
+              final user = rawUser is Map ? Map<String, dynamic>.from(rawUser) : <String, dynamic>{};
+              final username = user['username']?.toString() ?? 'Unknown player';
+              final friendId = f['id']?.toString() ?? '';
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(username, style: const TextStyle(color: Colors.white)),
+                trailing: TextButton(
+                  onPressed: friendId.isEmpty
+                      ? null
+                      : () {
+                          Navigator.pop(dialogContext);
+                          _confirmRemoveFriend(context, app, friendId, username);
+                        },
+                  child: const Text('Remove', style: TextStyle(color: Colors.redAccent)),
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1181,11 +1269,40 @@ class _LobbyTopBar extends StatelessWidget {
                   ],
                 ),
               ],
-              _TopIconButton(
-                tooltip: 'Friends',
-                icon: Icons.people_alt_rounded,
-                iconColor: const Color(0xFFFFC857),
-                onTap: onFriends,
+              // PR-B (F5): a badge with the number of incoming friend
+              // requests waiting for a reply.
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  _TopIconButton(
+                    tooltip: 'Friends',
+                    icon: Icons.people_alt_rounded,
+                    iconColor: const Color(0xFFFFC857),
+                    onTap: onFriends,
+                  ),
+                  if (app.incomingRequestCount > 0)
+                    Positioned(
+                      right: 2,
+                      top: 2,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.redAccent,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                        child: Text(
+                          '${app.incomingRequestCount}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
               _TopIconButton(
                 tooltip: 'Settings',
@@ -2449,6 +2566,8 @@ class _FriendsSheetState extends State<_FriendsSheet> {
   Timer? _searchDebounce;
   final Set<String> _busyKeys = {};
   bool _didLoad = false;
+  bool _lookingUp = false;
+  String? _directAddError;
 
   @override
   void didChangeDependencies() {
@@ -2500,6 +2619,193 @@ class _FriendsSheetState extends State<_FriendsSheet> {
         backgroundColor: success ? const Color(0xFF167D68) : Colors.redAccent.shade700,
         behavior: SnackBarBehavior.floating,
       ));
+  }
+
+  /// PR-B (F2/F3): the big "Send friend request" button used to fire
+  /// the request straight at whatever was typed — a partial name 404'd
+  /// with "User not found", and a duplicate username could send the
+  /// request to the wrong account. Now it looks the name up exactly
+  /// first, then:
+  /// - no match: a plain-words "no player with that name" error;
+  /// - one match: a confirm dialog showing the exact player;
+  /// - several matches: a picker so the player chooses the right one.
+  /// The request itself is sent by user id, never by bare username.
+  Future<void> _sendDirectRequest() async {
+    final app = context.read<AppState>();
+    final typed = widget.controller.text.trim();
+    if (typed.length < 2 || _lookingUp) return;
+    setState(() {
+      _lookingUp = true;
+      _directAddError = null;
+    });
+    final matches = await app.lookupExactFriend(typed);
+    if (!mounted) return;
+    setState(() => _lookingUp = false);
+    if (matches == null) {
+      setState(() => _directAddError = app.friendActionError ?? 'Could not look up that player — please try again.');
+      return;
+    }
+    final outcome = resolveFriendLookup(matches);
+    switch (outcome.outcome) {
+      case FriendLookupOutcome.none:
+        setState(() => _directAddError = "No player called '$typed' — check the spelling and try again.");
+      case FriendLookupOutcome.one:
+        await _confirmSendRequest(outcome.single!);
+      case FriendLookupOutcome.many:
+        await _pickDuplicateToAdd(matches);
+    }
+  }
+
+  /// Confirm dialog for a single exact match: the player sees the
+  /// exact account (name, online state, relationship) before anything
+  /// is sent.
+  Future<void> _confirmSendRequest(Map<String, dynamic> user) async {
+    final app = context.read<AppState>();
+    final username = user['username']?.toString() ?? 'Player';
+    final id = user['id']?.toString() ?? '';
+    final online = user['status'] == 'online';
+    final relation = user['relationship'] is Map
+        ? Map<String, dynamic>.from(user['relationship'] as Map)
+        : null;
+    final relStatus = relation?['status']?.toString();
+    final relRequester = relation?['isRequester'] == true;
+    final alreadyFriends = relStatus == 'accepted';
+    final alreadySent = relStatus == 'pending' && relRequester;
+    final incomingPending = relStatus == 'pending' && !relRequester;
+    final joined = _joinedLabel(user['createdAt']?.toString());
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: ArenaColors.panel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: ArenaColors.gold.withValues(alpha: 0.35)),
+        ),
+        title: const Text('Send friend request?', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _avatar(username, online: online),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(username, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
+                      const SizedBox(height: 2),
+                      Text(
+                        online ? 'Online' : 'Offline',
+                        style: const TextStyle(color: Colors.white54, fontSize: 12),
+                      ),
+                      if (joined != null)
+                        Text(joined, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              alreadyFriends
+                  ? 'You are already friends with $username.'
+                  : alreadySent
+                      ? 'You already sent $username a friend request.'
+                      : incomingPending
+                          ? '$username already sent you a friend request — accept it from the list below instead.'
+                          : 'Send a friend request to $username?',
+              style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          if (!alreadyFriends && !alreadySent && !incomingPending)
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFC857),
+                foregroundColor: const Color(0xFF1B2A22),
+              ),
+              child: const Text('Send request'),
+            ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _runAction(
+      'direct:$id',
+      () => app.sendFriendRequest(username, userId: id.isEmpty ? null : id),
+      'Friend request sent',
+    );
+  }
+
+  /// Several accounts share the typed name: list them (with the date
+  /// each joined, so they can be told apart) and let the player pick
+  /// the exact one to send to.
+  Future<void> _pickDuplicateToAdd(List<Map<String, dynamic>> matches) async {
+    final chosen = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: ArenaColors.panel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: ArenaColors.gold.withValues(alpha: 0.35)),
+        ),
+        title: const Text('Several players have that name', style: TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: matches.length,
+            itemBuilder: (_, index) {
+              final user = matches[index];
+              final username = user['username']?.toString() ?? 'Player';
+              final online = user['status'] == 'online';
+              final joined = _joinedLabel(user['createdAt']?.toString());
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: _avatar(username, online: online),
+                title: Text(username, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                subtitle: Text(
+                  [online ? 'Online' : 'Offline', if (joined != null) joined].join(' • '),
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                trailing: TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, user),
+                  child: const Text('Send', style: TextStyle(color: Color(0xFFFFC857))),
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    await _confirmSendRequest(chosen);
+  }
+
+  /// "Joined May 2026" from an ISO date, or null when unknown.
+  static String? _joinedLabel(String? isoDate) {
+    if (isoDate == null || isoDate.isEmpty) return null;
+    final date = DateTime.tryParse(isoDate);
+    if (date == null) return null;
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    return 'Joined ${months[date.month - 1]} ${date.year}';
   }
 
   Widget _avatar(String username, {bool online = false}) {
@@ -2576,11 +2882,15 @@ class _FriendsSheetState extends State<_FriendsSheet> {
         onPressed: busy || friendId.isEmpty ? null : () => _runAction("search:$id", () => app.removeFriend(friendId), "Friend request cancelled"),
         child: Text(busy ? "…" : "Sent", style: const TextStyle(color: Colors.white54, fontSize: 12)),
       );
-    } else if (status == "blocked") {
-      action = const Text("Blocked", style: TextStyle(color: Colors.redAccent, fontSize: 11));
     } else {
+      // PR-B (F9): the "Blocked" state is dead — no endpoint ever sets
+      // it — so there is no Blocked action here any more. A legacy
+      // blocked record falls through to Add, and the server answers
+      // with a plain-words message if the relationship is blocked.
+      // The request goes by user id (F2/F3): the row already shows the
+      // exact player, so the request must target that account.
       action = ElevatedButton(
-        onPressed: busy ? null : () => _runAction("search:$id", () => app.sendFriendRequest(username), "Friend request sent"),
+        onPressed: busy ? null : () => _runAction("search:$id", () => app.sendFriendRequest(username, userId: id), "Friend request sent"),
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFFFFC857).withOpacity(0.15),
           foregroundColor: const Color(0xFFFFC857),
@@ -2594,9 +2904,7 @@ class _FriendsSheetState extends State<_FriendsSheet> {
         ? (user["status"] == "online" ? "Friend • Online" : "Friend • Offline")
         : status == "pending"
             ? (isRequester ? "Request sent" : "Wants to be friends")
-            : status == "blocked"
-                ? "Unavailable"
-                : (user["status"] == "online" ? "Online • Player" : "Player");
+            : (user["status"] == "online" ? "Online • Player" : "Player");
     return ListTile(
       key: ValueKey("search-$id"),
       contentPadding: EdgeInsets.zero,
@@ -2654,7 +2962,7 @@ class _FriendsSheetState extends State<_FriendsSheet> {
         ? (online ? "Online" : user["status"]?.toString() == "in-match" ? "In a match" : "Offline")
         : status == "pending"
             ? (isRequester ? "Request sent • Waiting for response" : "Incoming friend request")
-            : "Blocked";
+            : "Unavailable";
     return ListTile(
       key: ValueKey("friend-$friendId"),
       contentPadding: EdgeInsets.zero,
@@ -2721,9 +3029,34 @@ class _FriendsSheetState extends State<_FriendsSheet> {
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: ArenaColors.gold.withOpacity(0.25)),
                   ),
-                  child: const Text(
-                    'You are playing as a guest. Friends you add here stay in this browser only — sign in with Google to keep them on every device.',
-                    style: TextStyle(fontSize: 11, color: Colors.white70, height: 1.4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'You are playing as ${app.username ?? 'a guest'}. Friends you add here stay in this browser only — sign in with Google to keep them on every device.',
+                          style: const TextStyle(fontSize: 11, color: Colors.white70, height: 1.4),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      // PR-B (F4): a guest's random username is
+                      // unfindable unless they can share the exact name.
+                      IconButton(
+                        tooltip: 'Copy my username',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () {
+                          final name = app.username ?? '';
+                          if (name.isEmpty) return;
+                          Clipboard.setData(ClipboardData(text: name));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Username copied — share it with your friend so they can find you')),
+                          );
+                        },
+                        icon: const Icon(Icons.copy_rounded, color: ArenaColors.gold, size: 16),
+                      ),
+                    ],
                   ),
                 ),
               if (app.isGuest) const SizedBox(height: 10),
@@ -2753,21 +3086,22 @@ class _FriendsSheetState extends State<_FriendsSheet> {
                 const SizedBox(height: 6),
                 Text(app.friendActionError!, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
               ],
-              // Direct add: type the exact username and send — no need
-              // to wait for search results first.
+              // Direct add: type the exact username — the name is
+              // looked up exactly first and the player confirms the
+              // exact account before anything is sent (F2/F3).
               const SizedBox(height: 10),
               RoyalGoldButton(
-                label: 'Send friend request',
+                label: _lookingUp ? 'Looking up…' : 'Send friend request',
                 icon: Icons.person_add_alt_1_rounded,
                 height: 46,
-                onTap: widget.controller.text.trim().length < 2
+                onTap: widget.controller.text.trim().length < 2 || _lookingUp
                     ? null
-                    : () => _runAction(
-                          "direct:${widget.controller.text.trim()}",
-                          () => context.read<AppState>().sendFriendRequest(widget.controller.text.trim()),
-                          "Friend request sent",
-                        ),
+                    : _sendDirectRequest,
               ),
+              if (_directAddError != null) ...[
+                const SizedBox(height: 6),
+                Text(_directAddError!, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+              ],
               const SizedBox(height: 8),
               Expanded(
                 child: ListView(
@@ -2820,11 +3154,16 @@ class _FriendsPanel extends StatelessWidget {
     required this.app,
     required this.onAdd,
     required this.onRemove,
+    required this.onRemovePick,
   });
 
   final AppState app;
   final VoidCallback onAdd;
   final void Function(String friendId, String username) onRemove;
+
+  /// Opens the remove picker (F1): the footer "Remove" button must
+  /// remove a friend, not open the add-friend sheet.
+  final VoidCallback onRemovePick;
 
   @override
   Widget build(BuildContext context) {
@@ -2878,11 +3217,36 @@ class _FriendsPanel extends StatelessWidget {
               ),
             ),
           if (app.isGuest)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                'You are playing as a guest. Sign in with Google to keep your friends on every device.',
-                style: TextStyle(fontSize: 11, color: Colors.white54, height: 1.35),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'You are playing as a guest. Sign in with Google to keep your friends on every device.',
+                      style: TextStyle(fontSize: 11, color: Colors.white54, height: 1.35),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  // PR-B (F4): a guest's random username is unfindable
+                  // unless they can share the exact name.
+                  IconButton(
+                    tooltip: 'Copy my username',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () {
+                      final name = app.username ?? '';
+                      if (name.isEmpty) return;
+                      Clipboard.setData(ClipboardData(text: name));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Username copied — share it with your friend so they can find you')),
+                      );
+                    },
+                    icon: const Icon(Icons.copy_rounded, color: ArenaColors.gold, size: 16),
+                  ),
+                ],
               ),
             ),
           if (app.friendsLoading && app.friends.isEmpty)
@@ -2988,7 +3352,7 @@ class _FriendsPanel extends StatelessWidget {
                 child: RoyalGoldButton(
                   label: 'Remove',
                   icon: Icons.person_remove_alt_1_rounded,
-                  onTap: onAdd,
+                  onTap: onRemovePick,
                   primary: false,
                   height: 44,
                 ),

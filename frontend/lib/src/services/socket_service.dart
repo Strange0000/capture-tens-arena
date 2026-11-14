@@ -24,10 +24,14 @@ class SocketService {
     required VoidJsonCallback onRankUpdated,
     required VoidJsonCallback onFriendStatus,
     required VoidJsonCallback onFriendsChanged,
+    required VoidJsonCallback onFriendsStatusList,
+    required VoidJsonCallback onPartyInviteSent,
+    required VoidJsonCallback onPartyDeclined,
     required VoidJsonCallback onEmoteReceived,
     required VoidJsonCallback onAchievementUnlocked,
     required VoidJsonCallback onPlayerBotReplaced,
     required void Function(String msg) onError,
+    void Function()? onConnected,
   }) {
     _socket?.dispose();
     _pendingEmits.clear();
@@ -53,6 +57,9 @@ class SocketService {
           }
           _pendingEmits.clear();
         }
+        // PR-B (F5): a (re)connect is a fresh chance to pull friend
+        // state the client may have missed while offline.
+        onConnected?.call();
       })
       ..on('connect_error', (err) {
         print('[Socket] Connection error to $baseUrl: $err');
@@ -74,9 +81,15 @@ class SocketService {
       ..on('room:updated', (data) => onRoomUpdated(_asMap(data)))
       ..on('party:updated', (data) => onPartyUpdated(_asMap(data)))
       ..on('party:invited', (data) => onPartyInvited(_asMap(data)))
+      ..on('party:inviteSent', (data) => onPartyInviteSent(_asMap(data)))
+      ..on('party:declined', (data) => onPartyDeclined(_asMap(data)))
       ..on('rank:updated', (data) => onRankUpdated(_asMap(data)))
       ..on('friend:status', (data) => onFriendStatus(_asMap(data)))
       ..on('friends:changed', (data) => onFriendsChanged(_asMap(data)))
+      // PR-B (F6): the reply to 'friends:status' finally has a
+      // listener — previously the client asked for the list and then
+      // dropped the answer on the floor.
+      ..on('friends:statusList', (data) => onFriendsStatusList(_asMap(data)))
       ..on('emote:received', (data) => onEmoteReceived(_asMap(data)))
       ..on('achievements:unlocked', (data) => onAchievementUnlocked(_asMap(data)))
       ..on('match:playerBotReplaced', (data) => onPlayerBotReplaced(_asMap(data)))
@@ -115,8 +128,12 @@ class SocketService {
   void startRoomWithBots(String code) => _emit('room:startWithBots', {'code': code});
 
   void inviteToParty(String targetUserId) => _emit('party:invite', {'targetUserId': targetUserId});
-  
+
   void acceptPartyInvite(String partyId) => _emit('party:accept', {'partyId': partyId});
+
+  /// PR-B (F7): declining now tells the server, so the inviter hears
+  /// about it and the invite dies. Previously this was local-only.
+  void declinePartyInvite(String partyId) => _emit('party:decline', {'partyId': partyId});
 
   void leaveParty() => _emit('party:leave', {});
 
