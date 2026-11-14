@@ -5,6 +5,9 @@ name: Username migration audit (one-off)
 # repository secret (Actions secret). Remove this file after the migration.
 on:
   workflow_dispatch:
+  push:
+    branches: [feat/unique-usernames]
+    paths: ['.github/workflows/username-migration-audit.yml']
 
 permissions:
   contents: read
