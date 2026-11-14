@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { MatchmakingService, QueuePlayer } from "../src/services/matchmakingService.js";
+import { describe, expect, it, vi } from "vitest";
+import { MatchmakingService, QueuePlayer, PARTY_INVITE_TTL_MS } from "../src/services/matchmakingService.js";
 
 function player(userId: string): QueuePlayer {
   return {
@@ -73,6 +73,79 @@ describe("private room lifecycle", () => {
   });
 });
 
+describe("party invites (PR-B F7)", () => {
+  it("creates an invite that can be accepted exactly once", () => {
+    const matchmaking = new MatchmakingService();
+    const partyId = matchmaking.createParty(player("inviter"));
+
+    const invite = matchmaking.createPartyInvite("inviter", "INVITER", "friend", partyId);
+    expect(invite.partyId).toBe(partyId);
+    expect(invite.expiresAt - Date.now()).toBeLessThanOrEqual(PARTY_INVITE_TTL_MS);
+
+    expect(matchmaking.acceptPartyInvite(partyId, "friend")).toBe(invite);
+    // Consumed: a second accept is a stale invite, not a second join.
+    expect(() => matchmaking.acceptPartyInvite(partyId, "friend")).toThrow(
+      "This party invite has expired or was withdrawn — ask your friend to send a new one",
+    );
+  });
+
+  it("rejects an invite after its 60s expiry", () => {
+    vi.useFakeTimers();
+    try {
+      const matchmaking = new MatchmakingService();
+      const partyId = matchmaking.createParty(player("inviter"));
+      matchmaking.createPartyInvite("inviter", "INVITER", "friend", partyId);
+
+      vi.advanceTimersByTime(PARTY_INVITE_TTL_MS + 1000);
+      expect(matchmaking.getPartyInvite(partyId, "friend")).toBeUndefined();
+      expect(() => matchmaking.acceptPartyInvite(partyId, "friend")).toThrow(
+        "This party invite has expired",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("declining an invite removes it and returns it for the inviter notice", () => {
+    const matchmaking = new MatchmakingService();
+    const partyId = matchmaking.createParty(player("inviter"));
+    const invite = matchmaking.createPartyInvite("inviter", "INVITER", "friend", partyId);
+
+    expect(matchmaking.declinePartyInvite(partyId, "friend")).toBe(invite);
+    expect(matchmaking.getPartyInvite(partyId, "friend")).toBeUndefined();
+    // Declining twice is a no-op, not an error.
+    expect(matchmaking.declinePartyInvite(partyId, "friend")).toBeNull();
+  });
+
+  it("does not let a player sit in two parties at once", () => {
+    const matchmaking = new MatchmakingService();
+    const firstParty = matchmaking.createParty(player("one"));
+    const secondParty = matchmaking.createParty(player("two"));
+    matchmaking.joinParty(firstParty, player("member"));
+
+    expect(() => matchmaking.joinParty(secondParty, player("member"))).toThrow(
+      "You are already in a party — leave it first",
+    );
+  });
+
+  it("re-accepting the party you are already in is a no-op", () => {
+    const matchmaking = new MatchmakingService();
+    const partyId = matchmaking.createParty(player("owner"));
+    const party = matchmaking.joinParty(partyId, player("member"));
+
+    expect(matchmaking.joinParty(partyId, player("member"))).toBe(party);
+    expect(party).toHaveLength(2);
+  });
+
+  it("kills outstanding invites when the inviter leaves the party", () => {
+    const matchmaking = new MatchmakingService();
+    const partyId = matchmaking.createParty(player("inviter"));
+    matchmaking.createPartyInvite("inviter", "INVITER", "friend", partyId);
+
+    matchmaking.leaveParty("inviter");
+    expect(matchmaking.getPartyInvite(partyId, "friend")).toBeUndefined();
+  });
+});
 describe("ranked queue cancellation", () => {
   it("exposes and removes a queued solo player so a fallback cannot start after cancel", () => {
     const matchmaking = new MatchmakingService();

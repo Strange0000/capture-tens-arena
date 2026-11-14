@@ -15,7 +15,7 @@ function isDuplicateKeyError(error: unknown): boolean {
 export async function createGuest() {
   if (isOfflineDevMode) {
     const username = `Guest${nanoid(6)}`;
-    return issueSession(`guest-${nanoid(10)}`, username, ["player"], false);
+    return issueSession(`guest-${nanoid(10)}`, username, ["player"], true, false);
   }
   // Guest names are random, but the unique index on usernameLower makes a
   // (near-impossible) collision a hard failure — retry with a fresh name
@@ -30,7 +30,7 @@ export async function createGuest() {
         guest: true,
         lastSeenAt: new Date(),
       });
-      return issueSession(user.id, username, ["player"], false);
+      return issueSession(user.id, username, ["player"], true, false);
     } catch (error) {
       if (!isDuplicateKeyError(error) || attempt === 2) throw error;
     }
@@ -44,7 +44,7 @@ export async function loginWithGoogle(profile: { googleId: string; email?: strin
   const cleanUsername = profile.username.substring(0, 24);
 
   if (isOfflineDevMode) {
-    return issueSession(`google-${profile.googleId}`, cleanUsername, ["player"], false);
+    return issueSession(`google-${profile.googleId}`, cleanUsername, ["player"], false, false);
   }
 
   // PR-A (G8): username is set only on insert ($setOnInsert), so signing in
@@ -75,7 +75,7 @@ export async function loginWithGoogle(profile: { googleId: string; email?: strin
         },
         { upsert: true, new: true },
       );
-      return issueSession(user.id, user.username, user.roles, user.hasChosenUsername ?? false);
+      return issueSession(user.id, user.username, user.roles, user.guest ?? false, user.hasChosenUsername ?? false);
     } catch (error) {
       if (!isDuplicateKeyError(error) || attempt === 2) throw error;
       // The colliding name belongs to someone else — try a unique variant.
@@ -85,7 +85,7 @@ export async function loginWithGoogle(profile: { googleId: string; email?: strin
   throw new Error("Google login failed. Try again.");
 }
 
-function issueSession(id: string, username: string, roles: string[], hasChosenUsername: boolean) {
-  const token = signJwt({ id, username, roles });
-  return { token, user: { id, username, roles, hasChosenUsername } };
+function issueSession(id: string, username: string, roles: string[], guest: boolean, hasChosenUsername: boolean) {
+  const token = signJwt({ id, username, roles, guest });
+  return { token, user: { id, username, roles, guest, hasChosenUsername } };
 }

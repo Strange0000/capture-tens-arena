@@ -10,11 +10,25 @@ export interface QueuePlayer {
   botDifficulty?: "easy" | "medium" | "hard";
 }
 
+/** How long a party invite stays valid before the receiver must ask
+ * for a fresh one. PR-B (F7): invites previously lived forever with
+ * no acknowledgement and no way to decline. */
+export const PARTY_INVITE_TTL_MS = 60_000;
+
+export interface PartyInvite {
+  partyId: string;
+  fromUserId: string;
+  fromUsername: string;
+  targetUserId: string;
+  expiresAt: number;
+}
+
 export class MatchmakingService {
   private rankedQueue: QueuePlayer[][] = [];
   private rooms = new Map<string, QueuePlayer[]>();
   private parties = new Map<string, QueuePlayer[]>();
   private userParty = new Map<string, string>();
+  private pendingInvites = new Map<string, PartyInvite>();
 
   enqueueRanked(party: QueuePlayer[]): QueuePlayer[] | undefined {
     if (party.length > 2) throw new Error("Ranked parties max 2 players");
@@ -167,15 +181,108 @@ export class MatchmakingService {
   joinParty(id: string, player: QueuePlayer): QueuePlayer[] {
     const party = this.parties.get(id);
     if (!party) throw new Error("Party not found");
+    // A player already in a different party must leave it first —
+    // without this they would sit in two parties at once and the
+    // ranked queue would seat them twice.
+    const existingPartyId = this.userParty.get(player.userId);
+    if (existingPartyId && existingPartyId !== id) {
+      throw new Error("You are already in a party — leave it first");
+    }
+    if (existingPartyId === id) return party;
     if (party.length >= 2) throw new Error("Party is full");
     party.push(player);
     this.userParty.set(player.userId, id);
     return party;
   }
 
+  // ── Party invites (PR-B F7) ──────────────────────────────────────────
+  // An invite is a short-lived record, not a bare socket event: the
+  // receiver can accept, decline, or let it expire, and the inviter
+  // gets an acknowledgement either way. Expired invites are swept
+  // lazily — accept/decline/create all drop them first — so no timer
+  // is needed and a stale invite can never be accepted late.
+
+  createPartyInvite(
+    fromUserId: string,
+    fromUsername: string,
+    targetUserId: string,
+    partyId: string,
+  ): PartyInvite {
+    this.sweepExpiredInvites();
+    const invite: PartyInvite = {
+      partyId,
+      fromUserId,
+      fromUsername,
+      targetUserId,
+      expiresAt: Date.now() + PARTY_INVITE_TTL_MS,
+    };
+    this.pendingInvites.set(`${partyId}:${targetUserId}`, invite);
+    return invite;
+  }
+
+  getPartyInvite(partyId: string, targetUserId: string): PartyInvite | undefined {
+    const invite = this.pendingInvites.get(`${partyId}:${targetUserId}`);
+    if (!invite) return undefined;
+    if (invite.expiresAt <= Date.now()) {
+      this.pendingInvites.delete(`${partyId}:${targetUserId}`);
+      return undefined;
+    }
+    return invite;
+  }
+
+  /** Consumes the invite. Throws with a plain-words reason when there
+   * is no live invite for this player and party. */
+  acceptPartyInvite(partyId: string, targetUserId: string): PartyInvite {
+    const invite = this.getPartyInvite(partyId, targetUserId);
+    if (!invite) {
+      throw new Error("This party invite has expired or was withdrawn — ask your friend to send a new one");
+    }
+    this.pendingInvites.delete(`${partyId}:${targetUserId}`);
+    return invite;
+  }
+
+  /** Consumes the invite if one is live; returns it so the inviter can
+   * be told, or null when there was nothing to decline (already
+   * accepted, expired, or never sent — declining is still a no-op). */
+  declinePartyInvite(partyId: string, targetUserId: string): PartyInvite | null {
+    const key = `${partyId}:${targetUserId}`;
+    const invite = this.pendingInvites.get(key) ?? null;
+    if (invite) this.pendingInvites.delete(key);
+    return invite;
+  }
+
+  /** Outstanding invites die when either side leaves: an invite from a
+   * player who is no longer in a party, or to a player who left, must
+   * never be accepted afterwards. */
+  clearInvitesForUser(userId: string) {
+    for (const [key, invite] of this.pendingInvites) {
+      if (invite.fromUserId === userId || invite.targetUserId === userId) {
+        this.pendingInvites.delete(key);
+      }
+    }
+  }
+
+  clearInvitesForParty(partyId: string) {
+    for (const [key, invite] of this.pendingInvites) {
+      if (invite.partyId === partyId) this.pendingInvites.delete(key);
+    }
+  }
+
+  private sweepExpiredInvites() {
+    const now = Date.now();
+    for (const [key, invite] of this.pendingInvites) {
+      if (invite.expiresAt <= now) this.pendingInvites.delete(key);
+    }
+  }
+
   leaveParty(userId: string) {
     const partyId = this.userParty.get(userId);
     if (!partyId) return null;
+    // The party changed, so its outstanding invites are dead — a
+    // receiver must never accept an invite into a party that has
+    // already lost a member.
+    this.clearInvitesForParty(partyId);
+    this.clearInvitesForUser(userId);
     let party = this.parties.get(partyId);
     if (party) {
       party = party.filter(p => p.userId !== userId);
