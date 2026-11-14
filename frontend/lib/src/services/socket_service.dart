@@ -34,7 +34,15 @@ class SocketService {
     _socket = io.io(
       baseUrl,
       io.OptionBuilder()
-          .setTransports(['websocket', 'polling'])
+          // Websocket only (no polling fallback). The polling-to-websocket
+          // upgrade probe in socket_io_client 2.0.3+1 crashes with
+          // "Null check operator used on a null value" when the transport
+          // drops mid-probe on a flaky network (probe onerror / onClose
+          // force-unwrap a transport that a previous probe failure already
+          // nulled). That crash froze the username dialog live: typing
+          // produced no feedback at all. Without polling there is no probe,
+          // so the crash path never runs.
+          .setTransports(['websocket'])
           .setExtraHeaders({})
           .setAuth({'token': token})
           .enableAutoConnect()

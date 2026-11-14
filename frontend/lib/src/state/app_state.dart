@@ -82,6 +82,16 @@ class AppState extends ChangeNotifier {
   List<dynamic>? party; // null if not in party
   Map<String, dynamic>? pendingPartyInvite;
   
+  // Username choice (PR-C): true once the player has picked their own
+  // username. Null while unknown (not yet fetched from /users/me). The
+  // prompt appears at first game entry, never at login, and only once.
+  bool? hasChosenUsername;
+  // True while the "Choose your username" dialog must be on screen.
+  bool usernameChoiceRequested = false;
+  // Game entry held back while the username dialog is open; runs right
+  // after a successful claim.
+  VoidCallback? _pendingGameEntry;
+
   // Cached session info (for "Continue as" flow)
   String? cachedUsername;
   String? cachedUserId;
@@ -165,6 +175,7 @@ class AppState extends ChangeNotifier {
     token = session.token;
     userId = session.userId;
     username = session.username;
+    hasChosenUsername = session.hasChosenUsername;
     _connectSocket();
     _fetchInitialData();
     notifyListeners();
@@ -175,6 +186,7 @@ class AppState extends ChangeNotifier {
     token = session.token;
     userId = session.userId;
     username = session.username;
+    hasChosenUsername = session.hasChosenUsername;
     _connectSocket();
     _fetchInitialData();
     notifyListeners();
@@ -191,6 +203,7 @@ class AppState extends ChangeNotifier {
     token = session.token;
     userId = session.userId;
     this.username = session.username;
+    hasChosenUsername = session.hasChosenUsername;
     _connectSocket();
     _fetchInitialData();
     notifyListeners();
@@ -216,6 +229,9 @@ class AppState extends ChangeNotifier {
     token = null;
     userId = null;
     username = null;
+    hasChosenUsername = null;
+    usernameChoiceRequested = false;
+    _pendingGameEntry = null;
     match = null;
     rankInfo = null;
     lastRankUpdate = null;
@@ -493,6 +509,12 @@ class AppState extends ChangeNotifier {
     if (token == null) return;
     try {
       final data = await auth.fetchMe(token!);
+      // PR-C: /users/me is the authoritative source for the flag — the JWT
+      // lives 7 days and goes stale after a username claim.
+      final user = data['user'] as Map<String, dynamic>?;
+      if (user != null && user['hasChosenUsername'] is bool) {
+        hasChosenUsername = user['hasChosenUsername'] as bool;
+      }
       final ranking = data['ranking'] as Map<String, dynamic>?;
       if (ranking != null) {
         rankInfo = RankInfo.fromJson(ranking);
@@ -664,16 +686,89 @@ class AppState extends ChangeNotifier {
     socket.requestFriendStatuses();
   }
 
+  // ── Username choice (PR-C) ───────────────────────────────────────────
+
+  /// Asks /users/me for the flag when it is still unknown (e.g. right after
+  /// a guest login, before the background rank fetch answers). Returns true
+  /// when the flag is known afterwards.
+  Future<bool> _refreshUsernameFlag() async {
+    if (token == null) return false;
+    try {
+      final data = await auth.fetchMe(token!);
+      final user = data['user'] as Map<String, dynamic>?;
+      if (user != null && user['hasChosenUsername'] is bool) {
+        hasChosenUsername = user['hasChosenUsername'] as bool;
+        notifyListeners();
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  /// Live availability check for the dialog. Returns the server's answer
+  /// ({available, reason, message, suggestions}) or null on transport
+  /// failure — the dialog then shows a generic retry message.
+  Future<Map<String, dynamic>?> checkUsernameAvailability(String username) async {
+    if (token == null) return null;
+    try {
+      return await auth.checkUsernameAvailability(token!, username);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Claims the chosen username. On success the fresh JWT replaces the old
+  /// session, the socket reconnects with it, the dialog closes, and the
+  /// held-back game entry runs. Throws a plain-words Exception on failure.
+  Future<void> claimUsername(String username) async {
+    if (token == null) throw Exception('Sign in first, then choose a username.');
+    final session = await auth.claimUsername(token!, username);
+    token = session.token;
+    userId = session.userId;
+    this.username = session.username;
+    hasChosenUsername = true;
+    usernameChoiceRequested = false;
+    // The name lives in the JWT, so the socket must reconnect with the new
+    // token — otherwise the game would still see the old temporary name.
+    socket.disconnect();
+    _connectSocket();
+    notifyListeners();
+    final pending = _pendingGameEntry;
+    _pendingGameEntry = null;
+    pending?.call();
+  }
+
+  /// Every way into a game funnels through here. If the player has not
+  /// chosen a username yet, the entry is held back and the "Choose your
+  /// username" dialog opens instead; the entry runs after a successful
+  /// claim (see claimUsername). The prompt appears at first game entry,
+  /// never at login, and only once per account.
+  Future<void> _startGame(VoidCallback start) async {
+    if (!isLoggedIn) return;
+    if (hasChosenUsername == null) {
+      await _refreshUsernameFlag();
+    }
+    if (hasChosenUsername != true) {
+      _pendingGameEntry = start;
+      usernameChoiceRequested = true;
+      notifyListeners();
+      return;
+    }
+    start();
+  }
+
   // ── Game actions ─────────────────────────────────────────────────────────
 
-  void queueRanked() {
-    print('[AppState] queueRanked called, socket connected=${socket.connected}');
-    // Ignore late state broadcasts from the previous match until a new match
-    // ID arrives. Do not clear _leftMatchId here when searching again.
-    match = null;
-    socket.queueRanked(mmr: rankInfo?.mmr ?? 0);
-    lobbyStatus = LobbyStatus.queuing;
-    notifyListeners();
+  Future<void> queueRanked() async {
+    await _startGame(() {
+      print('[AppState] queueRanked called, socket connected=${socket.connected}');
+      // Ignore late state broadcasts from the previous match until a new match
+      // ID arrives. Do not clear _leftMatchId here when searching again.
+      match = null;
+      socket.queueRanked(mmr: rankInfo?.mmr ?? 0);
+      lobbyStatus = LobbyStatus.queuing;
+      notifyListeners();
+    });
   }
 
   /// Cancels ranked matchmaking without sending a match-leave event or
@@ -686,19 +781,25 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void startOffline(String difficulty) {
-    print('[AppState] startOffline($difficulty) called, socket connected=${socket.connected}');
-    socket.startOffline(difficulty);
-    lobbyStatus = LobbyStatus.inMatch;
-    notifyListeners();
+  Future<void> startOffline(String difficulty) async {
+    await _startGame(() {
+      print('[AppState] startOffline($difficulty) called, socket connected=${socket.connected}');
+      socket.startOffline(difficulty);
+      lobbyStatus = LobbyStatus.inMatch;
+      notifyListeners();
+    });
   }
 
-  void createRoom() {
-    socket.createRoom();
+  Future<void> createRoom() async {
+    await _startGame(() {
+      socket.createRoom();
+    });
   }
 
-  void joinRoom(String code) {
-    socket.joinRoom(code);
+  Future<void> joinRoom(String code) async {
+    await _startGame(() {
+      socket.joinRoom(code);
+    });
   }
 
   void startRoomWithBots() {
