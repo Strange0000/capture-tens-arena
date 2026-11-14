@@ -1,13 +1,13 @@
 import http from "node:http";
 import { Server } from "socket.io";
 import { createApp } from "./app.js";
-import { env } from "./config/env.js";
+import { env, isOfflineDevMode } from "./config/env.js";
 import { connectMongo } from "./db/mongo.js";
 import { connectRedis } from "./db/redis.js";
 import { registerGameSockets } from "./sockets/gameSocket.js";
 
 async function main() {
-  if (!env.OFFLINE_DEV_MODE) {
+  if (!isOfflineDevMode) {
     await Promise.all([connectMongo(), connectRedis()]);
   } else {
     console.log("OFFLINE_DEV_MODE enabled: MongoDB and Redis connections are skipped.");

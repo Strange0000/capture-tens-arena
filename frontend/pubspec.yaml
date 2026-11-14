@@ -16,6 +16,12 @@ dependencies:
   shared_preferences: ^2.2.3
   google_sign_in: ^6.2.1
   google_sign_in_web: ^0.12.4+4
+  # Direct dependency: the GIS button wrapper reads the web plugin's
+  # load state via GoogleSignInPlatform.instance (PR-A G6).
+  google_sign_in_platform_interface: ^2.5.0
+  # Direct dependency: the popup-close tracker watches window blur/focus
+  # to notice a failed Google popup (Round 2, bug 2).
+  web: ^1.1.1
   just_audio: ^0.9.38
   confetti: ^0.7.0
 
@@ -23,6 +29,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  # Test-only: the Google sign-in widget test fakes the platform with
+  # MockPlatformInterfaceMixin (PR-A).
+  plugin_platform_interface: ^2.1.8
 
 flutter:
   uses-material-design: true

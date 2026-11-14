@@ -24,3 +24,23 @@ if (env.NODE_ENV === "production" && env.JWT_SECRET === "development-secret-chan
   console.error("FATAL: JWT_SECRET must be set in production!");
   process.exit(1);
 }
+
+// PR-A (G9): offline dev-mode auth bypasses must never be live in
+// production. Refuse to boot rather than silently trusting mock auth.
+if (env.NODE_ENV === "production" && env.OFFLINE_DEV_MODE) {
+  console.error("FATAL: OFFLINE_DEV_MODE must be false in production!");
+  process.exit(1);
+}
+
+// PR-A: log, don't crash — /auth/google returns 500 without this, and the
+// login screen already tells the player to play as a guest in that case.
+if (env.NODE_ENV === "production" && !env.GOOGLE_CLIENT_ID) {
+  console.error("GOOGLE_CLIENT_ID missing — /auth/google will 500");
+}
+
+/// Effective offline-dev bypass flag (PR-A G9). The raw env var alone is
+/// never trusted: bypass branches must additionally require a non-production
+/// environment, so a stray OFFLINE_DEV_MODE=true can never open auth holes
+/// on the live server even if the boot assert above is ever bypassed.
+export const isOfflineDevMode =
+  env.OFFLINE_DEV_MODE && env.NODE_ENV !== "production";

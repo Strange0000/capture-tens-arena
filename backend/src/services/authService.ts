@@ -1,11 +1,11 @@
 import { nanoid } from "nanoid";
-import { env } from "../config/env.js";
+import { isOfflineDevMode } from "../config/env.js";
 import { UserModel } from "../models/User.js";
 import { signJwt } from "../middleware/auth.js";
 
 export async function createGuest() {
   const username = `Guest${nanoid(6)}`;
-  if (env.OFFLINE_DEV_MODE) {
+  if (isOfflineDevMode) {
     return issueSession(`guest-${nanoid(10)}`, username, ["player"]);
   }
   const user = await UserModel.create({ username, guest: true, lastSeenAt: new Date() });
@@ -17,15 +17,18 @@ export async function loginWithGoogle(profile: { googleId: string; email?: strin
   const cleanAvatarUrl = profile.avatarUrl || undefined;
   const cleanUsername = profile.username.substring(0, 24);
 
-  if (env.OFFLINE_DEV_MODE) {
+  if (isOfflineDevMode) {
     return issueSession(`google-${profile.googleId}`, cleanUsername, ["player"]);
   }
 
+  // PR-A (G8): username is set only on insert ($setOnInsert), so signing in
+  // again with Google never renames an existing account. The verified
+  // profile name is only the first-login default.
   const user = await UserModel.findOneAndUpdate(
     { googleId: profile.googleId },
     {
-      $setOnInsert: { googleId: profile.googleId, email: cleanEmail },
-      $set: { username: cleanUsername, avatarUrl: cleanAvatarUrl, lastSeenAt: new Date() }
+      $setOnInsert: { googleId: profile.googleId, email: cleanEmail, username: cleanUsername },
+      $set: { avatarUrl: cleanAvatarUrl, lastSeenAt: new Date() }
     },
     { upsert: true, new: true }
   );

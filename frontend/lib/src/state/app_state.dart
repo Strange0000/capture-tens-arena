@@ -202,6 +202,16 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    // PR-A (G3): forget the cached Google account too, so the next visit
+    // to the login screen offers the account chooser instead of silently
+    // re-picking the same Google account. A failure here must never block
+    // the local logout. This is the ONLY place signOut runs automatically —
+    // the login screen never signs out on mount.
+    try {
+      await auth.googleSignIn.signOut();
+    } catch (error) {
+      debugPrint('[AppState] Google signOut on logout failed: $error');
+    }
     await auth.clearSession();
     token = null;
     userId = null;
