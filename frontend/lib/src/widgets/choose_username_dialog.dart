@@ -52,6 +52,13 @@ class _ChooseUsernameDialogState extends State<ChooseUsernameDialog> {
   bool _claiming = false;
   String? _claimError;
 
+  // TEMP DEBUG (remove before merge): on-screen counters proving whether
+  // typing reaches _onChanged at all and whether the availability check
+  // ever runs. The live dialog shows no feedback at all, so this tells
+  // us if onChanged/setState is dead or only the check is dead.
+  int _debugTaps = 0;
+  int _debugChecks = 0;
+
   @override
   void initState() {
     super.initState();
@@ -73,6 +80,8 @@ class _ChooseUsernameDialogState extends State<ChooseUsernameDialog> {
   }
 
   void _onChanged(String value) {
+    _debugTaps++;
+    debugPrint('[UsernameDialog] _onChanged tap=$_debugTaps value="$value"');
     _claimError = null;
     final problem = validateUsernameLocally(value);
     if (problem != null) {
@@ -94,6 +103,8 @@ class _ChooseUsernameDialogState extends State<ChooseUsernameDialog> {
   }
 
   Future<void> _checkAvailability() async {
+    _debugChecks++;
+    debugPrint('[UsernameDialog] _checkAvailability check=$_debugChecks name="${_controller.text.trim()}"');
     final name = _controller.text.trim();
     if (validateUsernameLocally(name) != null) return;
     final answer = await widget.onCheckAvailability(name);
@@ -232,6 +243,14 @@ class _ChooseUsernameDialogState extends State<ChooseUsernameDialog> {
               const Text(
                 '3–24 characters · letters, numbers and _ only · must start with a letter',
                 style: TextStyle(color: Colors.white54, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              // TEMP DEBUG (remove before merge): proves on screen whether
+              // typing reaches _onChanged and whether the check ever runs.
+              Text(
+                'DBG taps=$_debugTaps checks=$_debugChecks state=$_state',
+                style: const TextStyle(color: Colors.white38, fontSize: 11),
                 textAlign: TextAlign.center,
               ),
               if (_message != null) ...[
