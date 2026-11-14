@@ -24,11 +24,11 @@ class ArenaCardWidget extends StatefulWidget {
   final String? powerSuit;
   final VoidCallback? onPlay;
   /// Called when the player taps this card but cannot play it.
-  /// Handled HERE, inside this widget's own GestureDetector: the
-  /// previous design wrapped an outer GestureDetector around the card,
-  /// but this widget's own tap recogniser (onTapDown/onTapUp) won the
-  /// gesture arena first and then did nothing because onTap was null —
-  /// so illegal taps were silently swallowed and no hint ever appeared.
+  /// Handled HERE, inside this widget's own tap path: the previous
+  /// design wrapped an outer GestureDetector around the card, but this
+  /// widget's own tap recogniser won the gesture arena first and then
+  /// did nothing because onTap was null — so illegal taps were
+  /// silently swallowed and no hint ever appeared.
   final VoidCallback? onIllegalTap;
   final bool dimmed;
   final bool isLegal;
@@ -43,6 +43,81 @@ class ArenaCardWidget extends StatefulWidget {
 class _ArenaCardWidgetState extends State<ArenaCardWidget> {
   bool _pressed = false;
   bool _hovered = false;
+
+  // Round 12: raw pointer tap tracking (see _fireTap). The tap used to
+  // go through a GestureDetector, whose TapGestureRecognizer can lose
+  // a tap silently in two ways — both proven in widget tests
+  // (test/swallowed_tap_test.dart):
+  //  * if the card's Element is unmounted and remounted between
+  //    pointer-down and pointer-up, the recognizer is disposed
+  //    mid-gesture and onTap never fires (the old fan gave the LAST
+  //    card a different wrapper than the rest, so the card that
+  //    became last when the hand shrank was remounted — fixed in
+  //    _HandArea by giving every card the same wrapper);
+  //  * if another recognizer wins the gesture arena (the Round 11
+  //    drag-to-play bug), onTapCancel fires instead of onTap.
+  // A Listener reads raw pointer events, which are not arena-competed
+  // and do not depend on a recognizer surviving a rebuild — a tap is
+  // a down and an up on the same card with almost no movement in
+  // between. A scroll-drag moves far more and must never play a card;
+  // the Listener does not consume the event, so the hand still scrolls
+  // on touch.
+  static const _kTapSlop = 12.0; // logical px
+  int? _downPointer;
+  Offset? _downPosition;
+
+  /// The card has a tap outcome at all (play, or a plain-words
+  /// reason). Decorative cards (lobby, trick cluster) pass neither
+  /// callback and stay inert, as before.
+  bool get _tappable => widget.onPlay != null || widget.onIllegalTap != null;
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (_downPointer != null || !_tappable) return;
+    _downPointer = event.pointer;
+    _downPosition = event.position;
+    setState(() => _pressed = true);
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _downPointer) return;
+    // Drifted past a tap: this is a scroll/drag — drop the press look.
+    if (_downPosition != null &&
+        (event.position - _downPosition!).distance > _kTapSlop) {
+      if (_pressed) setState(() => _pressed = false);
+    }
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    if (event.pointer != _downPointer) return;
+    final downPosition = _downPosition;
+    _downPointer = null;
+    _downPosition = null;
+    if (_pressed) setState(() => _pressed = false);
+    if (downPosition == null) return;
+    // A tap barely moves; a scroll-drag moves far more.
+    if ((event.position - downPosition).distance <= _kTapSlop) _fireTap();
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    if (event.pointer != _downPointer) return;
+    _downPointer = null;
+    _downPosition = null;
+    if (_pressed) setState(() => _pressed = false);
+  }
+
+  /// The single tap path for both outcomes — judged at release time
+  /// against the CURRENT widget state, exactly as the old onTap did:
+  /// playable -> play, otherwise explain why in plain words.
+  void _fireTap() {
+    if (!mounted) return;
+    final isPlayable =
+        widget.onPlay != null && widget.isLegal && !widget.dimmed;
+    if (isPlayable) {
+      widget.onPlay?.call();
+    } else {
+      widget.onIllegalTap?.call();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -95,17 +170,17 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
                 ..translate(0.0, -12.0, 30.0))
               : Matrix4.identity(),
           transformAlignment: Alignment.center,
-          child: GestureDetector(
-          // Only a playable card gets press feedback. A non-playable
-          // card must NOT register onTapDown/onTapUp here: those
-          // recognisers used to win the gesture arena and swallow the
-          // tap before any illegal-tap handler could see it.
-          onTapDown: isPlayable ? (_) => setState(() => _pressed = true) : null,
-          onTapUp: isPlayable ? (_) => setState(() => _pressed = false) : null,
-          // One tap path for both outcomes: playable -> play, otherwise
-          // explain why in plain words via the HUD banner.
-          onTap: isPlayable ? widget.onPlay : widget.onIllegalTap,
-          onTapCancel: isPlayable ? () => setState(() => _pressed = false) : null,
+          // Round 12: no GestureDetector here any more (see _fireTap).
+          // Semantics keeps the tap action for assistive tech.
+          child: Semantics(
+            button: true,
+            label: '${widget.card.rank} of ${widget.card.suit}',
+            onTap: _fireTap,
+            child: Listener(
+          onPointerDown: _onPointerDown,
+          onPointerMove: _onPointerMove,
+          onPointerUp: _onPointerUp,
+          onPointerCancel: _onPointerCancel,
           child: AnimatedScale(
             scale: _pressed ? 0.93 : 1.0,
             duration: const Duration(milliseconds: 90),
@@ -304,6 +379,7 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
               ),
             ),
           ),
+        ),
         ),
       ),
     ),

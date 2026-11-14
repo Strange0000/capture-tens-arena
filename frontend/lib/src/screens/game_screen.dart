@@ -1330,6 +1330,7 @@ class _HandArea extends StatelessWidget {
                   final double yOffset = N > 1 ? ((index - (N - 1) / 2).abs() * 1).toDouble() : 0.0;
 
                   final cardWidget = ArenaCardWidget(
+                    key: ValueKey(card.id),
                     card: card,
                     powerSuit: match.powerSuit,
                     isLegal: highlightLegal ? isLegal : true,
@@ -1344,6 +1345,15 @@ class _HandArea extends StatelessWidget {
                   // Keyed by card id, so a hand rebuild (new state
                   // arriving exactly as a tap lands) can never reuse
                   // one card's Element/gesture state for another card.
+                  // Round 12: EVERY card gets the same Align wrapper
+                  // (the last card used to be a bare Transform). The
+                  // old shape change meant the card that became last
+                  // when the hand shrank was unmounted and remounted
+                  // — and a tap in flight on it died silently when
+                  // its gesture recognizer was disposed mid-gesture
+                  // (proven in swallowed_tap_test.dart). The last
+                  // card's Align keeps widthFactor 1.0 so it stays
+                  // fully visible and the row width is unchanged.
                   Widget wrappedCard = Transform(
                     key: ValueKey(card.id),
                     transform: Matrix4.identity()
@@ -1354,15 +1364,12 @@ class _HandArea extends StatelessWidget {
                     child: cardWidget,
                   );
 
-                  if (index < N - 1) {
-                    return Align(
-                      key: ValueKey(card.id),
-                      widthFactor: widthFactor,
-                      alignment: Alignment.centerLeft,
-                      child: wrappedCard,
-                    );
-                  }
-                  return wrappedCard;
+                  return Align(
+                    key: ValueKey(card.id),
+                    widthFactor: index < N - 1 ? widthFactor : 1.0,
+                    alignment: Alignment.centerLeft,
+                    child: wrappedCard,
+                  );
                 }),
               ),
             ),
