@@ -1,7 +1,7 @@
 name: Username migration audit (one-off)
 
 # One-off helper for PR #15: runs the read-only username migration audit
-# against production MongoDB. Triggered by hand only. Needs the MONGO_URI
+# against production MongoDB. Triggered by hand only. Needs the MONGO_URI (re-run after the googleId index fix)
 # repository secret (Actions secret). Remove this file after the migration.
 on:
   workflow_dispatch:
