@@ -204,14 +204,18 @@ class _ChooseUsernameFormState extends State<ChooseUsernameForm> {
                 // tapping the field). The lobby search — same field, no
                 // autofocus — works, because the user's tap drives focus.
                 // So the player taps this box, like the lobby search.
-                maxLength: 24,
+                //
+                // No maxLength either: the lobby search has none and works,
+                // while this field froze with maxLength set. The 3–24 rule
+                // is still enforced — validateUsernameLocally rejects a
+                // name over 24 characters with a clear message instead of
+                // silently capping the input.
                 textCapitalization: TextCapitalization.none,
                 autocorrect: false,
                 style: const TextStyle(color: Colors.white, fontSize: 18),
                 decoration: InputDecoration(
                   hintText: 'e.g. Arjun_99',
                   hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
-                  counterText: '',
                   filled: true,
                   fillColor: ArenaColors.panelLight,
                   border: OutlineInputBorder(
