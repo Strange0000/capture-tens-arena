@@ -24,7 +24,7 @@ class GoogleSignInWebButton extends StatelessWidget {
   final ValueChanged<Object> onError;
 
   /// Accepted for API parity with the web button; never called off-web.
-  final Future<bool> Function() onSwitchAccount;
+  final Future<void> Function() onSwitchAccount;
   final bool compact;
 
   @override

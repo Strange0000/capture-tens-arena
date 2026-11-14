@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
@@ -6,6 +7,31 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// How long a GIS prompt (One Tap / FedCM account chooser) may take to
+/// resolve.
+///
+/// Round 3: on an unauthorized origin GIS never fires a prompt moment, so
+/// an unbounded wait hangs forever (Round 2 waited 60s with no feedback).
+/// 15s is generous — a working chooser appears in ~1s and a player picks
+/// within a few seconds — and it bounds every prompt attempt.
+const Duration kGooglePromptTimeout = Duration(seconds: 15);
+
+/// Outcome of asking Google for a different account.
+enum GoogleSwitchResult {
+  /// The chooser produced an account; the confirm dialog follows via the
+  /// credential stream.
+  picked,
+
+  /// The prompt was suppressed or dismissed — no account was picked.
+  suppressed,
+
+  /// The prompt never resolved at all (e.g. the origin is not authorized —
+  /// GIS never fires a prompt moment). The player should reload the page:
+  /// a hung prompt also wedges the plugin's internal method queue until
+  /// reload, so no later Google call can succeed either.
+  timedOut,
+}
 
 class GuestSession {
   const GuestSession({
@@ -50,42 +76,53 @@ class AuthService {
   /// chooser, so the player can pick a different Google account instead
   /// of being silently signed into the one the browser last picked.
   ///
-  /// Returns true if the chooser produced an account (the confirm dialog
-  /// then follows via the credential stream); false if the prompt was
-  /// suppressed or dismissed — the caller should then tell the player to
-  /// tap the Google button. Failures are swallowed: there may simply be
-  /// no cached account, and that is not an error.
+  /// Returns [GoogleSwitchResult.picked] if the chooser produced an
+  /// account (the confirm dialog then follows via the credential stream),
+  /// [GoogleSwitchResult.suppressed] if the prompt was suppressed or
+  /// dismissed, and [GoogleSwitchResult.timedOut] if the prompt never
+  /// resolved at all — GIS never fires a prompt moment on an unauthorized
+  /// origin, so the wait is bounded and the caller can say so instead of
+  /// hanging.
   ///
-  /// Round 2, bug 1: `signOut` alone only clears the cache and disables
-  /// auto-select — nothing on screen changes until the player taps the
-  /// GIS button again, so the old "Use a different account" link looked
-  /// like a no-op. Prompting here shows the chooser right away. GIS may
-  /// suppress the prompt (cool-down after a recent dismissal); that is
-  /// not an error, and the false return lets the caller say so.
-  Future<bool> switchGoogleAccount() async {
+  /// Round 3: Round 2 prompted via signInSilently() with a 60s timeout
+  /// and no visible feedback, so the tap looked dead for a full minute on
+  /// an unauthorized origin (live test: 3 taps, 5–15s waits, nothing).
+  /// The prompt is now bounded to [promptTimeout] and the caller shows
+  /// feedback at once. Sign-out itself is also capped (5s per call):
+  /// the plugin serializes every GoogleSignIn call through one queue, so
+  /// a hung prompt would otherwise wedge signOut/disconnect too.
+  Future<GoogleSwitchResult> switchGoogleAccount({
+    Duration promptTimeout = kGooglePromptTimeout,
+  }) async {
     try {
-      await googleSignIn.signOut();
+      await googleSignIn.signOut().timeout(const Duration(seconds: 5));
     } catch (error) {
       debugPrint('AuthService: Google signOut for account switch failed: $error');
     }
     try {
-      await googleSignIn.disconnect();
+      await googleSignIn.disconnect().timeout(const Duration(seconds: 5));
     } catch (error) {
       debugPrint('AuthService: Google disconnect for account switch failed: $error');
     }
     try {
       // signInSilently() on web drives the GIS prompt (One Tap / FedCM
       // account chooser). It returns the picked account, or null when the
-      // prompt was suppressed or dismissed. The 60s timeout guards a
-      // prompt that never resolves; errors are swallowed (default
-      // suppressErrors: true already returns null on error).
+      // prompt was suppressed or dismissed. reAuthenticate forces a fresh
+      // prompt (and a fresh credential-stream event) even for the
+      // already-known account — otherwise a second tap would silently
+      // return the cached account with no chooser at all.
       final account = await googleSignIn
-          .signInSilently()
-          .timeout(const Duration(seconds: 60));
-      return account != null;
+          .signInSilently(reAuthenticate: true)
+          .timeout(promptTimeout);
+      return account != null
+          ? GoogleSwitchResult.picked
+          : GoogleSwitchResult.suppressed;
+    } on TimeoutException {
+      debugPrint('AuthService: Google account chooser prompt never resolved');
+      return GoogleSwitchResult.timedOut;
     } catch (error) {
       debugPrint('AuthService: Google account chooser prompt failed: $error');
-      return false;
+      return GoogleSwitchResult.suppressed;
     }
   }
 

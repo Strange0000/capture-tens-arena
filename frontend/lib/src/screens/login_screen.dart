@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/auth_service.dart' show GoogleSwitchResult;
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/arena_loading.dart';
@@ -77,25 +78,67 @@ class _LoginScreenState extends State<LoginScreen>
   /// button, so the player can pick a different Google account instead of
   /// being silently signed into the one the browser last picked.
   ///
-  /// Round 2, bug 1: returns true when the chooser produced an account
-  /// (the confirm dialog follows on its own). When it returns false the
-  /// prompt was suppressed or dismissed, so say so in plain words and
-  /// re-render the button — the player can still tap the Google button
-  /// and pick an account there. Never signs out on mount.
+  /// Round 3: the tap is acknowledged at once ("Signing out of Google…")
+  /// and the whole switch is bounded — sign-out is capped at 5s per call
+  /// and the chooser prompt at 15s — so the link can never look dead for
+  /// a minute again (Round 2's 60s silent wait failed live on 3 taps).
+  /// The outcome is always said in plain words: an account means the
+  /// confirm dialog follows; suppressed means tap the Google button;
+  /// timed out means reload the page — a hung prompt wedges the plugin's
+  /// method queue until reload, so no later Google call can succeed.
+  /// Never signs out on mount. A repeat tap while a switch is running is
+  /// ignored.
+  bool _switchingGoogle = false;
+
   Future<void> _switchGoogleAccount() async {
-    final app = context.read<AppState>();
-    final pickedAccount = await app.auth.switchGoogleAccount();
-    if (!mounted) return;
-    if (pickedAccount) return;
-    setState(() => _googleButtonKey++);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Signed out of Google — tap "Sign in with Google" and pick an account.',
+    if (_switchingGoogle) return;
+    setState(() => _switchingGoogle = true);
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Signing out of Google…'),
+          duration: Duration(seconds: 15),
         ),
-        duration: Duration(seconds: 4),
-      ),
-    );
+      );
+    final app = context.read<AppState>();
+    GoogleSwitchResult result;
+    try {
+      result = await app.auth.switchGoogleAccount();
+    } finally {
+      if (mounted) setState(() => _switchingGoogle = false);
+    }
+    if (!mounted) return;
+    setState(() => _googleButtonKey++);
+    switch (result) {
+      case GoogleSwitchResult.picked:
+        // The confirm dialog follows via the credential stream; hide the
+        // "Signing out…" note so it does not sit behind the dialog.
+        messenger.hideCurrentSnackBar();
+      case GoogleSwitchResult.suppressed:
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Signed out of Google — tap "Sign in with Google" and pick an account.',
+              ),
+              duration: Duration(seconds: 4),
+            ),
+          );
+      case GoogleSwitchResult.timedOut:
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text(
+                "Signed out of Google, but the chooser didn't open. Reload the page and try again, or play as a guest.",
+              ),
+              duration: Duration(seconds: 6),
+            ),
+          );
+    }
   }
 
   /// Shows the "waking up the server" hint after ~6s of waiting. Shared by
@@ -413,6 +456,12 @@ class _LoginScreenState extends State<LoginScreen>
     if (msg.contains('TimeoutException')) {
       return 'The server is waking up — try again in a few seconds.';
     }
+    // Round 3: the GIS prompt was suppressed or dismissed (FedCM
+    // cooldown, or no Google session in the browser) — the rendered GIS
+    // button's popup flow is offered instead, so point the player at it.
+    if (msg.contains('prompt suppressed')) {
+      return "Google sign-in didn't open. Try the Google button again, or play as a guest.";
+    }
     // Round 2, bug 2: the Google popup closed without a credential
     // (e.g. Google's Error 400 page). The plugin never reports the
     // underlying error, so this is the only signal the attempt failed.
@@ -430,7 +479,10 @@ class _LoginScreenState extends State<LoginScreen>
         key: ValueKey('google-$_googleButtonKey'),
         googleSignIn: app.auth.googleSignIn,
         compact: compact,
-        onSwitchAccount: () => app.auth.switchGoogleAccount(),
+        // Round 3: one handler for both the dialog's switch button and
+        // the standalone link — it signs out, re-offers the chooser and
+        // says the outcome in plain words.
+        onSwitchAccount: _switchGoogleAccount,
         onIdToken: (idToken, username) async {
           setState(() {
             _loading = true;
@@ -478,7 +530,7 @@ class _LoginScreenState extends State<LoginScreen>
   /// account out and re-renders the GIS button; never signs out on mount.
   Widget _buildSwitchGoogleAccountButton() {
     return TextButton(
-      onPressed: _switchGoogleAccount,
+      onPressed: _switchingGoogle ? null : _switchGoogleAccount,
       child: const Text(
         'Use a different Google account',
         style: TextStyle(fontSize: 12),
