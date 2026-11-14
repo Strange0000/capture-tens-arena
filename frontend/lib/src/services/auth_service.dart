@@ -46,11 +46,23 @@ class AuthService {
     scopes: const ['email', 'profile', 'openid'],
   );
 
-  /// Signs the cached Google account out and revokes its grant, so the
-  /// next Google sign-in offers the account chooser instead of silently
-  /// re-picking the same account. Failures are swallowed: there may simply
-  /// be no cached account, and that is not an error.
-  Future<void> switchGoogleAccount() async {
+  /// Signs the cached Google account out and re-offers the account
+  /// chooser, so the player can pick a different Google account instead
+  /// of being silently signed into the one the browser last picked.
+  ///
+  /// Returns true if the chooser produced an account (the confirm dialog
+  /// then follows via the credential stream); false if the prompt was
+  /// suppressed or dismissed — the caller should then tell the player to
+  /// tap the Google button. Failures are swallowed: there may simply be
+  /// no cached account, and that is not an error.
+  ///
+  /// Round 2, bug 1: `signOut` alone only clears the cache and disables
+  /// auto-select — nothing on screen changes until the player taps the
+  /// GIS button again, so the old "Use a different account" link looked
+  /// like a no-op. Prompting here shows the chooser right away. GIS may
+  /// suppress the prompt (cool-down after a recent dismissal); that is
+  /// not an error, and the false return lets the caller say so.
+  Future<bool> switchGoogleAccount() async {
     try {
       await googleSignIn.signOut();
     } catch (error) {
@@ -60,6 +72,20 @@ class AuthService {
       await googleSignIn.disconnect();
     } catch (error) {
       debugPrint('AuthService: Google disconnect for account switch failed: $error');
+    }
+    try {
+      // signInSilently() on web drives the GIS prompt (One Tap / FedCM
+      // account chooser). It returns the picked account, or null when the
+      // prompt was suppressed or dismissed. The 60s timeout guards a
+      // prompt that never resolves; errors are swallowed (default
+      // suppressErrors: true already returns null on error).
+      final account = await googleSignIn
+          .signInSilently()
+          .timeout(const Duration(seconds: 60));
+      return account != null;
+    } catch (error) {
+      debugPrint('AuthService: Google account chooser prompt failed: $error');
+      return false;
     }
   }
 

@@ -15,12 +15,16 @@ class GoogleSignInWebButton extends StatelessWidget {
     required this.googleSignIn,
     required this.onIdToken,
     required this.onError,
+    required this.onSwitchAccount,
     this.compact = false,
   });
 
   final GoogleSignIn googleSignIn;
   final GoogleIdTokenCallback onIdToken;
   final ValueChanged<Object> onError;
+
+  /// Accepted for API parity with the web button; never called off-web.
+  final Future<bool> Function() onSwitchAccount;
   final bool compact;
 
   @override

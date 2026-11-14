@@ -19,6 +19,9 @@ dependencies:
   # Direct dependency: the GIS button wrapper reads the web plugin's
   # load state via GoogleSignInPlatform.instance (PR-A G6).
   google_sign_in_platform_interface: ^2.5.0
+  # Direct dependency: the popup-close tracker watches window blur/focus
+  # to notice a failed Google popup (Round 2, bug 2).
+  web: ^1.1.1
   just_audio: ^0.9.38
   confetti: ^0.7.0
 

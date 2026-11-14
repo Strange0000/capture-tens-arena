@@ -76,10 +76,26 @@ class _LoginScreenState extends State<LoginScreen>
   /// PR-A (G3): forget the cached Google account and re-render the GIS
   /// button, so the player can pick a different Google account instead of
   /// being silently signed into the one the browser last picked.
+  ///
+  /// Round 2, bug 1: returns true when the chooser produced an account
+  /// (the confirm dialog follows on its own). When it returns false the
+  /// prompt was suppressed or dismissed, so say so in plain words and
+  /// re-render the button — the player can still tap the Google button
+  /// and pick an account there. Never signs out on mount.
   Future<void> _switchGoogleAccount() async {
     final app = context.read<AppState>();
-    await app.auth.switchGoogleAccount();
-    if (mounted) setState(() => _googleButtonKey++);
+    final pickedAccount = await app.auth.switchGoogleAccount();
+    if (!mounted) return;
+    if (pickedAccount) return;
+    setState(() => _googleButtonKey++);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Signed out of Google — tap "Sign in with Google" and pick an account.',
+        ),
+        duration: Duration(seconds: 4),
+      ),
+    );
   }
 
   /// Shows the "waking up the server" hint after ~6s of waiting. Shared by
@@ -397,6 +413,12 @@ class _LoginScreenState extends State<LoginScreen>
     if (msg.contains('TimeoutException')) {
       return 'The server is waking up — try again in a few seconds.';
     }
+    // Round 2, bug 2: the Google popup closed without a credential
+    // (e.g. Google's Error 400 page). The plugin never reports the
+    // underlying error, so this is the only signal the attempt failed.
+    if (msg.contains('did not complete')) {
+      return "Google sign-in didn't work — try again or play as a guest.";
+    }
     return 'Google sign-in did not work. You can still play as a guest.';
   }
 
@@ -408,6 +430,7 @@ class _LoginScreenState extends State<LoginScreen>
         key: ValueKey('google-$_googleButtonKey'),
         googleSignIn: app.auth.googleSignIn,
         compact: compact,
+        onSwitchAccount: () => app.auth.switchGoogleAccount(),
         onIdToken: (idToken, username) async {
           setState(() {
             _loading = true;

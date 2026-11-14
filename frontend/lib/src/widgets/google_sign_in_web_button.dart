@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'gis_button.dart';
+import 'popup_close_tracker.dart';
 
 /// Callback used to exchange Google's signed ID token for the game's session.
 typedef GoogleIdTokenCallback = Future<void> Function(
@@ -24,13 +25,24 @@ enum _ConfirmChoice { cont, switchAccount, dismissed }
 /// The browser may pick whichever Google account it likes (including the
 /// wrong one); the player must first confirm "Continue as <name> (<email>)?"
 /// — only then is [onIdToken] called. "Use a different account" signs the
-/// cached Google account out so the button offers the account chooser again.
+/// cached Google account out and re-offers the account chooser.
+///
+/// Round 2: the plugin swallows the error when the Google popup itself
+/// fails (e.g. Error 400 origin_mismatch) — nothing ever reaches the
+/// credential stream, so the attempt failed silently. The widget therefore
+/// also watches for the popup window closing without a credential
+/// ([PopupCloseTracker]) and surfaces that as a plain-words failure via
+/// [onError]. A failed attempt never leaves the button greyed out: the
+/// button is only dimmed while [_confirming] or [_exchanging], both of
+/// which always reset (dialog close / finally block).
 class GoogleSignInWebButton extends StatefulWidget {
   const GoogleSignInWebButton({
     super.key,
     required this.googleSignIn,
     required this.onIdToken,
     required this.onError,
+    required this.onSwitchAccount,
+    this.popupCloseTracker,
     this.compact = false,
   });
 
@@ -41,6 +53,16 @@ class GoogleSignInWebButton extends StatefulWidget {
   final GoogleSignIn googleSignIn;
   final GoogleIdTokenCallback onIdToken;
   final ValueChanged<Object> onError;
+
+  /// Signs the cached Google account out and re-offers the account
+  /// chooser. Returns true if the chooser produced an account (the
+  /// confirm dialog then follows via the credential stream). Owned by
+  /// [AuthService] so the widget stays dumb about how switching works.
+  final Future<bool> Function() onSwitchAccount;
+
+  /// Tracks the Google popup closing. Injected for tests; defaults to
+  /// the real window blur/focus tracker.
+  final PopupCloseTracker? popupCloseTracker;
   final bool compact;
 
   @override
@@ -49,6 +71,8 @@ class GoogleSignInWebButton extends StatefulWidget {
 
 class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
   StreamSubscription<GoogleSignInAccount?>? _subscription;
+  StreamSubscription<void>? _popupClosedSub;
+  late final PopupCloseTracker _popupTracker;
 
   /// A confirmation dialog is on screen for a streamed account.
   bool _confirming = false;
@@ -56,6 +80,12 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
   /// A user-confirmed exchange (fetching the ID token / calling onIdToken)
   /// is running.
   bool _exchanging = false;
+
+  /// Fires shortly after the Google popup closes, unless a credential
+  /// arrived first. Gives the credential a moment to arrive after the
+  /// popup closes (focus can return a beat before the postMessage does),
+  /// so a slow-but-successful sign-in is never reported as failed.
+  Timer? _popupClosedTimer;
 
   @override
   void initState() {
@@ -67,12 +97,37 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
       _handleAccountChanged,
       onError: _handleStreamError,
     );
+    _popupTracker = widget.popupCloseTracker ?? PopupCloseTracker();
+    _popupClosedSub =
+        _popupTracker.onPopupClosed.listen((_) => _handlePopupClosed());
   }
 
   bool get _signInInProgress => _confirming || _exchanging;
 
+  void _cancelPopupClosedTimer() {
+    _popupClosedTimer?.cancel();
+    _popupClosedTimer = null;
+  }
+
+  /// The Google popup window closed. If no credential arrived, the
+  /// attempt failed (e.g. Google's Error 400 origin_mismatch page, or
+  /// the player closed the popup) — say so in plain words instead of
+  /// leaving the player staring at an unchanged login screen.
+  void _handlePopupClosed() {
+    if (!mounted || _signInInProgress) return;
+    _cancelPopupClosedTimer();
+    _popupClosedTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted || _signInInProgress) return;
+      widget.onError(Exception('Google sign-in did not complete'));
+    });
+  }
+
   Future<void> _handleAccountChanged(GoogleSignInAccount? account) async {
     if (account == null || _signInInProgress || !mounted) return;
+
+    // A credential arrived — the popup (if any) succeeded, so no failure
+    // message is due.
+    _cancelPopupClosedTimer();
 
     // G2: gate the token exchange behind an explicit confirmation.
     // A streamed account means "the browser picked this Google account",
@@ -83,14 +138,12 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
     setState(() => _confirming = false);
 
     if (choice == _ConfirmChoice.switchAccount) {
-      // Forget the cached Google account so the GIS button offers the
-      // account chooser again instead of silently re-picking this one.
-      // Errors here are background noise, never a sign-in failure.
-      try {
-        await widget.googleSignIn.signOut();
-      } catch (error) {
-        debugPrint('GoogleSignInWebButton: signOut for account switch failed: $error');
-      }
+      // Round 2, bug 1: signOut alone only clears the cache and disables
+      // auto-select — nothing on screen changes until the player taps the
+      // GIS button again, so the old link looked like a no-op. The
+      // callback re-offers the account chooser right away; if the prompt
+      // is suppressed, the caller says so and the GIS button stays usable.
+      await widget.onSwitchAccount();
       return;
     }
     if (choice != _ConfirmChoice.cont) return;
@@ -151,6 +204,7 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
     // and must never surface as a red error banner. Only a failure while
     // the player is actively signing in may reach onError.
     if (_signInInProgress) {
+      _cancelPopupClosedTimer();
       if (mounted) widget.onError(error);
     } else {
       debugPrint('GoogleSignInWebButton: background stream error ignored: $error');
@@ -159,6 +213,9 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
 
   @override
   void dispose() {
+    _cancelPopupClosedTimer();
+    _popupClosedSub?.cancel();
+    _popupTracker.dispose();
     _subscription?.cancel();
     super.dispose();
   }
