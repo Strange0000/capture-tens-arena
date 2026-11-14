@@ -249,7 +249,7 @@ class _ChooseUsernameDialogState extends State<ChooseUsernameDialog> {
               // TEMP DEBUG (remove before merge): proves on screen whether
               // typing reaches _onChanged and whether the check ever runs.
               Text(
-                'DBG taps=$_debugTaps checks=$_debugChecks state=$_state',
+                'DBG taps=$_debugTaps checks=$_debugChecks state=$_state txt="${_controller.text}"',
                 style: const TextStyle(color: Colors.white38, fontSize: 11),
                 textAlign: TextAlign.center,
               ),
