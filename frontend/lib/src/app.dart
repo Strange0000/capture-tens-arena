@@ -14,6 +14,7 @@ import 'screens/achievements_screen.dart';
 import 'screens/tutorial_screen.dart';
 import 'services/audio_service.dart';
 import 'theme.dart';
+import 'widgets/choose_username_dialog.dart';
 
 class CaptureTensApp extends StatelessWidget {
   const CaptureTensApp({super.key});
@@ -30,6 +31,11 @@ class CaptureTensApp extends StatelessWidget {
             children: [
               if (child != null) child,
               const _AchievementToaster(),
+              // PR-C: the "Choose your username" prompt lives here so it can
+              // appear over whatever screen the player was on when they
+              // tried to enter a game (lobby or home). It cannot be
+              // dismissed — the name is picked once, at first game entry.
+              const _UsernameChoiceGate(),
             ],
           ),
         );
@@ -228,6 +234,28 @@ class _AchievementToasterState extends State<_AchievementToaster> with SingleTic
           ),
         ),
       ),
+    );
+  }
+}
+
+class _UsernameChoiceGate extends StatelessWidget {
+  const _UsernameChoiceGate();
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    if (!app.usernameChoiceRequested) return const SizedBox.shrink();
+    return Stack(
+      children: [
+        // Blocks every tap behind the dialog — the name cannot be skipped.
+        const ModalBarrier(dismissible: false, color: Colors.black54),
+        ChooseUsernameDialog(
+          currentUsername: app.username,
+          isGuest: app.isGuest,
+          onCheckAvailability: app.checkUsernameAvailability,
+          onClaim: app.claimUsername,
+        ),
+      ],
     );
   }
 }
