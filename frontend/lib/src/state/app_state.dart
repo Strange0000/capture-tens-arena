@@ -835,19 +835,17 @@ class AppState extends ChangeNotifier {
     socket.inviteToParty(targetUserId);
   }
 
-  void acceptPartyInvite() {
-    if (pendingPartyInvite == null) return;
-    socket.acceptPartyInvite(pendingPartyInvite!['partyId']);
+  void acceptPartyInvite([String? partyIdOverride]) {
+    final partyId = partyIdOverride ?? pendingPartyInvite?['partyId'];
+    if (partyId == null) return;
+    socket.acceptPartyInvite(partyId);
     pendingPartyInvite = null;
     notifyListeners();
   }
 
-  void declinePartyInvite() {
-    // PR-B (F7): declining now tells the server, so the inviter hears
-    // about it and the invite dies instead of hanging around.
-    final invite = pendingPartyInvite;
+  void declinePartyInvite([String? partyIdOverride]) {
+    final partyId = partyIdOverride ?? pendingPartyInvite?['partyId']?.toString();
     pendingPartyInvite = null;
-    final partyId = invite?['partyId']?.toString();
     if (partyId != null && partyId.isNotEmpty) {
       socket.declinePartyInvite(partyId);
     }
@@ -892,10 +890,9 @@ class AppState extends ChangeNotifier {
   }
 
   /// Accepts an incoming private room invitation.
-  void acceptRoomInvite() {
-    final invite = pendingRoomInvite;
+  void acceptRoomInvite([String? codeOverride]) {
+    final code = codeOverride ?? pendingRoomInvite?['code']?.toString();
     pendingRoomInvite = null;
-    final code = invite?['code']?.toString();
     if (code != null && code.isNotEmpty) {
       joinRoom(code);
     }

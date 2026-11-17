@@ -1132,6 +1132,7 @@ class _LobbyScreenState extends State<LobbyScreen>
       if (mounted) setState(() => _showingPartyInvite = false);
       return;
     }
+    final partyId = invite['partyId']?.toString();
     app.pendingPartyInvite = null;
     showDialog(
       context: context,
@@ -1207,7 +1208,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                       onPressed: () {
-                        app.declinePartyInvite();
+                        app.declinePartyInvite(partyId);
                         Navigator.pop(context);
                       },
                       child: const Text('Decline'),
@@ -1224,7 +1225,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                       onPressed: () {
-                        app.acceptPartyInvite();
+                        if (partyId != null) app.acceptPartyInvite(partyId);
                         Navigator.pop(context);
                       },
                       child: const Text('Accept & Team Up', style: TextStyle(fontWeight: FontWeight.w800)),
@@ -1249,6 +1250,7 @@ class _LobbyScreenState extends State<LobbyScreen>
       if (mounted) setState(() => _showingRoomInvite = false);
       return;
     }
+    final roomCode = invite['code']?.toString();
     app.pendingRoomInvite = null;
     showDialog(
       context: context,
@@ -1345,7 +1347,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                       onPressed: () {
-                        app.acceptRoomInvite();
+                        if (roomCode != null) app.acceptRoomInvite(roomCode);
                         Navigator.pop(context);
                       },
                       child: const Text('Join Table', style: TextStyle(fontWeight: FontWeight.w800)),
