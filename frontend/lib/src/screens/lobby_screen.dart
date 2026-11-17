@@ -41,6 +41,7 @@ class _LobbyScreenState extends State<LobbyScreen>
 
   late final AnimationController _floatCtrl;
   late final Animation<double> _floatAnim;
+  Timer? _friendStatusTimer;
 
   @override
   void initState() {
@@ -57,6 +58,13 @@ class _LobbyScreenState extends State<LobbyScreen>
       app.fetchFriends();
       app.requestFriendStatuses();
     });
+
+    _friendStatusTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted) {
+        context.read<AppState>().requestFriendStatuses();
+      }
+    });
+
     _entryCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -125,6 +133,7 @@ class _LobbyScreenState extends State<LobbyScreen>
 
   @override
   void dispose() {
+    _friendStatusTimer?.cancel();
     _roomCodeController.dispose();
     _friendUsernameController.dispose();
     _entryCtrl.dispose();
@@ -2623,6 +2632,15 @@ class _FriendsSheetState extends State<_FriendsSheet> {
   bool _didLoad = false;
   bool _lookingUp = false;
   String? _directAddError;
+  Timer? _statusTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _statusTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (mounted) context.read<AppState>().requestFriendStatuses();
+    });
+  }
 
   @override
   void didChangeDependencies() {
@@ -2631,6 +2649,7 @@ class _FriendsSheetState extends State<_FriendsSheet> {
     _didLoad = true;
     final app = context.read<AppState>();
     app.fetchFriends();
+    app.requestFriendStatuses();
     if (widget.controller.text.trim().length >= 2) {
       app.searchFriends(widget.controller.text.trim());
     }
@@ -2638,6 +2657,7 @@ class _FriendsSheetState extends State<_FriendsSheet> {
 
   @override
   void dispose() {
+    _statusTimer?.cancel();
     _searchDebounce?.cancel();
     super.dispose();
   }
@@ -2979,7 +2999,7 @@ class _FriendsSheetState extends State<_FriendsSheet> {
     final status = f["status"]?.toString() ?? "pending";
     final isRequester = f["isRequester"] == true;
     final busy = _busyKeys.contains("friend:$friendId");
-    final online = user["status"] == "online" || app.friendOnlineStatus[id] == true;
+    final online = app.friendOnlineStatus[id] ?? (user["status"] == "online");
     Widget trailing;
     if (status == "pending" && !isRequester) {
       trailing = Row(mainAxisSize: MainAxisSize.min, children: [
@@ -3227,7 +3247,7 @@ class _FriendsPanel extends StatelessWidget {
     final onlineCount = accepted.where((f) {
       final user = f["user"];
       final id = user is Map ? user["id"]?.toString() ?? "" : "";
-      return (user is Map && user["status"] == "online") || app.friendOnlineStatus[id] == true;
+      return app.friendOnlineStatus[id] ?? (user is Map && user["status"] == "online");
     }).length;
 
     return RoyalPanel(
@@ -3324,7 +3344,7 @@ class _FriendsPanel extends StatelessWidget {
               final username = user["username"]?.toString() ?? "Unknown player";
               final id = user["id"]?.toString() ?? "";
               final friendId = f["id"]?.toString() ?? "";
-              final online = (user["status"] == "online") || app.friendOnlineStatus[id] == true;
+              final online = app.friendOnlineStatus[id] ?? (user["status"] == "online");
               return Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Row(

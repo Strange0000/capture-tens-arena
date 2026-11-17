@@ -474,6 +474,7 @@ class AppState extends ChangeNotifier {
     // Requests and accept/remove actions are initiated over HTTP, but notify
     // connected clients over Socket.IO so their list stays current in real time.
     fetchFriends();
+    requestFriendStatuses();
     if (friendSearchQuery.length >= 2) {
       searchFriends(friendSearchQuery);
     }
@@ -645,6 +646,7 @@ class AppState extends ChangeNotifier {
       }
       _friendsLoadedOnce = true;
       friends = loadedFriends;
+      requestFriendStatuses();
     } catch (e) {
       if (token != sessionToken) return;
       friendsError = e.toString().replaceFirst("Exception: ", "");
