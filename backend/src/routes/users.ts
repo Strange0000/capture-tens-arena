@@ -403,7 +403,11 @@ usersRouter.post("/friends/request", requireAuth, async (req, res, next) => {
     if (requestAction === "already-sent") return res.status(409).json({ error: "Friend request already sent" });
     try {
       const friend = await FriendModel.create({ requesterId, addresseeId, pairKey, status: "pending" });
-      emitFriendsChanged(req, [addresseeId]);
+      emitFriendsChanged(req, [addresseeId], {
+        type: "request",
+        fromUsername: req.user!.username,
+        message: `${req.user!.username} sent you a friend request!`,
+      });
       return res.status(201).json({ success: true, status: "pending", message: "Friend request sent to " + target.username, friend });
     } catch (error: any) {
       if (error?.code !== 11000) throw error;
@@ -439,7 +443,12 @@ usersRouter.post("/friends/accept", requireAuth, async (req, res, next) => {
       return res.status(404).json({ error: "Incoming friend request not found or already handled" });
     }
     await incrementFriendCounts(friend.requesterId.toString(), friend.addresseeId.toString());
-    emitFriendsChanged(req, [friend.requesterId.toString(), friend.addresseeId.toString()]);
+    emitFriendsChanged(req, [friend.requesterId.toString()], {
+      type: "accepted",
+      fromUsername: req.user!.username,
+      message: `${req.user!.username} accepted your friend request!`,
+    });
+    emitFriendsChanged(req, [friend.addresseeId.toString()]);
     return res.json({ success: true, status: "accepted", message: "Friend request accepted", friend });
   } catch (error) { next(error); }
 });
@@ -462,11 +471,11 @@ usersRouter.delete("/friends/:id", requireAuth, async (req, res, next) => {
     return res.json({ success: true, message: friend.status === "accepted" ? "Friend removed" : "Friend request cancelled" });
   } catch (error) { next(error); }
 });
-function emitFriendsChanged(req: Request, userIds: string[]) {
+function emitFriendsChanged(req: Request, userIds: string[], meta?: any) {
   const io = req.app.get("io") as Server | undefined;
   if (!io) return;
   for (const userId of new Set(userIds)) {
-    io.to("user:" + userId).emit("friends:changed", {});
+    io.to("user:" + userId).emit("friends:changed", meta || {});
   }
 }
 

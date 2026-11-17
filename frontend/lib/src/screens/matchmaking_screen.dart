@@ -265,6 +265,24 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
 
                     SizedBox(height: isShort ? 16 : 32),
 
+                    if (_elapsedSeconds >= 4) ...[
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFFC857),
+                          foregroundColor: const Color(0xFF070B13),
+                          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          elevation: 4,
+                        ),
+                        onPressed: () {
+                          app.startRankedQueueWithBots();
+                        },
+                        icon: const Icon(Icons.smart_toy_rounded, size: 20),
+                        label: const Text('Start with Bots', style: TextStyle(fontWeight: FontWeight.w900)),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
                     // Cancel button — always reachable now: the
                     // scrollable layout guarantees it is on screen
                     // (or one scroll away) at any window height.

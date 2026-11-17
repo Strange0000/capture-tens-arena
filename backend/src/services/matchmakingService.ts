@@ -320,6 +320,40 @@ export class MatchmakingService {
       botDifficulty: (player as any).botDifficulty
     }));
   }
+
+  fillRankedWithBots(userId: string): PlayerSeat[] | undefined {
+    const group = this.getRankedQueueGroupForUser(userId);
+    if (!group) return undefined;
+
+    this.rankedQueue = this.rankedQueue.filter(p => p !== group);
+
+    const botNames = ["Vector", "Nova", "Cipher"];
+    const botDifficulties: Array<"medium" | "hard"> = ["medium", "hard", "medium"];
+    const makeBot = (seat: number, index: number): PlayerSeat => ({
+      seat,
+      userId: `bot-${nanoid(4)}`,
+      username: botNames[index % botNames.length],
+      connected: true,
+      isBot: true,
+      botDifficulty: botDifficulties[index % botDifficulties.length],
+    });
+
+    if (group.length === 2) {
+      return [
+        { seat: 0, userId: group[0].userId, username: group[0].username, connected: true, isBot: false },
+        makeBot(1, 0),
+        { seat: 2, userId: group[1].userId, username: group[1].username, connected: true, isBot: false },
+        makeBot(3, 1),
+      ];
+    } else {
+      return [
+        { seat: 0, userId: group[0].userId, username: group[0].username, connected: true, isBot: false },
+        makeBot(1, 0),
+        makeBot(2, 1),
+        makeBot(3, 2),
+      ];
+    }
+  }
 }
 
 export const matchmaking = new MatchmakingService();

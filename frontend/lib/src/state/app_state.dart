@@ -35,7 +35,17 @@ class AppState extends ChangeNotifier {
       }
     }
 
-    // 3. Fallback to default production URL
+    // 3. Auto-detect localhost web development
+    if (url == null && kIsWeb) {
+      try {
+        final host = Uri.base.host.toLowerCase();
+        if (host == 'localhost' || host == '127.0.0.1') {
+          url = 'http://localhost:3000';
+        }
+      } catch (_) {}
+    }
+
+    // 4. Fallback to default production URL
     url ??= 'https://capture-tens-arena.onrender.com';
 
     backendUrl = url;
@@ -499,9 +509,13 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void _onFriendsChanged(Map<String, dynamic> _) {
+  void _onFriendsChanged(Map<String, dynamic> json) {
     // Requests and accept/remove actions are initiated over HTTP, but notify
     // connected clients over Socket.IO so their list stays current in real time.
+    final msg = json['message'] as String?;
+    if (msg != null && msg.isNotEmpty) {
+      infoMessage = msg;
+    }
     fetchFriends();
     requestFriendStatuses();
     if (friendSearchQuery.length >= 2) {
@@ -1017,6 +1031,10 @@ class AppState extends ChangeNotifier {
       lobbyStatus = LobbyStatus.queuing;
       notifyListeners();
     });
+  }
+
+  void startRankedQueueWithBots() {
+    socket.startQueueWithBots();
   }
 
   /// Cancels ranked matchmaking without sending a match-leave event or

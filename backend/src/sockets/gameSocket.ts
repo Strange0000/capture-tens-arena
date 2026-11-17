@@ -22,6 +22,24 @@ import { checkAndAwardAchievements, ACHIEVEMENTS } from "../game/achievements.js
 const onlineUsers = new Set<string>();
 const userSockets = new Map<string, Set<string>>();
 const disconnectGraceTimers = new Map<string, NodeJS.Timeout>();
+const rankedBotTimers = new Map<string, NodeJS.Timeout>();
+
+function clearRankedBotTimer(userId: string) {
+  const existing = rankedBotTimers.get(userId);
+  if (existing) {
+    clearTimeout(existing);
+    rankedBotTimers.delete(userId);
+  }
+}
+
+function triggerRankedBotMatch(io: Server, userId: string) {
+  clearRankedBotTimer(userId);
+  const seats = matchmaking.fillRankedWithBots(userId);
+  if (seats) {
+    console.log(`[RankedQueue] Starting ranked match with bots for ${userId}`);
+    startMatch(io, seats, "ranked");
+  }
+}
 
 function currentSeason() {
   const now = new Date();
@@ -72,14 +90,25 @@ export function registerGameSockets(io: Server) {
         io.to("user:" + player.userId).emit("queue:joined", { mode: "ranked" });
       }
 
-      // Ranked matches must be human-only. Keep players queued until a real
-      // group is available; clients can cancel at any time.
       if (group) {
+        clearRankedBotTimer(userId);
         startMatch(io, matchmaking.toSeats(group), "ranked");
+      } else {
+        clearRankedBotTimer(userId);
+        const timer = setTimeout(() => {
+          rankedBotTimers.delete(userId);
+          triggerRankedBotMatch(io, userId);
+        }, 10000); // 10s auto-fallback to bots if queue is quiet
+        rankedBotTimers.set(userId, timer);
       }
     });
 
+    socket.on("queue:startBots", () => {
+      triggerRankedBotMatch(io, userId);
+    });
+
     socket.on("queue:cancel", () => {
+      clearRankedBotTimer(userId);
       const queuedGroup = matchmaking.getRankedQueueGroupForUser(userId) ?? [];
       const queuedIds = new Set<string>([userId, ...queuedGroup.map((player) => player.userId)]);
 
@@ -491,6 +520,7 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("disconnect", () => {
+      clearRankedBotTimer(userId);
       const sockets = userSockets.get(userId);
       let isLastSocket = true;
       if (sockets) {

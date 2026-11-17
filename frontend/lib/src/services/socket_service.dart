@@ -136,6 +136,9 @@ class SocketService {
   void queueRanked({int mmr = 0}) =>
       _emit('queue:ranked', {'mmr': mmr});
 
+  void startQueueWithBots() =>
+      _emit('queue:startBots', {});
+
   void cancelRankedQueue() => _emit('queue:cancel', {});
 
   void startOffline(String difficulty) =>
