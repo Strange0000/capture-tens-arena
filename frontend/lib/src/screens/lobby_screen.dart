@@ -417,11 +417,49 @@ class _LobbyScreenState extends State<LobbyScreen>
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Transform.rotate(angle: -0.08, child: ArenaCardWidget(card: const ArenaCard(id: 'lobby-a', rank: 'A', suit: 'spades'), powerSuit: null, onPlay: null, width: 52)),
-                                const SizedBox(width: 6),
-                                Transform.rotate(angle: 0.04, child: ArenaCardWidget(card: const ArenaCard(id: 'lobby-k', rank: 'K', suit: 'hearts'), powerSuit: null, onPlay: null, width: 52)),
-                                const SizedBox(width: 6),
-                                Transform.rotate(angle: 0.1, child: ArenaCardWidget(card: const ArenaCard(id: 'lobby-q', rank: 'Q', suit: 'clubs'), powerSuit: null, onPlay: null, width: 52)),
+                                Transform.rotate(
+                                  angle: -0.12,
+                                  child: const ArenaCardWidget(
+                                    card: ArenaCard(id: 'lobby-10-s', rank: '10', suit: 'spades'),
+                                    powerSuit: null,
+                                    onPlay: null,
+                                    width: 46,
+                                    customSuitColor: Color(0xFF1E232A),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Transform.rotate(
+                                  angle: -0.04,
+                                  child: const ArenaCardWidget(
+                                    card: ArenaCard(id: 'lobby-10-h', rank: '10', suit: 'hearts'),
+                                    powerSuit: null,
+                                    onPlay: null,
+                                    width: 46,
+                                    customSuitColor: Color(0xFFD32F2F),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Transform.rotate(
+                                  angle: 0.04,
+                                  child: const ArenaCardWidget(
+                                    card: ArenaCard(id: 'lobby-10-c', rank: '10', suit: 'clubs'),
+                                    powerSuit: null,
+                                    onPlay: null,
+                                    width: 46,
+                                    customSuitColor: Color(0xFF2E7D32),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Transform.rotate(
+                                  angle: 0.12,
+                                  child: const ArenaCardWidget(
+                                    card: ArenaCard(id: 'lobby-10-d', rank: '10', suit: 'diamonds'),
+                                    powerSuit: null,
+                                    onPlay: null,
+                                    width: 46,
+                                    customSuitColor: Color(0xFF1976D2),
+                                  ),
+                                ),
                               ],
                             ),
                           ),

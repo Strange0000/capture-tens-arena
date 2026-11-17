@@ -18,6 +18,7 @@ class ArenaCardWidget extends StatefulWidget {
     this.small = false,
     this.faceDown = false,
     this.width,
+    this.customSuitColor,
   });
 
   final ArenaCard card;
@@ -35,6 +36,7 @@ class ArenaCardWidget extends StatefulWidget {
   final bool small;
   final bool faceDown;
   final double? width;
+  final Color? customSuitColor;
 
   @override
   State<ArenaCardWidget> createState() => _ArenaCardWidgetState();
@@ -130,7 +132,7 @@ class _ArenaCardWidgetState extends State<ArenaCardWidget> {
     final isPower = widget.card.suit == widget.powerSuit;
     final isTen = widget.card.rank == '10';
     final isRed = widget.card.suit == 'hearts' || widget.card.suit == 'diamonds';
-    final suitColor = isRed ? const Color(0xFFCC1111) : const Color(0xFF111122);
+    final suitColor = widget.customSuitColor ?? (isRed ? const Color(0xFFCC1111) : const Color(0xFF111122));
 
     final isPlayable = widget.onPlay != null && widget.isLegal && !widget.dimmed;
     // An unplayable card is visibly dimmed — previously an illegal card
