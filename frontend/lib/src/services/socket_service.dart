@@ -5,6 +5,8 @@ typedef VoidJsonCallback = void Function(Map<String, dynamic> json);
 
 class SocketService {
   io.Socket? _socket;
+  String? _connectedToken;
+  String? _connectedBaseUrl;
   final List<_PendingEmit> _pendingEmits = [];
 
   bool get connected => _socket?.connected ?? false;
@@ -33,6 +35,17 @@ class SocketService {
     required void Function(String msg) onError,
     void Function()? onConnected,
   }) {
+    // Avoid tearing down and re-opening the socket when already connected
+    // with the exact same credentials — a redundant reconnect fires an
+    // asynchronous disconnect on the old socket that would falsely mark
+    // the user offline on the server.
+    if (_socket != null && _socket!.connected && _connectedToken == token && _connectedBaseUrl == baseUrl) {
+      print('[Socket] Already connected with same token to $baseUrl, reusing connection');
+      return;
+    }
+
+    _connectedToken = token;
+    _connectedBaseUrl = baseUrl;
     _socket?.disconnect();
     _socket?.dispose();
     _pendingEmits.clear();
@@ -106,6 +119,8 @@ class SocketService {
   }
 
   void disconnect() {
+    _connectedToken = null;
+    _connectedBaseUrl = null;
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;

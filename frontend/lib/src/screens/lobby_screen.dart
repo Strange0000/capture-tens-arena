@@ -59,7 +59,7 @@ class _LobbyScreenState extends State<LobbyScreen>
       app.requestFriendStatuses();
     });
 
-    _friendStatusTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _friendStatusTimer = Timer.periodic(const Duration(seconds: 12), (_) {
       if (mounted) {
         context.read<AppState>().requestFriendStatuses();
       }
@@ -2637,7 +2637,7 @@ class _FriendsSheetState extends State<_FriendsSheet> {
   @override
   void initState() {
     super.initState();
-    _statusTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+    _statusTimer = Timer.periodic(const Duration(seconds: 8), (_) {
       if (mounted) context.read<AppState>().requestFriendStatuses();
     });
   }
