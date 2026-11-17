@@ -1,7 +1,7 @@
 import { Server } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { env, isOfflineDevMode } from "../config/env.js";
-import { redisPub, redisSub } from "../db/redis.js";
+import { isRedisConnected, redisPub, redisSub } from "../db/redis.js";
 import { chooseBotCard } from "../game/bot.js";
 import { createMatch, dealFirstFive, dealRemainingCards, playCard, publicStateForSeat, selectPowerSuit, startNextTrick, assertUniqueCards } from "../game/engine.js";
 import { legalCardsForSeat } from "../game/rules.js";
@@ -29,7 +29,7 @@ function currentSeason() {
 }
 
 export function registerGameSockets(io: Server) {
-  if (!isOfflineDevMode) {
+  if (!isOfflineDevMode && isRedisConnected) {
     io.adapter(createAdapter(redisPub, redisSub));
   }
   io.use(authenticateSocket);

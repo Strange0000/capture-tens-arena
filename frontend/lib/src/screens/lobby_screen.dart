@@ -1136,29 +1136,105 @@ class _LobbyScreenState extends State<LobbyScreen>
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: ArenaColors.panel,
-        title: const Text('Party Invite', style: TextStyle(color: Colors.white)),
-        content: Text(
-          '${invite['from'] ?? 'A player'} invited you to join their party.',
-          style: const TextStyle(color: Colors.white70),
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          width: 380,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F1E19),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: ArenaColors.gold.withValues(alpha: 0.6), width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.7),
+                blurRadius: 28,
+                spreadRadius: 4,
+              ),
+              BoxShadow(
+                color: ArenaColors.gold.withValues(alpha: 0.15),
+                blurRadius: 16,
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset(
+                'assets/images/vip_invite_seal.png',
+                width: 72,
+                height: 72,
+                errorBuilder: (_, __, ___) => const Icon(Icons.group_add_rounded, color: ArenaColors.gold, size: 54),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'PARTY INVITATION',
+                style: TextStyle(
+                  color: ArenaColors.gold,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.6,
+                ),
+              ),
+              const SizedBox(height: 10),
+              RichText(
+                textAlign: TextAlign.center,
+                text: TextSpan(
+                  style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
+                  children: [
+                    TextSpan(
+                      text: invite['from'] ?? 'A player',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
+                    const TextSpan(text: ' invited you to team up for '),
+                    const TextSpan(
+                      text: 'Ranked 2v2 Duo',
+                      style: TextStyle(color: ArenaColors.gold, fontWeight: FontWeight.bold),
+                    ),
+                    const TextSpan(text: ' matches as partners!'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white70,
+                        side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () {
+                        app.declinePartyInvite();
+                        Navigator.pop(context);
+                      },
+                      child: const Text('Decline'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ArenaColors.gold,
+                        foregroundColor: const Color(0xFF070B13),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        elevation: 4,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () {
+                        app.acceptPartyInvite();
+                        Navigator.pop(context);
+                      },
+                      child: const Text('Accept & Team Up', style: TextStyle(fontWeight: FontWeight.w800)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              app.declinePartyInvite();
-              Navigator.pop(context);
-            },
-            child: const Text('Decline'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              app.acceptPartyInvite();
-              Navigator.pop(context);
-            },
-            child: const Text('Accept'),
-          ),
-        ],
       ),
     ).then((_) {
       if (mounted) {
@@ -1177,39 +1253,109 @@ class _LobbyScreenState extends State<LobbyScreen>
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: ArenaColors.panel,
-        title: const Row(
-          children: [
-            Icon(Icons.meeting_room_rounded, color: ArenaColors.gold),
-            SizedBox(width: 8),
-            Text('Custom Room Invite', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Text(
-          '${invite['from'] ?? 'A friend'} invited you to join Custom Match room ${invite['code']}.',
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              app.declineRoomInvite();
-              Navigator.pop(context);
-            },
-            child: const Text('Decline'),
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          width: 380,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F1E19),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: ArenaColors.gold.withValues(alpha: 0.6), width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.7),
+                blurRadius: 28,
+                spreadRadius: 4,
+              ),
+              BoxShadow(
+                color: ArenaColors.gold.withValues(alpha: 0.15),
+                blurRadius: 16,
+              ),
+            ],
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ArenaColors.gold,
-              foregroundColor: const Color(0xFF070B13),
-            ),
-            onPressed: () {
-              app.acceptRoomInvite();
-              Navigator.pop(context);
-            },
-            child: const Text('Join Room', style: TextStyle(fontWeight: FontWeight.bold)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset(
+                'assets/images/vip_invite_seal.png',
+                width: 72,
+                height: 72,
+                errorBuilder: (_, __, ___) => const Icon(Icons.meeting_room_rounded, color: ArenaColors.gold, size: 54),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'VIP ROOM INVITATION',
+                style: TextStyle(
+                  color: ArenaColors.gold,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.6,
+                ),
+              ),
+              const SizedBox(height: 10),
+              RichText(
+                textAlign: TextAlign.center,
+                text: TextSpan(
+                  style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
+                  children: [
+                    TextSpan(
+                      text: invite['from'] ?? 'A friend',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
+                    const TextSpan(text: ' invited you to join Private Table '),
+                    TextSpan(
+                      text: '${invite['code']}',
+                      style: const TextStyle(
+                        color: ArenaColors.gold,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const TextSpan(text: '. Take your seat!'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white70,
+                        side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () {
+                        app.declineRoomInvite();
+                        Navigator.pop(context);
+                      },
+                      child: const Text('Decline'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ArenaColors.gold,
+                        foregroundColor: const Color(0xFF070B13),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        elevation: 4,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () {
+                        app.acceptRoomInvite();
+                        Navigator.pop(context);
+                      },
+                      child: const Text('Join Table', style: TextStyle(fontWeight: FontWeight.w800)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     ).then((_) {
       if (mounted) {
@@ -2386,7 +2532,15 @@ class _RoomBanner extends StatelessWidget {
           // Header: Room Code + Copy + Leave
           Row(
             children: [
-              const Icon(Icons.meeting_room_rounded, color: Color(0xFFFFC857), size: 26),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.asset(
+                  'assets/images/vip_invite_seal.png',
+                  width: 32,
+                  height: 32,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.meeting_room_rounded, color: Color(0xFFFFC857), size: 26),
+                ),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(

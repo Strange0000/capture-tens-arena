@@ -1,6 +1,6 @@
 import { io } from "socket.io-client";
 
-const BASE_URL = "https://capture-tens-arena.onrender.com";
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 
 async function createPlayer(name) {
   const guestRes = await fetch(`${BASE_URL}/auth/guest`, { method: "POST" });
@@ -113,7 +113,18 @@ async function run() {
   s1.emit("room:create");
   const roomCode = await roomCreated;
 
-  console.log("9. P2 joins private room using code:", roomCode);
+  console.log("9. P1 invites P2 directly to the private room (room:invite)...");
+  const p2RoomInviteReceived = new Promise(resolve => {
+    s2.on("room:invited", data => {
+      console.log("   P2 received room:invited event! From:", data.from, "Code:", data.code);
+      resolve(data);
+    });
+  });
+
+  s1.emit("room:invite", { targetUserId: p2.user.id, code: roomCode });
+  const inviteRoomData = await p2RoomInviteReceived;
+
+  console.log("10. P2 joins private room using code from invite:", inviteRoomData.code);
   const p1RoomUpdated = new Promise(resolve => {
     s1.on("room:updated", data => {
       console.log("   P1 received room:updated -> player count:", data.playerCount, "players:", data.players.map(p => p.username));
@@ -121,11 +132,11 @@ async function run() {
     });
   });
 
-  s2.emit("room:join", { code: roomCode });
+  s2.emit("room:join", { code: inviteRoomData.code });
   await p1RoomUpdated;
   console.log("   Both players are in the Custom Room together!");
 
-  console.log("10. Starting match with bots (2 humans + 2 bots)...");
+  console.log("11. Starting match with bots (2 humans + 2 bots)...");
   const p1MatchCreated = new Promise(resolve => s1.on("match:created", resolve));
   const p2MatchCreated = new Promise(resolve => s2.on("match:created", resolve));
 
