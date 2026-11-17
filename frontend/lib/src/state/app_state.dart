@@ -741,6 +741,14 @@ class AppState extends ChangeNotifier {
     if (nav != null && nav.canPop()) {
       nav.pop();
     }
+    // Wait for the socket to reconnect with the new JWT before starting
+    // the game — otherwise the game event fires before the socket is ready
+    // and the server never sees the new username. Poll briefly; the
+    // reconnect is typically instant on a good connection.
+    for (int i = 0; i < 20; i++) {
+      if (socket.connected) break;
+      await Future.delayed(const Duration(milliseconds: 150));
+    }
     final pending = _pendingGameEntry;
     _pendingGameEntry = null;
     pending?.call();

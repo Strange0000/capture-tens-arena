@@ -103,6 +103,9 @@ class _LobbyScreenState extends State<LobbyScreen>
         ],
       ),
     );
+    // Remember the choice so this prompt never appears again —
+    // whether the player skipped or opened the tutorial.
+    prefs.setBool('tutorial_completed', true);
     if (go == true && mounted) {
       Navigator.pushNamed(context, '/tutorial');
     }
