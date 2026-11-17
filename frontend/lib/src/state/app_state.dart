@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 
+import '../app.dart' show appNavigatorKey;
 import '../models/match_state.dart';
 import '../models/rank_info.dart';
 import '../services/audio_service.dart';
@@ -718,8 +720,8 @@ class AppState extends ChangeNotifier {
   }
 
   /// Claims the chosen username. On success the fresh JWT replaces the old
-  /// session, the socket reconnects with it, the dialog closes, and the
-  /// held-back game entry runs. Throws a plain-words Exception on failure.
+  /// session, the socket reconnects with it, the username route pops, and
+  /// the held-back game entry runs. Throws a plain-words Exception on failure.
   Future<void> claimUsername(String username) async {
     if (token == null) throw Exception('Sign in first, then choose a username.');
     final session = await auth.claimUsername(token!, username);
@@ -733,6 +735,12 @@ class AppState extends ChangeNotifier {
     socket.disconnect();
     _connectSocket();
     notifyListeners();
+    // Pop the /choose-username route so we're back where _startGame was
+    // called from (e.g. /lobby). Then run the held-back game entry.
+    final nav = appNavigatorKey.currentState;
+    if (nav != null && nav.canPop()) {
+      nav.pop();
+    }
     final pending = _pendingGameEntry;
     _pendingGameEntry = null;
     pending?.call();
@@ -740,9 +748,15 @@ class AppState extends ChangeNotifier {
 
   /// Every way into a game funnels through here. If the player has not
   /// chosen a username yet, the entry is held back and the "Choose your
-  /// username" dialog opens instead; the entry runs after a successful
+  /// username" screen opens instead; the entry runs after a successful
   /// claim (see claimUsername). The prompt appears at first game entry,
   /// never at login, and only once per account.
+  ///
+  /// The chooser is pushed as a proper Navigator route (/choose-username)
+  /// because on Flutter web a TextField must live INSIDE the Navigator's
+  /// subtree to receive keystrokes — widgets placed in MaterialApp.builder
+  /// outside the Navigator render visually but their text-input bridge
+  /// never connects to the controller.
   Future<void> _startGame(VoidCallback start) async {
     if (!isLoggedIn) return;
     if (hasChosenUsername == null) {
@@ -752,6 +766,7 @@ class AppState extends ChangeNotifier {
       _pendingGameEntry = start;
       usernameChoiceRequested = true;
       notifyListeners();
+      appNavigatorKey.currentState?.pushNamed('/choose-username');
       return;
     }
     start();
