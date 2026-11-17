@@ -35,6 +35,7 @@ class _LobbyScreenState extends State<LobbyScreen>
   bool _navigationTriggered = false;
   bool _tutorialPromptChecked = false;
   bool _showingPartyInvite = false;
+  bool _showingRoomInvite = false;
 
   late final AnimationController _entryCtrl;
   late final Animation<double> _entryAnim;
@@ -219,6 +220,17 @@ class _LobbyScreenState extends State<LobbyScreen>
       });
     }
 
+    if (app.pendingRoomInvite != null && !_showingRoomInvite) {
+      _showingRoomInvite = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) {
+          _showingRoomInvite = false;
+          return;
+        }
+        _showRoomInviteDialog(context, app);
+      });
+    }
+
     // Royal Casino room (poker reference): the old lobby_bg.png photo
     // (dark teal neon hall) is gone — felt background, drawn in code.
     return RoyalBackground(
@@ -262,23 +274,39 @@ class _LobbyScreenState extends State<LobbyScreen>
 
                             // ── Active Matchmaking / Room Banners ────────────
                             if (app.lobbyStatus == LobbyStatus.queuing) ...[
-                              _QueueBanner(onCancel: app.leaveMatch),
+                              _QueueBanner(
+                                onCancel: app.leaveMatch,
+                                isParty: app.party != null,
+                              ),
                               const SizedBox(height: 16),
                             ],
 
                             if (app.lobbyStatus == LobbyStatus.inRoom && app.roomCode != null) ...[
                               _RoomBanner(
                                 code: app.roomCode!,
+                                players: app.roomPlayers,
                                 playerNames: app.roomPlayerNames,
                                 playerCount: app.roomPlayerCount,
                                 capacity: app.roomCapacity,
+                                currentUserId: app.userId,
                                 onCopyCode: () {
                                   Clipboard.setData(ClipboardData(text: app.roomCode!));
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(content: Text('Room code copied')),
                                   );
                                 },
+                                onInviteFriends: () => _showInviteFriendsToRoomSheet(context, app, app.roomCode!),
                                 onStartWithBots: app.startRoomWithBots,
+                                onLeaveRoom: app.leaveRoom,
+                                isFriend: app.isFriend,
+                                onAddFriend: (uid, uname) async {
+                                  final ok = await app.sendFriendRequest(uname, userId: uid);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(ok ? 'Friend request sent to $uname' : (app.friendActionError ?? 'Could not send request'))),
+                                    );
+                                  }
+                                },
                               ),
                               const SizedBox(height: 16),
                             ],
@@ -330,7 +358,12 @@ class _LobbyScreenState extends State<LobbyScreen>
                   ),
                   if (app.party != null) ...[
                     const SizedBox(height: 12),
-                    _PartyBanner(party: app.party!, onLeave: app.leaveParty),
+                    _PartyBanner(
+                      party: app.party!,
+                      currentUserId: app.userId,
+                      onPlayRanked: app.queueRanked,
+                      onLeave: app.leaveParty,
+                    ),
                   ],
                 ],
               ),
@@ -759,7 +792,12 @@ class _LobbyScreenState extends State<LobbyScreen>
         ),
         if (app.party != null) ...[
           const SizedBox(height: 16),
-          _PartyBanner(party: app.party!, onLeave: app.leaveParty),
+          _PartyBanner(
+            party: app.party!,
+            currentUserId: app.userId,
+            onPlayRanked: app.queueRanked,
+            onLeave: app.leaveParty,
+          ),
         ],
         const SizedBox(height: 24),
         _buildSectionHeader('SELECT ARENA', 'Choose your game mode'),
@@ -1127,6 +1165,198 @@ class _LobbyScreenState extends State<LobbyScreen>
         setState(() => _showingPartyInvite = false);
       }
     });
+  }
+
+  void _showRoomInviteDialog(BuildContext context, AppState app) {
+    final invite = app.pendingRoomInvite;
+    if (invite == null) {
+      if (mounted) setState(() => _showingRoomInvite = false);
+      return;
+    }
+    app.pendingRoomInvite = null;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: ArenaColors.panel,
+        title: const Row(
+          children: [
+            Icon(Icons.meeting_room_rounded, color: ArenaColors.gold),
+            SizedBox(width: 8),
+            Text('Custom Room Invite', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          '${invite['from'] ?? 'A friend'} invited you to join Custom Match room ${invite['code']}.',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              app.declineRoomInvite();
+              Navigator.pop(context);
+            },
+            child: const Text('Decline'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ArenaColors.gold,
+              foregroundColor: const Color(0xFF070B13),
+            ),
+            onPressed: () {
+              app.acceptRoomInvite();
+              Navigator.pop(context);
+            },
+            child: const Text('Join Room', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    ).then((_) {
+      if (mounted) {
+        setState(() => _showingRoomInvite = false);
+      }
+    });
+  }
+
+  void _showInviteFriendsToRoomSheet(BuildContext context, AppState app, String roomCode) {
+    final accepted = app.friends.where((f) => f['status'] == 'accepted').toList();
+    final currentMemberIds = app.roomPlayers
+        .map((p) => p['userId']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final sw = MediaQuery.sizeOf(ctx).width;
+          return Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: sw < 600 ? double.infinity : 480),
+              child: RoyalPanel(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.group_add_rounded, color: ArenaColors.gold, size: 22),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Invite Friends to Room $roomCode',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.close_rounded, color: Colors.white54),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    if (accepted.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Text(
+                          'No friends added yet. Add friends by username to invite them directly!',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white54, fontSize: 13),
+                        ),
+                      )
+                    else ...[
+                      const Text(
+                        'Select an online friend to send an instant room invite:',
+                        style: TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
+                      const SizedBox(height: 10),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 280),
+                        child: ListView(
+                          shrinkWrap: true,
+                          children: accepted.map((f) {
+                            final rawUser = f['user'];
+                            final user = rawUser is Map ? Map<String, dynamic>.from(rawUser) : <String, dynamic>{};
+                            final fUsername = user['username']?.toString() ?? 'Unknown';
+                            final fUserId = user['id']?.toString() ?? '';
+                            final online = app.friendOnlineStatus[fUserId] ?? (user['status'] == 'online');
+                            final inThisRoom = currentMemberIds.contains(fUserId);
+
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: CircleAvatar(
+                                radius: 16,
+                                backgroundColor: ArenaColors.gold.withOpacity(0.15),
+                                child: Text(
+                                  fUsername.isEmpty ? '?' : fUsername[0].toUpperCase(),
+                                  style: const TextStyle(color: ArenaColors.gold, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              title: Text(
+                                fUsername,
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                              ),
+                              subtitle: Text(
+                                inThisRoom
+                                    ? 'Already in room'
+                                    : online
+                                        ? 'Online'
+                                        : 'Offline',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: inThisRoom
+                                      ? Colors.white38
+                                      : online
+                                          ? ArenaColors.emerald
+                                          : Colors.white38,
+                                ),
+                              ),
+                              trailing: inThisRoom
+                                  ? const Text('Joined', style: TextStyle(color: Colors.white38, fontSize: 12))
+                                  : ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: online
+                                            ? ArenaColors.gold
+                                            : Colors.white.withOpacity(0.1),
+                                        foregroundColor: online
+                                            ? const Color(0xFF070B13)
+                                            : Colors.white38,
+                                        elevation: 0,
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      ),
+                                      onPressed: inThisRoom || !online
+                                          ? null
+                                          : () {
+                                              app.inviteToRoom(fUserId);
+                                              Navigator.pop(ctx);
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(content: Text('Room invite sent to $fUsername!')),
+                                              );
+                                            },
+                                      icon: const Icon(Icons.send_rounded, size: 14),
+                                      label: const Text('Invite', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                    ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   void _showTiersSheet(BuildContext context) {
@@ -2054,8 +2284,9 @@ class _GamePortalCardState extends State<_GamePortalCard> {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class _QueueBanner extends StatelessWidget {
-  const _QueueBanner({required this.onCancel});
+  const _QueueBanner({required this.onCancel, this.isParty = false});
   final VoidCallback onCancel;
+  final bool isParty;
 
   @override
   Widget build(BuildContext context) {
@@ -2074,13 +2305,13 @@ class _QueueBanner extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 14),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'MATCHMAKING IN PROGRESS',
-                  style: TextStyle(
+                  isParty ? 'RANKED DUO MATCHMAKING' : 'MATCHMAKING IN PROGRESS',
+                  style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 1.5,
@@ -2088,8 +2319,10 @@ class _QueueBanner extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'Searching for players of similar skill level…',
-                  style: TextStyle(fontSize: 12, color: Colors.white70),
+                  isParty
+                      ? 'Searching for opponents for your party…'
+                      : 'Searching for players of similar skill level…',
+                  style: const TextStyle(fontSize: 12, color: Colors.white70),
                 ),
               ],
             ),
@@ -2112,142 +2345,236 @@ class _QueueBanner extends StatelessWidget {
 class _RoomBanner extends StatelessWidget {
   const _RoomBanner({
     required this.code,
+    required this.players,
     required this.playerNames,
     required this.playerCount,
     required this.capacity,
+    required this.currentUserId,
     required this.onCopyCode,
+    required this.onInviteFriends,
     required this.onStartWithBots,
+    required this.onLeaveRoom,
+    required this.isFriend,
+    required this.onAddFriend,
   });
 
   final String code;
+  final List<Map<String, dynamic>> players;
   final List<String> playerNames;
   final int playerCount;
   final int capacity;
+  final String? currentUserId;
   final VoidCallback onCopyCode;
+  final VoidCallback onInviteFriends;
   final VoidCallback onStartWithBots;
-
-  Widget _roomDetails() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'PRIVATE ROOM CODE',
-          style: TextStyle(
-            fontSize: 11,
-            color: Colors.white54,
-            letterSpacing: 1.5,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          code,
-          style: const TextStyle(
-            fontSize: 25,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 5,
-            color: Color(0xFFFFC857),
-          ),
-        ),
-        const SizedBox(height: 5),
-        Text(
-          '$playerCount of $capacity players joined',
-          style: const TextStyle(
-            fontSize: 12,
-            color: Colors.white70,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        if (playerNames.isNotEmpty) ...[
-          const SizedBox(height: 3),
-          Text(
-            playerNames.join(' · '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 11, color: Colors.white54),
-          ),
-        ],
-      ],
-    );
-  }
+  final VoidCallback onLeaveRoom;
+  final bool Function(String? userId) isFriend;
+  final void Function(String userId, String username) onAddFriend;
 
   @override
   Widget build(BuildContext context) {
-    final isMobile = MediaQuery.of(context).size.width < 520;
+    final sw = MediaQuery.sizeOf(context).width;
+    final isMobile = sw < 600;
 
     return GlassPanel(
       padding: EdgeInsets.all(isMobile ? 14 : 18),
-      backgroundColor: const Color(0xFF2A2113).withOpacity(0.65),
-      border: Border.all(color: const Color(0xFFD4A017).withOpacity(0.5)),
-      child: isMobile
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
+      backgroundColor: const Color(0xFF2A2113).withOpacity(0.75),
+      border: Border.all(color: const Color(0xFFD4A017).withOpacity(0.55), width: 1.5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header: Room Code + Copy + Leave
+          Row(
+            children: [
+              const Icon(Icons.meeting_room_rounded, color: Color(0xFFFFC857), size: 26),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.meeting_room_rounded,
-                        color: Color(0xFFD4A017), size: 28),
-                    const SizedBox(width: 12),
-                    Expanded(child: _roomDetails()),
-                    IconButton(
-                      tooltip: 'Copy room code',
-                      onPressed: onCopyCode,
-                      icon: const Icon(Icons.copy_rounded, color: Colors.white70),
+                    const Text(
+                      'CUSTOM MATCH SALON',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.white54,
+                        letterSpacing: 1.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Text(
+                          code,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 4,
+                            color: Color(0xFFFFC857),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Copy room code',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: onCopyCode,
+                          icon: const Icon(Icons.copy_rounded, color: Colors.white70, size: 16),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                ElevatedButton.icon(
+              ),
+              OutlinedButton.icon(
+                onPressed: onLeaveRoom,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.redAccent,
+                  side: const BorderSide(color: Colors.redAccent, width: 1),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  visualDensity: VisualDensity.compact,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.exit_to_app_rounded, size: 14),
+                label: const Text('Leave', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Player Seats Roster (4 slots)
+          const Text(
+            'PLAYERS IN ROOM (4 SEATS)',
+            style: TextStyle(fontSize: 10, color: Colors.white54, letterSpacing: 1.2, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: List.generate(4, (index) {
+              if (index < players.length) {
+                final p = players[index];
+                final uName = p['username']?.toString() ?? 'Player';
+                final uId = p['userId']?.toString() ?? '';
+                final isMe = uId == currentUserId;
+                final alreadyFriend = isFriend(uId);
+
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.35),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isMe ? ArenaColors.gold.withOpacity(0.6) : Colors.white24,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircleAvatar(
+                        radius: 12,
+                        backgroundColor: isMe ? ArenaColors.gold : Colors.white24,
+                        child: Text(
+                          uName.isEmpty ? '?' : uName[0].toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: isMe ? const Color(0xFF070B13) : Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '$uName${isMe ? ' (You)' : ''}',
+                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                      if (!isMe) ...[
+                        const SizedBox(width: 6),
+                        if (alreadyFriend)
+                          const Icon(Icons.check_circle, size: 14, color: ArenaColors.emerald)
+                        else
+                          InkWell(
+                            onTap: () => onAddFriend(uId, uName),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: ArenaColors.gold.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                '+ Friend',
+                                style: TextStyle(color: ArenaColors.gold, fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ],
+                  ),
+                );
+              } else {
+                return InkWell(
+                  onTap: onInviteFriends,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.04),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white12, style: BorderStyle.solid),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.person_add_rounded, size: 16, color: ArenaColors.gold.withOpacity(0.7)),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Seat ${index + 1}: + Invite',
+                          style: TextStyle(color: ArenaColors.gold.withOpacity(0.8), fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+            }),
+          ),
+          const SizedBox(height: 14),
+
+          // Actions: Invite Friends + Start with Bots
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFFFC857),
                     foregroundColor: const Color(0xFF070B13),
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  onPressed: onStartWithBots,
-                  icon: const Icon(Icons.smart_toy, size: 18),
-                  label: const Text(
-                    'Start with Bots',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
+                  onPressed: onInviteFriends,
+                  icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+                  label: const Text('Invite Friends', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
-              ],
-            )
-          : Row(
-              children: [
-                const Icon(Icons.meeting_room_rounded,
-                    color: Color(0xFFD4A017), size: 32),
-                const SizedBox(width: 16),
-                Expanded(child: _roomDetails()),
-                IconButton(
-                  tooltip: 'Copy room code',
-                  onPressed: onCopyCode,
-                  icon: const Icon(Icons.copy_rounded, color: Colors.white70),
-                ),
-                const SizedBox(width: 10),
-                ElevatedButton.icon(
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFFC857),
-                    foregroundColor: const Color(0xFF070B13),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 12,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                    backgroundColor: const Color(0xFF1E2738),
+                    foregroundColor: const Color(0xFFFFC857),
+                    side: const BorderSide(color: Color(0xFFFFC857), width: 1.2),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                   onPressed: onStartWithBots,
                   icon: const Icon(Icons.smart_toy, size: 18),
-                  label: const Text(
-                    'Start with Bots',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                  label: Text(
+                    playerCount >= 4 ? 'Match Ready' : 'Start with Bots',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2391,9 +2718,22 @@ class _PrivateRoomPanel extends StatelessWidget {
 }
 
 class _PartyBanner extends StatelessWidget {
-  const _PartyBanner({required this.party, required this.onLeave});
+  const _PartyBanner({
+    required this.party,
+    required this.onLeave,
+    this.currentUserId,
+    this.onPlayRanked,
+  });
+
   final List<dynamic> party;
   final VoidCallback onLeave;
+  final String? currentUserId;
+  final VoidCallback? onPlayRanked;
+
+  bool get isLeader =>
+      party.isNotEmpty &&
+      currentUserId != null &&
+      party[0]['userId'] == currentUserId;
 
   @override
   Widget build(BuildContext context) {
@@ -2402,16 +2742,16 @@ class _PartyBanner extends StatelessWidget {
       backgroundColor: const Color(0xFFFFC857).withOpacity(0.12),
       border: Border.all(color: const Color(0xFFFFC857).withOpacity(0.4)),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
               const Icon(Icons.group, color: Color(0xFFFFC857), size: 18),
               const SizedBox(width: 8),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'Your Party',
-                  style: TextStyle(
+                  'Your Party (${party.length}/2)',
+                  style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     color: Color(0xFFFFC857),
                   ),
@@ -2428,19 +2768,87 @@ class _PartyBanner extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          ...party.map((p) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  children: [
-                    const Icon(Icons.circle, size: 8, color: Colors.greenAccent),
-                    const SizedBox(width: 8),
-                    Text(
-                      p['username'],
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+          ...party.asMap().entries.map((entry) {
+            final idx = entry.key;
+            final p = entry.value;
+            final username = p['username']?.toString() ?? 'Player';
+            final isPartyLeader = idx == 0;
+            final isMe = p['userId'] == currentUserId;
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  Icon(
+                    isPartyLeader ? Icons.military_tech_rounded : Icons.person_rounded,
+                    size: 16,
+                    color: isPartyLeader ? ArenaColors.gold : Colors.white70,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '$username${isMe ? ' (You)' : ''}',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
                     ),
-                  ],
-                ),
-              )),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isPartyLeader ? ArenaColors.gold.withOpacity(0.2) : Colors.white10,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      isPartyLeader ? 'Leader' : 'Partner',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: isPartyLeader ? ArenaColors.gold : Colors.white70,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+          const SizedBox(height: 8),
+          if (isLeader)
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ArenaColors.gold,
+                foregroundColor: const Color(0xFF070B13),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: onPlayRanked,
+              icon: const Icon(Icons.sports_esports_rounded, size: 18),
+              label: const Text(
+                'Play Ranked with Party',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.25),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: ArenaColors.gold),
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'Waiting for leader to queue Ranked…',
+                    style: TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -3345,6 +3753,7 @@ class _FriendsPanel extends StatelessWidget {
               final id = user["id"]?.toString() ?? "";
               final friendId = f["id"]?.toString() ?? "";
               final online = app.friendOnlineStatus[id] ?? (user["status"] == "online");
+              final inParty = app.party != null && app.party!.any((p) => p['userId'] == id);
               return Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
@@ -3393,6 +3802,28 @@ class _FriendsPanel extends StatelessWidget {
                         ],
                       ),
                     ),
+                    if (inParty)
+                      Container(
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: ArenaColors.emerald.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text('In Party', style: TextStyle(color: ArenaColors.emerald, fontSize: 10, fontWeight: FontWeight.bold)),
+                      )
+                    else if (online && (app.party == null || app.party!.length < 2))
+                      IconButton(
+                        tooltip: 'Invite to party (Ranked duo)',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () {
+                          app.inviteToParty(id);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Party invite sent to $username!')),
+                          );
+                        },
+                        icon: const Icon(Icons.group_add_rounded, color: ArenaColors.gold, size: 18),
+                      ),
                     IconButton(
                       tooltip: 'Remove friend',
                       visualDensity: VisualDensity.compact,

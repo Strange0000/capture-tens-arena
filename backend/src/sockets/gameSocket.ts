@@ -262,6 +262,59 @@ export function registerGameSockets(io: Server) {
       }
     });
 
+    socket.on("room:invite", async (data?: { targetUserId?: string; code?: string }) => {
+      try {
+        const targetUserId = typeof data?.targetUserId === "string" ? data.targetUserId.trim() : "";
+        const code = typeof data?.code === "string" ? data.code.trim().toUpperCase() : "";
+        if (!targetUserId) throw new Error("Pick a friend to invite");
+        if (!code) throw new Error("Invalid room code");
+        if (targetUserId === userId) throw new Error("You cannot invite yourself");
+
+        const room = matchmaking.getPrivateRoom(code);
+        if (!room) throw new Error("Room not found");
+        if (!room.some(p => p.userId === userId)) {
+          throw new Error("You are not in this room");
+        }
+        if (room.length >= 4) throw new Error("This room is already full");
+        if (room.some(p => p.userId === targetUserId)) {
+          throw new Error("Player is already in this room");
+        }
+
+        let targetUsername = "Player";
+        if (!isOfflineDevMode) {
+          const target = await UserModel.findById(targetUserId).select("_id username");
+          if (!target) throw new Error("Player not found");
+          targetUsername = target.username;
+        }
+
+        socket.emit("room:inviteSent", {
+          targetUserId,
+          targetUsername,
+          code,
+        });
+
+        io.to(`user:${targetUserId}`).emit("room:invited", {
+          from: socket.user!.username,
+          fromUserId: userId,
+          code,
+        });
+      } catch (err: any) {
+        socket.emit("error", { message: err?.message ?? "Could not send room invite" });
+      }
+    });
+
+    socket.on("room:leave", () => {
+      try {
+        const changed = matchmaking.removeFromPrivateRooms(userId);
+        for (const changedRoom of changed) {
+          broadcastPrivateRoom(io, changedRoom.code, changedRoom.players);
+        }
+        socket.emit("room:left");
+      } catch (err: any) {
+        socket.emit("error", { message: err?.message ?? "Could not leave room" });
+      }
+    });
+
     socket.on("bot:offline", async (data?: any) => {
       const difficulty: "easy" | "medium" | "hard" = (data && data.difficulty) ? data.difficulty : "medium";
       console.log(`[SOCKET] bot:offline received for user ${userId}, difficulty: ${difficulty}`);
@@ -291,6 +344,10 @@ export function registerGameSockets(io: Server) {
 
     socket.on("match:leave", async () => {
       matchmaking.removeFromQueue(userId);
+      const changed = matchmaking.removeFromPrivateRooms(userId);
+      for (const changedRoom of changed) {
+        broadcastPrivateRoom(io, changedRoom.code, changedRoom.players);
+      }
       const state = matchStore.findByUser(userId);
       if (state) {
         // Leaving an offline match should end that local table entirely instead

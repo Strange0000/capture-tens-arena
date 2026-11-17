@@ -175,4 +175,39 @@ describe("ranked queue cancellation", () => {
     expect(matchmaking.isUserInRankedQueue("party-one")).toBe(false);
     expect(matchmaking.isUserInRankedQueue("party-two")).toBe(false);
   });
+
+  it("pairs party members on the same team (Team A = seats 0 & 2)", () => {
+    const matchmaking = new MatchmakingService();
+    const party1 = [player("leader-1"), player("friend-1")];
+    const party2 = [player("leader-2"), player("friend-2")];
+
+    matchmaking.enqueueRanked(party1);
+    const matched = matchmaking.enqueueRanked(party2);
+
+    expect(matched).toBeDefined();
+    expect(matched?.map((p) => p.userId)).toEqual(["leader-1", "leader-2", "friend-1", "friend-2"]);
+    // Seats 0 and 2 are on Team A: leader-1 and friend-1 are teammates!
+    // Seats 1 and 3 are on Team B: leader-2 and friend-2 are teammates!
+    expect(matched?.[0].userId).toBe("leader-1");
+    expect(matched?.[2].userId).toBe("friend-1");
+    expect(matched?.[1].userId).toBe("leader-2");
+    expect(matched?.[3].userId).toBe("friend-2");
+  });
+
+  it("pairs party with two solo players on the same team", () => {
+    const matchmaking = new MatchmakingService();
+    const party = [player("leader"), player("friend")];
+    const solo1 = [player("solo-1")];
+    const solo2 = [player("solo-2")];
+
+    matchmaking.enqueueRanked(party);
+    matchmaking.enqueueRanked(solo1);
+    const matched = matchmaking.enqueueRanked(solo2);
+
+    expect(matched).toBeDefined();
+    expect(matched?.[0].userId).toBe("leader");
+    expect(matched?.[2].userId).toBe("friend");
+    expect(matched?.[1].userId).toBe("solo-1");
+    expect(matched?.[3].userId).toBe("solo-2");
+  });
 });

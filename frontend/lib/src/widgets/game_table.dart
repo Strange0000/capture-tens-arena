@@ -33,11 +33,13 @@ class GameTable extends StatelessWidget {
     required this.match,
     required this.mySeat,
     this.tilt3d = false,
+    this.onPlayerTap,
   });
 
   final MatchState match;
   final int mySeat;
   final bool tilt3d;
+  final void Function(MatchPlayer player)? onPlayerTap;
 
   @override
   Widget build(BuildContext context) {
@@ -264,21 +266,25 @@ class GameTable extends StatelessWidget {
                       left: pos.dx,
                       top: pos.dy,
                       width: chipW,
-                      child: _PlayerChip(
-                        player: player,
-                        mySeat: mySeat,
-                        active: player.seat == match.currentTurnSeat,
-                        deadline: player.seat == match.currentTurnSeat ? match.turnDeadline : null,
-                        isLead: match.currentTrick != null &&
-                            match.currentTrick!.plays.isEmpty &&
-                            player.seat == match.currentTurnSeat,
-                        mobileLayout: mobileLayout,
-                        avatarSize: ovalHeight < 200
-                            ? 30.0
-                            : mobileLayout
-                                ? 32.0
-                                : 36.0,
-                        chipWidth: chipW,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: onPlayerTap != null ? () => onPlayerTap!(player) : null,
+                        child: _PlayerChip(
+                          player: player,
+                          mySeat: mySeat,
+                          active: player.seat == match.currentTurnSeat,
+                          deadline: player.seat == match.currentTurnSeat ? match.turnDeadline : null,
+                          isLead: match.currentTrick != null &&
+                              match.currentTrick!.plays.isEmpty &&
+                              player.seat == match.currentTurnSeat,
+                          mobileLayout: mobileLayout,
+                          avatarSize: ovalHeight < 200
+                              ? 30.0
+                              : mobileLayout
+                                  ? 32.0
+                                  : 36.0,
+                          chipWidth: chipW,
+                        ),
                       ),
                     );
                   },

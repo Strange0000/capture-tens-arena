@@ -15,6 +15,9 @@ class MatchResultOverlay extends StatefulWidget {
     required this.onPlayAgain,
     required this.onHome,
     this.rankUpdate,
+    this.currentUserId,
+    this.isFriend,
+    this.onAddFriend,
   });
 
   final MatchState match;
@@ -22,6 +25,9 @@ class MatchResultOverlay extends StatefulWidget {
   final VoidCallback onPlayAgain;
   final VoidCallback onHome;
   final Map<String, dynamic>? rankUpdate;
+  final String? currentUserId;
+  final bool Function(String? userId)? isFriend;
+  final void Function(String userId, String username)? onAddFriend;
 
   @override
   State<MatchResultOverlay> createState() => _MatchResultOverlayState();
@@ -37,6 +43,7 @@ class _MatchResultOverlayState extends State<MatchResultOverlay>
   late final AnimationController _countCtrl;
   late final Animation<double> _countAnim;
   late final AnimationController _flashCtrl;
+  final Set<String> _pendingSentRequests = {};
 
   bool get _won => widget.match.winnerTeam == widget.myTeam;
 
@@ -268,6 +275,122 @@ class _MatchResultOverlayState extends State<MatchResultOverlay>
                                   _ScoreCol(label: 'Team B', captures: b, highlight: winner == 'B', progress: _countAnim.value),
                                 ],
                               ),
+                            ),
+                            // Players in this match (Add Friend)
+                            Builder(
+                              builder: (context) {
+                                final otherHumans = widget.match.players.where(
+                                  (p) => !p.isBot && p.userId != widget.currentUserId && p.userId.isNotEmpty,
+                                ).toList();
+                                if (otherHumans.isEmpty) return const SizedBox.shrink();
+
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    const SizedBox(height: 14),
+                                    const Divider(color: Colors.white10),
+                                    const SizedBox(height: 6),
+                                    const Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        'PLAYERS IN THIS MATCH',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white54,
+                                          letterSpacing: 1.2,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    ...otherHumans.map((p) {
+                                      final alreadyFriend = widget.isFriend?.call(p.userId) == true;
+                                      final sent = _pendingSentRequests.contains(p.userId);
+                                      final isTeammate = p.team == widget.myTeam;
+
+                                      return Padding(
+                                        padding: const EdgeInsets.only(bottom: 6),
+                                        child: Row(
+                                          children: [
+                                            CircleAvatar(
+                                              radius: 12,
+                                              backgroundColor: isTeammate
+                                                  ? const Color(0xFF3FA97C).withOpacity(0.2)
+                                                  : Colors.white10,
+                                              child: Text(
+                                                p.username.isEmpty ? '?' : p.username[0].toUpperCase(),
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: isTeammate ? const Color(0xFF3FA97C) : Colors.white70,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    p.username,
+                                                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
+                                                  ),
+                                                  Text(
+                                                    isTeammate ? 'Teammate (Team ${p.team})' : 'Opponent (Team ${p.team})',
+                                                    style: const TextStyle(color: Colors.white38, fontSize: 10),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            if (alreadyFriend)
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF3FA97C).withOpacity(0.15),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: const Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Icon(Icons.check, size: 12, color: Color(0xFF3FA97C)),
+                                                    SizedBox(width: 4),
+                                                    Text('Friends', style: TextStyle(color: Color(0xFF3FA97C), fontSize: 11, fontWeight: FontWeight.bold)),
+                                                  ],
+                                                ),
+                                              )
+                                            else if (sent)
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white10,
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: const Text('Request Sent', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                                              )
+                                            else
+                                              ElevatedButton.icon(
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: const Color(0xFFFFC857).withOpacity(0.15),
+                                                  foregroundColor: const Color(0xFFFFC857),
+                                                  elevation: 0,
+                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                  visualDensity: VisualDensity.compact,
+                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                                ),
+                                                onPressed: () {
+                                                  widget.onAddFriend?.call(p.userId, p.username);
+                                                  setState(() => _pendingSentRequests.add(p.userId));
+                                                },
+                                                icon: const Icon(Icons.person_add_rounded, size: 13),
+                                                label: const Text('Add Friend', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                              ),
+                                          ],
+                                        ),
+                                      );
+                                    }),
+                                  ],
+                                );
+                              },
                             ),
                           ],
                         ),

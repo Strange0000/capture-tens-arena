@@ -600,6 +600,10 @@ class _GameScreenState extends State<GameScreen> {
                             match: match,
                             mySeat: app.mySeat,
                             tilt3d: _tableTilt3d,
+                            onPlayerTap: (player) {
+                              if (player.isBot || player.userId == app.userId || player.userId.isEmpty) return;
+                              _showPlayerProfileSheet(context, app, player);
+                            },
                           ),
                         ),
 
@@ -840,6 +844,16 @@ class _GameScreenState extends State<GameScreen> {
                     match: match,
                     myTeam: app.myTeam,
                     rankUpdate: app.lastRankUpdate,
+                    currentUserId: app.userId,
+                    isFriend: app.isFriend,
+                    onAddFriend: (uid, uname) async {
+                      final ok = await app.sendFriendRequest(uname, userId: uid);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(ok ? 'Friend request sent to $uname' : (app.friendActionError ?? 'Could not send request'))),
+                        );
+                      }
+                    },
                     onPlayAgain: () async {
                       final mode = match.mode;
                       debugPrint('[Game] Play Again tapped — leaving match');
@@ -1030,6 +1044,98 @@ class _GameScreenState extends State<GameScreen> {
             const _QuickRule('👥', '2v2 format: Work with your partner sitting across from you.'),
             const SizedBox(height: 18),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _showPlayerProfileSheet(BuildContext context, AppState app, MatchPlayer player) {
+    final alreadyFriend = app.isFriend(player.userId);
+    final isTeammate = player.team == app.myTeam;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF161F33).withOpacity(0.95),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFD4A017).withOpacity(0.4)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: isTeammate ? const Color(0xFF3FA97C).withOpacity(0.2) : Colors.white10,
+                  child: Text(
+                    player.username.isEmpty ? '?' : player.username[0].toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: isTeammate ? const Color(0xFF3FA97C) : Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  player.username,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isTeammate ? 'Teammate • Team ${player.team}' : 'Opponent • Team ${player.team}',
+                  style: const TextStyle(fontSize: 12, color: Colors.white54),
+                ),
+                const SizedBox(height: 16),
+                if (alreadyFriend)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF3FA97C).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.check_circle, color: Color(0xFF3FA97C), size: 16),
+                        SizedBox(width: 6),
+                        Text('Already Friends', style: TextStyle(color: Color(0xFF3FA97C), fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  )
+                else
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFC857),
+                      foregroundColor: const Color(0xFF070B13),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      final ok = await app.sendFriendRequest(player.username, userId: player.userId);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(ok
+                                ? 'Friend request sent to ${player.username}!'
+                                : (app.friendActionError ?? 'Could not send request')),
+                          ),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.person_add_rounded, size: 18),
+                    label: const Text('Add Friend', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );

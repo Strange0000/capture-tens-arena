@@ -75,6 +75,8 @@ class AppState extends ChangeNotifier {
   Map<String, bool> friendOnlineStatus = {}; // userId -> online
   List<dynamic>? party; // null if not in party
   Map<String, dynamic>? pendingPartyInvite;
+  Map<String, dynamic>? pendingRoomInvite;
+  List<Map<String, dynamic>> roomPlayers = [];
 
   /// Plain-words good news (new friend request, party invite sent /
   /// declined). Shown as a green toast by the lobby — errors still go
@@ -281,6 +283,9 @@ class AppState extends ChangeNotifier {
     _friendSearchGeneration++;
     friendOnlineStatus = {};
     party = null;
+    pendingPartyInvite = null;
+    pendingRoomInvite = null;
+    roomPlayers = [];
     cachedUsername = null;
     cachedUserId = null;
     socket.disconnect();
@@ -299,6 +304,8 @@ class AppState extends ChangeNotifier {
       onRoomCreated: _onRoomCreated,
       onRoomJoined: _onRoomJoined,
       onRoomUpdated: _onRoomUpdated,
+      onRoomInvited: _onRoomInvited,
+      onRoomLeft: _onRoomLeft,
       onPartyUpdated: _onPartyUpdated,
       onPartyInvited: _onPartyInvited,
       onRankUpdated: _onRankUpdated,
@@ -408,8 +415,12 @@ class AppState extends ChangeNotifier {
 
   void _onRoomCreated(Map<String, dynamic> json) {
     roomCode = json['code'] as String?;
+    roomPlayers = [
+      if (userId != null && username != null)
+        {'userId': userId!, 'username': username!}
+    ];
     roomPlayerNames = username == null ? [] : [username!];
-    roomPlayerCount = roomPlayerNames.length;
+    roomPlayerCount = roomPlayers.length;
     roomCapacity = 4;
     lobbyStatus = LobbyStatus.inRoom;
     notifyListeners();
@@ -429,8 +440,11 @@ class AppState extends ChangeNotifier {
 
     final rawPlayers = json['players'];
     if (rawPlayers is List) {
-      roomPlayerNames = rawPlayers
+      roomPlayers = rawPlayers
           .whereType<Map>()
+          .map((p) => Map<String, dynamic>.from(p))
+          .toList(growable: false);
+      roomPlayerNames = roomPlayers
           .map((player) => player['username'])
           .whereType<String>()
           .toList(growable: false);
@@ -438,6 +452,21 @@ class AppState extends ChangeNotifier {
     roomPlayerCount = (json['playerCount'] as num?)?.toInt() ?? roomPlayerNames.length;
     roomCapacity = (json['capacity'] as num?)?.toInt() ?? 4;
     lobbyStatus = LobbyStatus.inRoom;
+    notifyListeners();
+  }
+
+  void _onRoomInvited(Map<String, dynamic> json) {
+    pendingRoomInvite = json;
+    notifyListeners();
+  }
+
+  void _onRoomLeft() {
+    roomCode = null;
+    roomPlayers = [];
+    roomPlayerNames = [];
+    roomPlayerCount = 1;
+    roomCapacity = 4;
+    lobbyStatus = LobbyStatus.idle;
     notifyListeners();
   }
 
@@ -821,6 +850,62 @@ class AppState extends ChangeNotifier {
     socket.requestFriendStatuses();
   }
 
+  /// Checks if another player is an accepted friend.
+  bool isFriend(String? targetUserId) {
+    if (targetUserId == null || targetUserId.isEmpty || targetUserId == userId) return false;
+    return friends.any((f) {
+      final u = f['user'];
+      final uId = u is Map ? u['id']?.toString() : null;
+      return (uId == targetUserId || f['id']?.toString() == targetUserId) && f['status'] == 'accepted';
+    });
+  }
+
+  /// Checks if a friend request is pending for another player.
+  bool isFriendPending(String? targetUserId) {
+    if (targetUserId == null || targetUserId.isEmpty || targetUserId == userId) return false;
+    return friends.any((f) {
+      final u = f['user'];
+      final uId = u is Map ? u['id']?.toString() : null;
+      return (uId == targetUserId || f['id']?.toString() == targetUserId) && f['status'] == 'pending';
+    });
+  }
+
+  /// Invites a friend to join the current private room.
+  void inviteToRoom(String targetUserId) {
+    if (roomCode != null && roomCode!.isNotEmpty) {
+      socket.inviteToRoom(targetUserId, roomCode!);
+    }
+  }
+
+  /// Accepts an incoming private room invitation.
+  void acceptRoomInvite() {
+    final invite = pendingRoomInvite;
+    pendingRoomInvite = null;
+    final code = invite?['code']?.toString();
+    if (code != null && code.isNotEmpty) {
+      joinRoom(code);
+    }
+    notifyListeners();
+  }
+
+  /// Declines an incoming private room invitation.
+  void declineRoomInvite() {
+    pendingRoomInvite = null;
+    notifyListeners();
+  }
+
+  /// Leaves the active private room and returns to idle lobby.
+  void leaveRoom() {
+    socket.leaveRoom();
+    roomCode = null;
+    roomPlayers = [];
+    roomPlayerNames = [];
+    roomPlayerCount = 1;
+    roomCapacity = 4;
+    lobbyStatus = LobbyStatus.idle;
+    notifyListeners();
+  }
+
   // ── Username choice (PR-C) ───────────────────────────────────────────
 
   /// Asks /users/me for the flag when it is still unknown. Returns true
@@ -1000,6 +1085,7 @@ class AppState extends ChangeNotifier {
     lastRankUpdate = null;
     lobbyStatus = LobbyStatus.idle;
     roomCode = null;
+    roomPlayers = [];
     roomPlayerNames = [];
     roomPlayerCount = 1;
     roomCapacity = 4;
