@@ -207,7 +207,6 @@ class AuthService {
     final cachedId = prefs.getString('userId');
     final cachedHasChosen = prefs.getBool('hasChosenUsername') ?? false;
     if (cached != null && cachedUser != null && cachedId != null) {
-    if (cached != null && cachedUser != null && cachedId != null) {
       // isGuest is not cached — AppState refreshes it from /users/me
       // (the authoritative DB flag) right after restoring the session.
       return GuestSession(
@@ -363,7 +362,6 @@ class AuthService {
       }
     } catch (_) {}
     return fallback;
-  }
   }
 
   Future<GuestSession> googleLogin() async {

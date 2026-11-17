@@ -34,6 +34,7 @@ class _LobbyScreenState extends State<LobbyScreen>
   /// to the game screen and Home looked dead.
   bool _navigationTriggered = false;
   bool _tutorialPromptChecked = false;
+  bool _showingPartyInvite = false;
 
   late final AnimationController _entryCtrl;
   late final Animation<double> _entryAnim;
@@ -198,9 +199,13 @@ class _LobbyScreenState extends State<LobbyScreen>
       });
     }
 
-    if (app.pendingPartyInvite != null) {
+    if (app.pendingPartyInvite != null && !_showingPartyInvite) {
+      _showingPartyInvite = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!context.mounted) return;
+        if (!context.mounted) {
+          _showingPartyInvite = false;
+          return;
+        }
         _showPartyInviteDialog(context, app);
       });
     }
@@ -1075,15 +1080,20 @@ class _LobbyScreenState extends State<LobbyScreen>
   }
 
   void _showPartyInviteDialog(BuildContext context, AppState app) {
-    final invite = app.pendingPartyInvite!;
+    final invite = app.pendingPartyInvite;
+    if (invite == null) {
+      if (mounted) setState(() => _showingPartyInvite = false);
+      return;
+    }
     app.pendingPartyInvite = null;
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: ArenaColors.panel,
         title: const Text('Party Invite', style: TextStyle(color: Colors.white)),
         content: Text(
-          '${invite['from']} invited you to join their party.',
+          '${invite['from'] ?? 'A player'} invited you to join their party.',
           style: const TextStyle(color: Colors.white70),
         ),
         actions: [
@@ -1103,7 +1113,11 @@ class _LobbyScreenState extends State<LobbyScreen>
           ),
         ],
       ),
-    );
+    ).then((_) {
+      if (mounted) {
+        setState(() => _showingPartyInvite = false);
+      }
+    });
   }
 
   void _showTiersSheet(BuildContext context) {
