@@ -869,6 +869,7 @@ class AppState extends ChangeNotifier {
     // The name lives in the JWT, so the socket must reconnect with the new
     // token — otherwise the game would still see the old temporary name.
     socket.disconnect();
+    await Future.delayed(const Duration(milliseconds: 300));
     _connectSocket();
     notifyListeners();
 

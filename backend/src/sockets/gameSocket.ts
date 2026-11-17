@@ -20,6 +20,7 @@ import { checkAndAwardAchievements, ACHIEVEMENTS } from "../game/achievements.js
 
 // Track online users for friend status
 const onlineUsers = new Set<string>();
+const userSockets = new Map<string, Set<string>>();
 const disconnectGraceTimers = new Map<string, NodeJS.Timeout>();
 
 function currentSeason() {
@@ -44,6 +45,12 @@ export function registerGameSockets(io: Server) {
       }).catch(() => {});
     }
     socket.join(`user:${userId}`);
+    let sockets = userSockets.get(userId);
+    if (!sockets) {
+      sockets = new Set<string>();
+      userSockets.set(userId, sockets);
+    }
+    sockets.add(socket.id);
     onlineUsers.add(userId);
     reconnectMatch(io, socket);
     broadcastFriendStatus(io, userId, "online");
@@ -378,6 +385,15 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("friends:status", async () => {
+      // Re-assert that this connected socket is online
+      onlineUsers.add(userId);
+      let sockets = userSockets.get(userId);
+      if (!sockets) {
+        sockets = new Set<string>();
+        userSockets.set(userId, sockets);
+      }
+      sockets.add(socket.id);
+
       if (isOfflineDevMode) return socket.emit("friends:statusList", { statuses: [] });
       try {
         const friends = await FriendModel.find({
@@ -418,12 +434,25 @@ export function registerGameSockets(io: Server) {
     });
 
     socket.on("disconnect", () => {
-      onlineUsers.delete(userId);
-      matchmaking.removeFromQueue(userId);
-      for (const changedRoom of matchmaking.removeFromPrivateRooms(userId)) {
-        broadcastPrivateRoom(io, changedRoom.code, changedRoom.players);
+      const sockets = userSockets.get(userId);
+      let isLastSocket = true;
+      if (sockets) {
+        sockets.delete(socket.id);
+        if (sockets.size > 0) {
+          isLastSocket = false;
+        } else {
+          userSockets.delete(userId);
+        }
       }
-      broadcastFriendStatus(io, userId, "offline");
+
+      if (isLastSocket) {
+        onlineUsers.delete(userId);
+        matchmaking.removeFromQueue(userId);
+        for (const changedRoom of matchmaking.removeFromPrivateRooms(userId)) {
+          broadcastPrivateRoom(io, changedRoom.code, changedRoom.players);
+        }
+        broadcastFriendStatus(io, userId, "offline");
+      }
       
       const partyId = matchmaking.leaveParty(userId);
       if (partyId) {
