@@ -122,11 +122,30 @@ class _GameScreenState extends State<GameScreen> {
       if (app.match != null) return;
       setState(() {
         _waitSeconds++;
-        if (_waitSeconds >= 35) {
-          _waitTimedOut = true;
-        }
       });
-      if (!_waitTimedOut) _startWaitTimer();
+      // Silent auto-retry loop: re-emit startOffline every 4 seconds
+      // without interrupting the player or showing raw errors on screen
+      if (_waitSeconds % 4 == 0 && _waitSeconds < 28) {
+        debugPrint('[GameScreen] Silent auto-retry at $_waitSeconds seconds...');
+        if (!app.socket.connected) {
+          app.reconnectSocket();
+        }
+        app.startOffline(_lastMatchDifficulty ?? 'hard');
+      }
+      if (_waitSeconds >= 30) {
+        setState(() {
+          _waitTimedOut = true;
+        });
+        // Graceful automatic return to lobby if server takes too long
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted && app.match == null) {
+            app.leaveMatch();
+            Navigator.pushNamedAndRemoveUntil(context, '/lobby', (r) => false);
+          }
+        });
+      } else {
+        _startWaitTimer();
+      }
     });
   }
 
@@ -170,71 +189,92 @@ class _GameScreenState extends State<GameScreen> {
       return Scaffold(
         backgroundColor: const Color(0xFF070B13),
         body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (!_waitTimedOut) ...[
-                const CircularProgressIndicator(color: Color(0xFF3FA97C)),
-                const SizedBox(height: 20),
-                Text(
-                  _waitSeconds >= 15
-                      ? 'Waking up arena server...\n(Cloud servers take ~20s to wake from sleep)'
-                      : (_waitSeconds >= 5
-                          ? 'Connecting to match gateway...'
-                          : 'Setting up arena...'),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Gateway: ${app.socket.connected ? "connected" : "connecting..."} (${app.backendUrl})',
-                  style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 12),
-                ),
-              ] else ...[
-                Icon(Icons.wifi_off, color: Colors.white.withOpacity(0.5), size: 48),
-                const SizedBox(height: 16),
-                const Text(
-                  'Connection timed out',
-                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Could not connect to the match server.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 14),
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFFC857),
-                    foregroundColor: const Color(0xFF070B13),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Royal Casino Match Starting Emblem
+                Container(
+                  width: 140,
+                  height: 140,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x59FFC857),
+                        blurRadius: 30,
+                        spreadRadius: 2,
+                      ),
+                      BoxShadow(
+                        color: Color(0x403FA97C),
+                        blurRadius: 50,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                    border: Border.all(
+                      color: const Color(0x99FFC857),
+                      width: 2,
+                    ),
                   ),
-                  onPressed: () {
-                    setState(() {
-                      _waitTimedOut = false;
-                      _waitSeconds = 0;
-                    });
-                    if (!app.socket.connected) {
-                      app.reconnectSocket();
-                    }
-                    app.startOffline(_lastMatchDifficulty ?? 'hard');
-                    _startWaitTimer();
-                  },
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Retry', style: TextStyle(fontWeight: FontWeight.w700)),
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.asset(
+                    'assets/images/match_starting_emblem.jpg',
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: const Color(0xFF0D3B2E),
+                      child: const Center(
+                        child: Icon(Icons.style_rounded, color: Color(0xFFFFC857), size: 56),
+                      ),
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 12),
-                TextButton(
+                const SizedBox(height: 28),
+                // Smooth, dynamic match-starting status phrases
+                Text(
+                  _waitTimedOut
+                      ? 'Arena is taking longer than expected\nReturning to Lobby...'
+                      : (_waitSeconds >= 18
+                          ? 'Waking up the Royal Arena...\n(First match takes ~20s after idle)'
+                          : (_waitSeconds >= 12
+                              ? 'Dealing cards to Vector, Nova & Cipher...'
+                              : (_waitSeconds >= 6
+                                  ? 'Shuffling the 52-card deck...'
+                                  : 'Entering the Royal Arena...'))),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    height: 1.4,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Elegant luxury loading bar
+                SizedBox(
+                  width: 180,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: const LinearProgressIndicator(
+                      backgroundColor: Color(0x33FFC857),
+                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFC857)),
+                      minHeight: 4,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 32),
+                // Clean Back to Lobby button
+                TextButton.icon(
                   onPressed: () {
                     app.leaveMatch();
                     Navigator.pushNamedAndRemoveUntil(context, '/lobby', (r) => false);
                   },
-                  child: const Text('Back to Lobby', style: TextStyle(color: Colors.white54)),
+                  icon: const Icon(Icons.arrow_back_rounded, color: Colors.white54, size: 18),
+                  label: const Text('Back to Lobby', style: TextStyle(color: Colors.white54, fontSize: 14)),
                 ),
               ],
-            ],
+            ),
           ),
         ),
       );

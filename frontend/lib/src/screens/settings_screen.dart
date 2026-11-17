@@ -379,72 +379,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                     const SizedBox(height: 24),
 
-                    // Section 3: Network & Security
+                    // Section 3: Account & Session
                     _SectionHeader(
-                      title: 'System & Account',
-                      subtitle: 'Active backend server, credentials, and session controls',
+                      title: 'Account & Profile',
+                      subtitle: 'Player credentials, identity, and session controls',
                       icon: Icons.shield_rounded,
                       accentColor: const Color(0xFF38BDF8),
                     ),
                     const SizedBox(height: 10),
                     _LuxurySettingsCard(
                       children: [
-                        // Server endpoint info
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF38BDF8).withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(Icons.cloud_done_rounded, color: Color(0xFF38BDF8), size: 20),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text('Arena Server Gateway', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      app.backendUrl,
-                                      style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 12, fontFamily: 'monospace'),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF10B981).withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: const Color(0xFF10B981).withOpacity(0.4)),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
-                                      width: 6,
-                                      height: 6,
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFF10B981),
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    const Text('ONLINE', style: TextStyle(color: Color(0xFF10B981), fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Divider(color: Colors.white10, height: 1),
-
                         // Change Username row
                         InkWell(
                           onTap: _showChangeUsernameDialog,
