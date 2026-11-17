@@ -14,6 +14,7 @@ import { classifyFriendRequest, friendshipPairKey } from "../services/friendship
 import {
   checkUsernameAvailability,
   claimUsername,
+  changeUsername,
   validateUsername,
   UsernameError,
   type UsernameStore,
@@ -137,6 +138,42 @@ usersRouter.post(
         });
       }
       const result = await claimUsername(req.user!.id, raw, usernameStore(), (user) =>
+        signJwt(user),
+      );
+      res.json(result);
+    } catch (error) {
+      if (error instanceof UsernameError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      next(error);
+    }
+  },
+);
+
+// ── Change username (for players who already have one) ──────────────────
+usersRouter.post(
+  ["/username/change", "/change-username"],
+  requireAuth,
+  usernameClaimRateLimit,
+  async (req, res, next) => {
+    try {
+      const raw = typeof req.body?.username === "string" ? req.body.username : "";
+      if (isOfflineDevMode) {
+        const validation = validateUsername(raw);
+        if (!validation.valid) {
+          return res.status(400).json({ error: validation.message });
+        }
+        const token = signJwt({
+          id: req.user!.id,
+          username: validation.username,
+          roles: req.user!.roles,
+        });
+        return res.json({
+          token,
+          user: { id: req.user!.id, username: validation.username, hasChosenUsername: true },
+        });
+      }
+      const result = await changeUsername(req.user!.id, raw, usernameStore(), (user) =>
         signJwt(user),
       );
       res.json(result);

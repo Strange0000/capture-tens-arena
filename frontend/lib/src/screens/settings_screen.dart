@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/audio_service.dart';
+import '../services/username_rules.dart';
 import '../state/app_state.dart';
+import '../theme.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -63,6 +66,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  Future<void> _showChangeUsernameDialog() async {
+    audio.playButtonTap();
+    final app = context.read<AppState>();
+    final updated = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => _ChangeUsernameDialog(
+        currentUsername: app.username ?? '',
+      ),
+    );
+    if (updated == true && mounted) {
+      _showCopiedSnackbar('Username updated to ${app.username}!');
+    }
   }
 
   @override
@@ -185,6 +202,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         audio.playButtonTap();
                         _showCopiedSnackbar('User ID copied to clipboard!');
                       },
+                      onChangeUsername: _showChangeUsernameDialog,
                     ),
 
                     const SizedBox(height: 24),
@@ -427,6 +445,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         const Divider(color: Colors.white10, height: 1),
 
+                        // Change Username row
+                        InkWell(
+                          onTap: _showChangeUsernameDialog,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: ArenaColors.gold.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(Icons.badge_rounded, color: ArenaColors.gold, size: 20),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text('Player Username', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        app.username ?? 'Choose username',
+                                        style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: ArenaColors.gold.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: ArenaColors.gold.withOpacity(0.4)),
+                                  ),
+                                  child: const Text('Change', style: TextStyle(color: ArenaColors.gold, fontSize: 11, fontWeight: FontWeight.w800)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const Divider(color: Colors.white10, height: 1),
+
                         // Logout row
                         InkWell(
                           onTap: () async {
@@ -566,6 +628,7 @@ class _ProfileHeroCard extends StatelessWidget {
     required this.rank,
     required this.backendUrl,
     required this.onCopyId,
+    this.onChangeUsername,
   });
 
   final String username;
@@ -574,6 +637,7 @@ class _ProfileHeroCard extends StatelessWidget {
   final dynamic rank;
   final String backendUrl;
   final VoidCallback onCopyId;
+  final VoidCallback? onChangeUsername;
 
   @override
   Widget build(BuildContext context) {
@@ -669,6 +733,29 @@ class _ProfileHeroCard extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (onChangeUsername != null) ...[
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: onChangeUsername,
+                        borderRadius: BorderRadius.circular(6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: ArenaColors.gold.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: ArenaColors.gold.withOpacity(0.3)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.edit_rounded, color: ArenaColors.gold, size: 11),
+                              SizedBox(width: 3),
+                              Text('EDIT', style: TextStyle(color: ArenaColors.gold, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -1010,6 +1097,279 @@ class _MiniPillButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── Change Username Dialog ───────────────────────────────────────────────────
+
+enum _NameStatus { idle, checking, available, taken, invalid }
+
+class _ChangeUsernameDialog extends StatefulWidget {
+  const _ChangeUsernameDialog({required this.currentUsername});
+  final String currentUsername;
+
+  @override
+  State<_ChangeUsernameDialog> createState() => _ChangeUsernameDialogState();
+}
+
+class _ChangeUsernameDialogState extends State<_ChangeUsernameDialog> {
+  late final TextEditingController _controller;
+  Timer? _debounce;
+  _NameStatus _status = _NameStatus.idle;
+  String? _message;
+  List<String> _suggestions = [];
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onChanged(String value) {
+    _debounce?.cancel();
+    _error = null;
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      setState(() {
+        _status = _NameStatus.idle;
+        _message = null;
+        _suggestions = [];
+      });
+      return;
+    }
+    if (trimmed.toLowerCase() == widget.currentUsername.toLowerCase()) {
+      setState(() {
+        _status = _NameStatus.invalid;
+        _message = "That's already your current username.";
+        _suggestions = [];
+      });
+      return;
+    }
+    final problem = validateUsernameLocally(trimmed);
+    if (problem != null) {
+      setState(() {
+        _status = _NameStatus.invalid;
+        _message = problem;
+        _suggestions = [];
+      });
+      return;
+    }
+    setState(() {
+      _status = _NameStatus.checking;
+      _message = 'Checking availability...';
+      _suggestions = [];
+    });
+    _debounce = Timer(const Duration(milliseconds: 400), _checkAvailability);
+  }
+
+  Future<void> _checkAvailability() async {
+    final name = _controller.text.trim();
+    if (validateUsernameLocally(name) != null) return;
+    final app = context.read<AppState>();
+    final res = await app.checkUsernameAvailability(name);
+    if (!mounted) return;
+    if (_controller.text.trim() != name) return;
+    if (res == null) {
+      setState(() {
+        _status = _NameStatus.invalid;
+        _message = 'Could not check availability. Check your connection.';
+        _suggestions = [];
+      });
+      return;
+    }
+    final available = res['available'] as bool? ?? false;
+    final suggestions = (res['suggestions'] as List?)?.whereType<String>().toList() ?? [];
+    setState(() {
+      _status = available ? _NameStatus.available : _NameStatus.taken;
+      _message = res['message'] as String? ?? (available ? 'That name is free.' : 'That name is already taken.');
+      _suggestions = suggestions;
+    });
+  }
+
+  Future<void> _submit() async {
+    final name = _controller.text.trim();
+    if (_status != _NameStatus.available || _saving) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final app = context.read<AppState>();
+      await app.changeExistingUsername(name);
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = e.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
+  Color get _messageColor {
+    switch (_status) {
+      case _NameStatus.available:
+        return ArenaColors.emerald;
+      case _NameStatus.taken:
+      case _NameStatus.invalid:
+        return Colors.redAccent;
+      case _NameStatus.checking:
+      case _NameStatus.idle:
+        return Colors.white70;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canSave = _status == _NameStatus.available && !_saving;
+
+    return AlertDialog(
+      backgroundColor: ArenaColors.panel,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+        side: BorderSide(color: ArenaColors.gold.withOpacity(0.4), width: 1.5),
+      ),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: ArenaColors.gold.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.badge_rounded, color: ArenaColors.gold, size: 22),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'Change Username',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 360,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Current: ${widget.currentUsername.isEmpty ? "None" : widget.currentUsername}',
+                style: const TextStyle(color: Colors.white60, fontSize: 13),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _controller,
+                textCapitalization: TextCapitalization.none,
+                autocorrect: false,
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+                decoration: InputDecoration(
+                  hintText: 'New username (e.g. Arjun_99)',
+                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.35)),
+                  filled: true,
+                  fillColor: ArenaColors.panelLight,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: ArenaColors.gold.withOpacity(0.4)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: ArenaColors.gold, width: 2),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  suffixIcon: _status == _NameStatus.checking
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: ArenaColors.gold),
+                          ),
+                        )
+                      : _status == _NameStatus.available
+                          ? const Icon(Icons.check_circle_rounded, color: ArenaColors.emerald, size: 20)
+                          : _status == _NameStatus.taken || _status == _NameStatus.invalid
+                              ? const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 20)
+                              : null,
+                ),
+                onChanged: _onChanged,
+                onSubmitted: (_) => _submit(),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                '3–24 characters · letters, numbers and _ only · must start with a letter',
+                style: TextStyle(color: Colors.white38, fontSize: 11),
+              ),
+              if (_message != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _message!,
+                  style: TextStyle(color: _messageColor, fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+              ],
+              if (_suggestions.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                const Text('Suggestions:', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: _suggestions.map((s) => ActionChip(
+                    label: Text(s, style: const TextStyle(color: ArenaColors.gold, fontSize: 12)),
+                    backgroundColor: ArenaColors.panelLight,
+                    side: BorderSide(color: ArenaColors.gold.withOpacity(0.4)),
+                    onPressed: () {
+                      _controller.text = s;
+                      _onChanged(s);
+                    },
+                  )).toList(),
+                ),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _error!,
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancel', style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w600)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: ArenaColors.gold,
+            foregroundColor: const Color(0xFF070B13),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          ),
+          onPressed: canSave ? _submit : null,
+          child: _saving
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF070B13)),
+                )
+              : const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.w800)),
+        ),
+      ],
     );
   }
 }

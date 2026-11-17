@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   checkUsernameAvailability,
   claimUsername,
+  changeUsername,
   fallbackUsername,
   isReservedUsername,
   sanitizeUsernameBase,
@@ -190,5 +191,49 @@ describe("username claim (one per account)", () => {
     await expect(claimUsername("ghost", "Meera", store, issueToken)).rejects.toMatchObject({
       status: 404,
     });
+  });
+});
+
+describe("username change (for existing accounts in settings)", () => {
+  const issueToken = (user: { id: string; username: string; roles: string[] }) =>
+    `token-for-${user.id}-${user.username}`;
+
+  it("changes username and returns a fresh token", async () => {
+    const store = fakeStore([{ _id: "u1", username: "OldName", hasChosenUsername: true }]);
+    const result = await changeUsername("u1", "NewName_1", store, issueToken);
+    expect(result.token).toBe("token-for-u1-NewName_1");
+    expect(result.user).toEqual({ id: "u1", username: "NewName_1", hasChosenUsername: true });
+    expect(store.docs.get("u1")?.username).toBe("NewName_1");
+    expect(store.docs.get("u1")?.usernameLower).toBe("newname_1");
+  });
+
+  it("refuses change if player has not chosen a username yet", async () => {
+    const store = fakeStore([{ _id: "u1", username: "GuestAb12Cd", hasChosenUsername: false }]);
+    await expect(changeUsername("u1", "NewName", store, issueToken)).rejects.toMatchObject({
+      status: 400,
+    });
+  });
+
+  it("refuses change to the identical name", async () => {
+    const store = fakeStore([{ _id: "u1", username: "SameName", hasChosenUsername: true }]);
+    await expect(changeUsername("u1", "samename", store, issueToken)).rejects.toMatchObject({
+      status: 400,
+    });
+  });
+
+  it("refuses change to an already taken name", async () => {
+    const store = fakeStore([
+      { _id: "u1", username: "FirstName", hasChosenUsername: true },
+      { _id: "u2", username: "TakenName", hasChosenUsername: true },
+    ]);
+    await expect(changeUsername("u1", "TakenName", store, issueToken)).rejects.toMatchObject({
+      status: 409,
+    });
+  });
+
+  it("refuses change to an invalid or reserved name", async () => {
+    const store = fakeStore([{ _id: "u1", username: "OldName", hasChosenUsername: true }]);
+    await expect(changeUsername("u1", "Ab", store, issueToken)).rejects.toMatchObject({ status: 400 });
+    await expect(changeUsername("u1", "Admin", store, issueToken)).rejects.toMatchObject({ status: 400 });
   });
 });

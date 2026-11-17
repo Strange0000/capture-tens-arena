@@ -57,7 +57,13 @@ class _LoginScreenState extends State<LoginScreen>
     final app = context.read<AppState>();
     try {
       await app.continueAsExisting();
-      if (mounted) Navigator.pushReplacementNamed(context, '/lobby');
+      if (mounted) {
+        if (app.hasChosenUsername != true) {
+          Navigator.pushReplacementNamed(context, '/choose-username');
+        } else {
+          Navigator.pushReplacementNamed(context, '/lobby');
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Session expired. Please sign in again.'), backgroundColor: Colors.redAccent));
@@ -159,7 +165,14 @@ class _LoginScreenState extends State<LoginScreen>
     final app = context.read<AppState>();
     try {
       await app.bootGuest();
-      if (mounted) Navigator.pushReplacementNamed(context, '/lobby');
+      if (mounted) {
+        // New accounts need a username before entering the lobby.
+        if (app.hasChosenUsername != true) {
+          Navigator.pushReplacementNamed(context, '/choose-username');
+        } else {
+          Navigator.pushReplacementNamed(context, '/lobby');
+        }
+      }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login failed: $e'), backgroundColor: Colors.redAccent));
     } finally {
@@ -181,7 +194,13 @@ class _LoginScreenState extends State<LoginScreen>
     final app = context.read<AppState>();
     try {
       await app.loginWithGoogle();
-      if (mounted) Navigator.pushReplacementNamed(context, '/lobby');
+      if (mounted) {
+        if (app.hasChosenUsername != true) {
+          Navigator.pushReplacementNamed(context, '/choose-username');
+        } else {
+          Navigator.pushReplacementNamed(context, '/lobby');
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -491,7 +510,13 @@ class _LoginScreenState extends State<LoginScreen>
           _startSlowHintTimer();
           try {
             await app.loginWithGoogleIdToken(idToken, username: username);
-            if (mounted) Navigator.pushReplacementNamed(context, '/lobby');
+            if (mounted) {
+              if (app.hasChosenUsername != true) {
+                Navigator.pushReplacementNamed(context, '/choose-username');
+              } else {
+                Navigator.pushReplacementNamed(context, '/lobby');
+              }
+            }
           } finally {
             if (mounted) {
               setState(() {

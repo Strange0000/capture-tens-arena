@@ -152,8 +152,14 @@ class AuthService {
     final cached = prefs.getString('jwt');
     final cachedUser = prefs.getString('username');
     final cachedId = prefs.getString('userId');
+    final cachedHasChosen = prefs.getBool('hasChosenUsername') ?? false;
     if (cached != null && cachedUser != null && cachedId != null) {
-      return GuestSession(token: cached, userId: cachedId, username: cachedUser);
+      return GuestSession(
+        token: cached,
+        userId: cachedId,
+        username: cachedUser,
+        hasChosenUsername: cachedHasChosen,
+      );
     }
     return null;
   }
@@ -189,6 +195,7 @@ class AuthService {
     await prefs.setString('jwt', token);
     await prefs.setString('userId', userId);
     await prefs.setString('username', username);
+    await prefs.setBool('hasChosenUsername', hasChosenUsername);
 
     return GuestSession(token: token, userId: userId, username: username, hasChosenUsername: hasChosenUsername);
   }
@@ -200,6 +207,7 @@ class AuthService {
     await prefs.setString('jwt', session.token);
     await prefs.setString('userId', session.userId);
     await prefs.setString('username', session.username);
+    await prefs.setBool('hasChosenUsername', session.hasChosenUsername);
   }
 
   /// PR-C: is this username free? Answered live as the player types.
@@ -230,6 +238,34 @@ class AuthService {
     ).timeout(_timeout);
     if (response.statusCode >= 400) {
       final msg = _errorMessage(response.body, 'Could not save that name. Try again.');
+      throw Exception(msg);
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final newToken = data['token'] as String;
+    final user = data['user'] as Map<String, dynamic>;
+    final session = GuestSession(
+      token: newToken,
+      userId: user['id'] as String,
+      username: user['username'] as String,
+      hasChosenUsername: true,
+    );
+    await saveSession(session);
+    return session;
+  }
+
+  /// Changes an existing username. Same validation and uniqueness rules
+  /// as claimUsername, but only works for players who already have a name.
+  Future<GuestSession> changeUsername(String token, String username) async {
+    final response = await _httpClient.post(
+      Uri.parse('$baseUrl/users/username/change'),
+      headers: {
+        'Content-Type': 'application/json',
+        ..._authHeaders(token),
+      },
+      body: jsonEncode({'username': username.trim()}),
+    ).timeout(_timeout);
+    if (response.statusCode >= 400) {
+      final msg = _errorMessage(response.body, 'Could not change your name. Try again.');
       throw Exception(msg);
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;

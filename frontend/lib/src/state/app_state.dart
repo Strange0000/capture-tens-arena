@@ -150,11 +150,13 @@ class AppState extends ChangeNotifier {
     if (session == null) throw Exception('No cached session');
     
     // Validate the token with the backend first
-    await auth.fetchMe(session.token);
+    final me = await auth.fetchMe(session.token);
+    final user = me['user'] as Map<String, dynamic>?;
     
     token = session.token;
     userId = session.userId;
-    username = session.username;
+    username = user?['username'] as String? ?? session.username;
+    hasChosenUsername = user?['hasChosenUsername'] as bool? ?? session.hasChosenUsername;
     _connectSocket();
     // Fetch rank and friends in background
     _fetchInitialData();
@@ -690,10 +692,9 @@ class AppState extends ChangeNotifier {
 
   // ── Username choice (PR-C) ───────────────────────────────────────────
 
-  /// Asks /users/me for the flag when it is still unknown (e.g. right after
-  /// a guest login, before the background rank fetch answers). Returns true
+  /// Asks /users/me for the flag when it is still unknown. Returns true
   /// when the flag is known afterwards.
-  Future<bool> _refreshUsernameFlag() async {
+  Future<bool> refreshUsernameFlag() async {
     if (token == null) return false;
     try {
       final data = await auth.fetchMe(token!);
@@ -720,8 +721,11 @@ class AppState extends ChangeNotifier {
   }
 
   /// Claims the chosen username. On success the fresh JWT replaces the old
-  /// session, the socket reconnects with it, the username route pops, and
-  /// the held-back game entry runs. Throws a plain-words Exception on failure.
+  /// session, the socket reconnects with it, and the player moves on:
+  ///  • If this was the post-login chooser (no route to pop), go to /lobby.
+  ///  • If this was a mid-game prompt (_pendingGameEntry set), pop back
+  ///    and start the game after the socket reconnects.
+  /// Throws a plain-words Exception on failure.
   Future<void> claimUsername(String username) async {
     if (token == null) throw Exception('Sign in first, then choose a username.');
     final session = await auth.claimUsername(token!, username);
@@ -735,48 +739,42 @@ class AppState extends ChangeNotifier {
     socket.disconnect();
     _connectSocket();
     notifyListeners();
-    // Pop the /choose-username route so we're back where _startGame was
-    // called from (e.g. /lobby). Then run the held-back game entry.
+
     final nav = appNavigatorKey.currentState;
-    if (nav != null && nav.canPop()) {
-      nav.pop();
-    }
-    // Wait for the socket to reconnect with the new JWT before starting
-    // the game — otherwise the game event fires before the socket is ready
-    // and the server never sees the new username. Poll briefly; the
-    // reconnect is typically instant on a good connection.
-    for (int i = 0; i < 20; i++) {
-      if (socket.connected) break;
-      await Future.delayed(const Duration(milliseconds: 150));
-    }
     final pending = _pendingGameEntry;
     _pendingGameEntry = null;
-    pending?.call();
+
+    if (pending != null && nav != null && nav.canPop()) {
+      // Mid-game prompt: pop back to lobby, wait for socket, start game.
+      nav.pop();
+      for (int i = 0; i < 20; i++) {
+        if (socket.connected) break;
+        await Future.delayed(const Duration(milliseconds: 150));
+      }
+      pending.call();
+    } else {
+      // Post-login flow: replace with lobby (no route to pop to).
+      nav?.pushReplacementNamed('/lobby');
+    }
   }
 
-  /// Every way into a game funnels through here. If the player has not
-  /// chosen a username yet, the entry is held back and the "Choose your
-  /// username" screen opens instead; the entry runs after a successful
-  /// claim (see claimUsername). The prompt appears at first game entry,
-  /// never at login, and only once per account.
-  ///
-  /// The chooser is pushed as a proper Navigator route (/choose-username)
-  /// because on Flutter web a TextField must live INSIDE the Navigator's
-  /// subtree to receive keystrokes — widgets placed in MaterialApp.builder
-  /// outside the Navigator render visually but their text-input bridge
-  /// never connects to the controller.
+  /// Changes an existing username. On success the fresh JWT replaces the
+  /// old session and the socket reconnects. Used from Settings.
+  Future<void> changeExistingUsername(String username) async {
+    if (token == null) throw Exception('Sign in first.');
+    final session = await auth.changeUsername(token!, username);
+    token = session.token;
+    userId = session.userId;
+    this.username = session.username;
+    socket.disconnect();
+    _connectSocket();
+    notifyListeners();
+  }
+  /// Every way into a game funnels through here. Usernames are chosen at
+  /// initial login / account creation, so players entering a game already
+  /// have their username configured.
   Future<void> _startGame(VoidCallback start) async {
     if (!isLoggedIn) return;
-    if (hasChosenUsername == null) {
-      await _refreshUsernameFlag();
-    }
-    if (hasChosenUsername != true) {
-      _pendingGameEntry = start;
-      usernameChoiceRequested = true;
-      notifyListeners();
-      appNavigatorKey.currentState?.pushNamed('/choose-username');
-      return;
-    }
     start();
   }
 

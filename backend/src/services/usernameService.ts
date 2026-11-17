@@ -295,3 +295,55 @@ export async function claimUsername(
   const token = issueToken({ id, username: updated.username, roles });
   return { token, user: { id, username: updated.username, hasChosenUsername: true } };
 }
+
+/**
+ * Change an existing username. Only players who have already chosen a
+ * username can change it. The same validation and uniqueness rules apply.
+ */
+export async function changeUsername(
+  userId: string,
+  raw: string,
+  store: UsernameStore,
+  issueToken: (user: { id: string; username: string; roles: string[] }) => string,
+): Promise<{ token: string; user: { id: string; username: string; hasChosenUsername: boolean } }> {
+  const validation = validateUsername(raw);
+  if (!validation.valid) {
+    throw new UsernameError(400, validation.message);
+  }
+  const username = validation.username;
+  const lower = username.toLowerCase();
+
+  // Only allow change if the user already has a username
+  const existing = await store.findOne({ _id: userId });
+  if (!existing) {
+    throw new UsernameError(404, "Account not found. Sign in again.");
+  }
+  if (existing.hasChosenUsername !== true) {
+    throw new UsernameError(400, "You haven't chosen a username yet. Use the claim endpoint.");
+  }
+  // Don't allow changing to the same name
+  if (existing.usernameLower === lower) {
+    throw new UsernameError(400, "That's already your username.");
+  }
+
+  let updated;
+  try {
+    updated = await store.findOneAndUpdate(
+      { _id: userId },
+      { $set: { username, usernameLower: lower } },
+      { new: true },
+    );
+  } catch (error) {
+    if (isDuplicateKeyError(error)) {
+      throw new UsernameError(409, "That name is already taken. Try another one.");
+    }
+    throw error;
+  }
+  if (!updated) {
+    throw new UsernameError(500, "Could not update username. Try again.");
+  }
+  const id = String(updated._id);
+  const roles = updated.roles ?? ["player"];
+  const token = issueToken({ id, username: updated.username, roles });
+  return { token, user: { id, username: updated.username, hasChosenUsername: true } };
+}
