@@ -35,16 +35,7 @@ class AppState extends ChangeNotifier {
       }
     }
 
-    // 3. If running locally on web, connect to local backend
-    if (url == null) {
-      try {
-        if (Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1') {
-          url = 'http://localhost:8080';
-        }
-      } catch (_) {}
-    }
-
-    // 4. Fallback to default production URL
+    // 3. Fallback to default production URL
     url ??= 'https://capture-tens-arena.onrender.com';
 
     backendUrl = url;
@@ -179,7 +170,16 @@ class AppState extends ChangeNotifier {
     if (session == null) throw Exception('No cached session');
     
     // Validate the token with the backend first
-    final me = await auth.fetchMe(session.token);
+    Map<String, dynamic> me;
+    try {
+      me = await auth.fetchMe(session.token);
+    } catch (e) {
+      await auth.clearSession();
+      cachedUsername = null;
+      cachedUserId = null;
+      notifyListeners();
+      rethrow;
+    }
     final user = me['user'] as Map<String, dynamic>?;
 
     _applySession(session);
