@@ -169,6 +169,7 @@ class AppState extends ChangeNotifier {
     token = session.token;
     userId = session.userId;
     username = session.username;
+    hasChosenUsername = session.hasChosenUsername;
     _connectSocket();
     _fetchInitialData();
     notifyListeners();
@@ -732,6 +733,7 @@ class AppState extends ChangeNotifier {
     token = session.token;
     userId = session.userId;
     this.username = session.username;
+    cachedUsername = session.username;
     hasChosenUsername = true;
     usernameChoiceRequested = false;
     // The name lives in the JWT, so the socket must reconnect with the new
@@ -766,9 +768,18 @@ class AppState extends ChangeNotifier {
     token = session.token;
     userId = session.userId;
     this.username = session.username;
+    cachedUsername = session.username;
     socket.disconnect();
     _connectSocket();
     notifyListeners();
+  }
+
+  /// Reconnects the socket if disconnected.
+  void reconnectSocket() {
+    if (token != null) {
+      socket.disconnect();
+      _connectSocket();
+    }
   }
   /// Every way into a game funnels through here. Usernames are chosen at
   /// initial login / account creation, so players entering a game already
@@ -805,6 +816,9 @@ class AppState extends ChangeNotifier {
   Future<void> startOffline(String difficulty) async {
     await _startGame(() {
       print('[AppState] startOffline($difficulty) called, socket connected=${socket.connected}');
+      if (!socket.connected && token != null) {
+        _connectSocket();
+      }
       socket.startOffline(difficulty);
       lobbyStatus = LobbyStatus.inMatch;
       notifyListeners();

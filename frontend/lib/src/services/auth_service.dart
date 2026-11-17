@@ -169,8 +169,18 @@ class AuthService {
     final cachedSession = await getCachedSession();
     if (cachedSession != null) {
       try {
-        await fetchMe(cachedSession.token);
-        return cachedSession;
+        final me = await fetchMe(cachedSession.token);
+        final user = me['user'] as Map<String, dynamic>?;
+        final freshUsername = user?['username'] as String? ?? cachedSession.username;
+        final freshHasChosen = user?['hasChosenUsername'] as bool? ?? cachedSession.hasChosenUsername;
+        final freshSession = GuestSession(
+          token: cachedSession.token,
+          userId: cachedSession.userId,
+          username: freshUsername,
+          hasChosenUsername: freshHasChosen,
+        );
+        await saveSession(freshSession);
+        return freshSession;
       } catch (_) {
         await clearSession();
       }

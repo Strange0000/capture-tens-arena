@@ -36,6 +36,13 @@ export function registerGameSockets(io: Server) {
   io.on("connection", (socket: AuthedSocket) => {
     const userId = socket.user!.id;
     console.log(`[SOCKET] User connected: ${userId} (${socket.user?.username})`);
+    if (!isOfflineDevMode) {
+      UserModel.findById(userId).select("username").lean().then((u) => {
+        if (u?.username && socket.user) {
+          socket.user.username = u.username;
+        }
+      }).catch(() => {});
+    }
     socket.join(`user:${userId}`);
     onlineUsers.add(userId);
     reconnectMatch(io, socket);
@@ -181,15 +188,26 @@ export function registerGameSockets(io: Server) {
       }
     });
 
-    socket.on("bot:offline", (data?: any) => {
+    socket.on("bot:offline", async (data?: any) => {
       const difficulty: "easy" | "medium" | "hard" = (data && data.difficulty) ? data.difficulty : "medium";
       console.log(`[SOCKET] bot:offline received for user ${userId}, difficulty: ${difficulty}`);
+      let playerName = socket.user?.username || "Player";
+      if (!isOfflineDevMode) {
+        try {
+          const u = await UserModel.findById(userId).select("username").lean();
+          if (u?.username) {
+            playerName = u.username;
+            if (socket.user) socket.user.username = u.username;
+          }
+        } catch (_) {}
+      }
+      socket.join(`user:${userId}`);
       // If user is already in a match, clean it up first
       const existing = matchStore.findByUser(userId);
       if (existing) matchStore.delete(existing.id);
 
       const seats: PlayerSeat[] = [
-        { seat: 0, userId, username: socket.user!.username, connected: true, isBot: false },
+        { seat: 0, userId, username: playerName, connected: true, isBot: false },
         { seat: 1, userId: "bot-1", username: "Vector", connected: true, isBot: true, botDifficulty: difficulty },
         { seat: 2, userId: "bot-2", username: "Nova", connected: true, isBot: true, botDifficulty: difficulty },
         { seat: 3, userId: "bot-3", username: "Cipher", connected: true, isBot: true, botDifficulty: difficulty }

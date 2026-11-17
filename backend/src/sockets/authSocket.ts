@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import { Socket } from "socket.io";
 import { env, isOfflineDevMode } from "../config/env.js";
 import { AuthUser } from "../middleware/auth.js";
+import { UserModel } from "../models/User.js";
 
 export interface AuthedSocket extends Socket {
   user?: AuthUser;
@@ -18,6 +19,21 @@ export function authenticateSocket(socket: AuthedSocket, next: (error?: Error) =
   }
   try {
     socket.user = jwt.verify(token, env.JWT_SECRET) as AuthUser;
+    if (!isOfflineDevMode && socket.user?.id) {
+      UserModel.findById(socket.user.id)
+        .select("username")
+        .lean()
+        .then((u) => {
+          if (u?.username && socket.user) {
+            socket.user.username = u.username;
+          }
+          next();
+        })
+        .catch(() => {
+          next();
+        });
+      return;
+    }
     next();
   } catch {
     if (isOfflineDevMode) {

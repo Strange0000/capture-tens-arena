@@ -122,7 +122,7 @@ class _GameScreenState extends State<GameScreen> {
       if (app.match != null) return;
       setState(() {
         _waitSeconds++;
-        if (_waitSeconds >= 10) {
+        if (_waitSeconds >= 35) {
           _waitTimedOut = true;
         }
       });
@@ -177,8 +177,13 @@ class _GameScreenState extends State<GameScreen> {
                 const CircularProgressIndicator(color: Color(0xFF3FA97C)),
                 const SizedBox(height: 20),
                 Text(
-                  'Setting up arena...',
-                  style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
+                  _waitSeconds >= 15
+                      ? 'Waking up arena server...\n(Cloud servers take ~20s to wake from sleep)'
+                      : (_waitSeconds >= 5
+                          ? 'Connecting to match gateway...'
+                          : 'Setting up arena...'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -211,6 +216,9 @@ class _GameScreenState extends State<GameScreen> {
                       _waitTimedOut = false;
                       _waitSeconds = 0;
                     });
+                    if (!app.socket.connected) {
+                      app.reconnectSocket();
+                    }
                     app.startOffline(_lastMatchDifficulty ?? 'hard');
                     _startWaitTimer();
                   },

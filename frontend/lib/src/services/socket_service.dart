@@ -29,22 +29,16 @@ class SocketService {
     required VoidJsonCallback onPlayerBotReplaced,
     required void Function(String msg) onError,
   }) {
+    _socket?.disconnect();
     _socket?.dispose();
     _pendingEmits.clear();
     _socket = io.io(
       baseUrl,
       io.OptionBuilder()
-          // Websocket only (no polling fallback). The polling-to-websocket
-          // upgrade probe in socket_io_client 2.0.3+1 crashes with
-          // "Null check operator used on a null value" when the transport
-          // drops mid-probe on a flaky network (probe onerror / onClose
-          // force-unwrap a transport that a previous probe failure already
-          // nulled). That crash froze the username dialog live: typing
-          // produced no feedback at all. Without polling there is no probe,
-          // so the crash path never runs.
           .setTransports(['websocket'])
           .setExtraHeaders({})
           .setAuth({'token': token})
+          .enableForceNew()
           .enableAutoConnect()
           .enableReconnection()
           .build(),
@@ -99,6 +93,7 @@ class SocketService {
   }
 
   void disconnect() {
+    _socket?.disconnect();
     _socket?.dispose();
     _socket = null;
     _pendingEmits.clear();
@@ -142,12 +137,8 @@ class SocketService {
   // ── Internals ─────────────────────────────────────────────────────────────
 
   void _emit(String event, Map<String, dynamic> data) {
-    if (_socket == null) {
-      print('[Socket] WARNING: No socket, cannot emit $event');
-      return;
-    }
-    if (!_socket!.connected) {
-      print('[Socket] Socket not yet connected, buffering event: $event');
+    if (_socket == null || !_socket!.connected) {
+      print('[Socket] Socket not ready, buffering event: $event');
       _pendingEmits.add(_PendingEmit(event, data));
       return;
     }
