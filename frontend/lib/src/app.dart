@@ -27,25 +27,32 @@ class CaptureTensApp extends StatelessWidget {
       theme: buildArenaTheme(),
       builder: (context, child) {
         final app = context.watch<AppState>();
-        // PR-C: the "Choose your username" prompt is a full screen, not a
-        // floating dialog over the current screen. In the overlay the web
-        // text-input bridge never delivered keystrokes to the field's
-        // controller (the live debug readout stayed txt="" while the box
-        // showed the typed name), so no name could ever be typed. A normal
-        // screen works — the lobby search proves it — so when a username is
-        // required the chooser replaces the screen instead of covering it.
-        // It cannot be skipped: the name is picked once, at first game
-        // entry, and the held-back entry runs after a successful claim.
-        if (app.usernameChoiceRequested) {
-          return const _GlobalClickFeedback(
-            child: ChooseUsernameScreen(),
-          );
-        }
+        // The Navigator (child) must ALWAYS stay in the widget tree.
+        // On Flutter web, the Navigator owns the FocusScope and the
+        // text-input bridge that connects the browser's hidden <input>
+        // element to Flutter TextEditingControllers. When the previous
+        // code threw away `child` and returned ChooseUsernameScreen
+        // directly, the TextField rendered visually (box, caret, gold
+        // border) but keystrokes never reached the controller — the
+        // debug readout stayed txt="" because the focus infrastructure
+        // was gone. Keeping `child` in the tree via Offstage preserves
+        // the focus scope, and the username screen's TextField works
+        // exactly like the lobby search field.
         return _GlobalClickFeedback(
           child: Stack(
             children: [
-              if (child != null) child,
-              const _AchievementToaster(),
+              // Keep the Navigator alive (offstage when the username
+              // chooser is showing, so it doesn't receive taps but its
+              // focus infrastructure stays in the tree).
+              if (child != null)
+                Offstage(
+                  offstage: app.usernameChoiceRequested,
+                  child: child,
+                ),
+              if (app.usernameChoiceRequested)
+                const ChooseUsernameScreen(),
+              if (!app.usernameChoiceRequested)
+                const _AchievementToaster(),
             ],
           ),
         );

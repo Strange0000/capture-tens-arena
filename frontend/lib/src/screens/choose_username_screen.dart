@@ -7,13 +7,11 @@ import '../widgets/choose_username_form.dart';
 
 /// Full-screen "Choose your username" page (PR-C).
 ///
-/// Shown instead of the current screen whenever a username is required
-/// (first game entry, before the held-back entry runs). It is a normal
-/// screen, NOT a floating dialog overlay: in the overlay the web
-/// text-input bridge never delivered keystrokes to the field's controller
-/// (the live debug readout stayed txt="" while the box showed the typed
-/// name), so no name could ever be typed. Normal screens work — the lobby
-/// search proves it — so the chooser lives here now.
+/// Shown via the MaterialApp.builder whenever a username is required
+/// (first game entry, before the held-back entry runs). The Navigator's
+/// child is kept alive (Offstage) so Flutter web's focus scope and
+/// text-input bridge stay connected — without it the TextField renders
+/// visually but keystrokes never reach the controller.
 class ChooseUsernameScreen extends StatelessWidget {
   const ChooseUsernameScreen({super.key});
 

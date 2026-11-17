@@ -10,11 +10,12 @@ import '../theme.dart';
 /// invites, ranked) needs a unique name, and the name is permanent for
 /// this round (no rename yet).
 ///
-/// It is presented as a full screen (see ChooseUsernameScreen), NOT as a
-/// floating dialog overlay. In the overlay the web text-input bridge never
-/// delivered keystrokes to the field's controller — the live debug readout
-/// stayed txt="" while the box showed the typed name — so no name could
-/// ever be typed. A normal screen works (the lobby search proves it).
+/// It is presented via the MaterialApp.builder with the Navigator kept
+/// alive (Offstage). The Navigator must stay in the tree because on
+/// Flutter web it owns the FocusScope and text-input bridge: without it,
+/// the TextField renders visually but keystrokes never reach the
+/// controller (txt="" in the debug readout while the box shows typed
+/// text). The lobby search works because it lives inside the Navigator.
 ///
 /// The form takes its backend calls as callbacks so it can be widget
 /// tested without a live server (see test/choose_username_form_test.dart).
@@ -197,19 +198,13 @@ class _ChooseUsernameFormState extends State<ChooseUsernameForm> {
               const SizedBox(height: 20),
               TextField(
                 controller: _controller,
-                // No autofocus: on the web the programmatic focus the
-                // autofocus path requests never properly attached the
-                // engine's text input (the live debug readout stayed
-                // txt="" while the box showed the typed name, even after
-                // tapping the field). The lobby search — same field, no
-                // autofocus — works, because the user's tap drives focus.
-                // So the player taps this box, like the lobby search.
+                // No autofocus: on the web, letting the user's tap drive
+                // focus is more reliable. The lobby search works the same
+                // way — the player taps the box to start typing.
                 //
-                // No maxLength either: the lobby search has none and works,
-                // while this field froze with maxLength set. The 3–24 rule
-                // is still enforced — validateUsernameLocally rejects a
-                // name over 24 characters with a clear message instead of
-                // silently capping the input.
+                // No maxLength: the 3–24 rule is enforced by
+                // validateUsernameLocally with a clear message instead of
+                // silently capping input.
                 textCapitalization: TextCapitalization.none,
                 autocorrect: false,
                 style: const TextStyle(color: Colors.white, fontSize: 18),
