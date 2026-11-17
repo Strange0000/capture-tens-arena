@@ -117,8 +117,11 @@ class AppState extends ChangeNotifier {
   /// The old username-prefix check is only a fallback for a cached
   /// session restored before /users/me has answered.
   bool? _isGuestFlag;
-  bool get isGuest =>
-      _isGuestFlag ?? (username != null && username!.startsWith('Guest'));
+  bool get isGuest {
+    if (_isGuestFlag == true) return true;
+    if (_isGuestFlag == false && hasChosenUsername == true) return false;
+    return username != null && username!.toLowerCase().startsWith('guest');
+  }
 
   /// Incoming friend requests waiting for a reply — drives the lobby
   /// Friends badge (F5).

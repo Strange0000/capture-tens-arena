@@ -65,9 +65,11 @@ class _ChooseUsernameFormState extends State<ChooseUsernameForm> {
     // Suggest a valid version of the current name when there is one — a
     // Google profile name like "Sumit Jaiswal" becomes "SumitJaiswal".
     // Guests keep a blank field: their Guest name is reserved anyway.
-    final suggested = widget.isGuest
+    final current = widget.currentUsername ?? '';
+    final isGuestUser = widget.isGuest || current.toLowerCase().startsWith('guest');
+    final suggested = isGuestUser
         ? ''
-        : sanitizeUsernameBase(widget.currentUsername ?? '');
+        : sanitizeUsernameBase(current);
     _controller = TextEditingController(text: suggested);
     if (suggested.isNotEmpty) _scheduleCheck();
   }
@@ -102,7 +104,16 @@ class _ChooseUsernameFormState extends State<ChooseUsernameForm> {
 
   Future<void> _checkAvailability() async {
     final name = _controller.text.trim();
-    if (validateUsernameLocally(name) != null) return;
+    final problem = validateUsernameLocally(name);
+    if (problem != null) {
+      if (!mounted) return;
+      setState(() {
+        _state = _NameState.invalid;
+        _message = problem;
+        _suggestions = [];
+      });
+      return;
+    }
     final answer = await widget.onCheckAvailability(name);
     if (!mounted) return;
     // The player may have typed on while the check was in flight.

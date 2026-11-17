@@ -206,14 +206,15 @@ class AuthService {
     final cachedUser = prefs.getString('username');
     final cachedId = prefs.getString('userId');
     final cachedHasChosen = prefs.getBool('hasChosenUsername') ?? false;
+    final cachedIsGuest = prefs.getBool('isGuest') ??
+        (cachedUser != null && cachedUser.toLowerCase().startsWith('guest'));
     if (cached != null && cachedUser != null && cachedId != null) {
-      // isGuest is not cached — AppState refreshes it from /users/me
-      // (the authoritative DB flag) right after restoring the session.
       return GuestSession(
         token: cached,
         userId: cachedId,
         username: cachedUser,
         hasChosenUsername: cachedHasChosen,
+        isGuest: cachedIsGuest,
       );
     }
     return null;
@@ -228,11 +229,15 @@ class AuthService {
         final user = me['user'] as Map<String, dynamic>?;
         final freshUsername = user?['username'] as String? ?? cachedSession.username;
         final freshHasChosen = user?['hasChosenUsername'] as bool? ?? cachedSession.hasChosenUsername;
+        final freshIsGuest = (user?['guest'] == true) ||
+            cachedSession.isGuest ||
+            freshUsername.toLowerCase().startsWith('guest');
         final freshSession = GuestSession(
           token: cachedSession.token,
           userId: cachedSession.userId,
           username: freshUsername,
           hasChosenUsername: freshHasChosen,
+          isGuest: freshIsGuest,
         );
         await saveSession(freshSession);
         return freshSession;
@@ -255,19 +260,21 @@ class AuthService {
     final userId = user['id'] as String;
     final username = user['username'] as String;
     final hasChosenUsername = user['hasChosenUsername'] as bool? ?? false;
+    final isGuest = user['guest'] == true || username.toLowerCase().startsWith('guest');
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('jwt', token);
     await prefs.setString('userId', userId);
     await prefs.setString('username', username);
     await prefs.setBool('hasChosenUsername', hasChosenUsername);
+    await prefs.setBool('isGuest', isGuest);
 
     return GuestSession(
       token: token,
       userId: userId,
       username: username,
       hasChosenUsername: hasChosenUsername,
-      isGuest: user['guest'] == true,
+      isGuest: isGuest,
     );
   }
 
@@ -279,6 +286,7 @@ class AuthService {
     await prefs.setString('userId', session.userId);
     await prefs.setString('username', session.username);
     await prefs.setBool('hasChosenUsername', session.hasChosenUsername);
+    await prefs.setBool('isGuest', session.isGuest);
   }
 
   /// PR-C: is this username free? Answered live as the player types.
