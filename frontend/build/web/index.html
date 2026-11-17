@@ -18,31 +18,63 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="Capture Tens Arena — a 4-player 2v2 trick-taking card game. Capture the most 10s.">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="google-signin-client_id" content="925721095742-omjs30pn4s3lcag3r8pr5grl514voisn.apps.googleusercontent.com">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="capture_tens_arena">
+  <meta name="apple-mobile-web-app-title" content="Capture Tens Arena">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>capture_tens_arena</title>
+  <title>Capture Tens Arena</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    /* Branded splash: the page must never look blank white while the
+       Flutter engine downloads. Same ink/gold identity as the app. */
+    html, body { background: #070B13; margin: 0; height: 100%; }
+    #arena-splash {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 18px;
+      background: #070B13; color: #fff;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      text-align: center; padding: 24px;
+    }
+    #arena-splash .logo { font-size: 44px; letter-spacing: 6px; }
+    #arena-splash h1 {
+      margin: 0; font-size: 15px; font-weight: 800;
+      letter-spacing: 3px; text-transform: uppercase;
+    }
+    #arena-splash h1 span { color: #FFC857; }
+    #arena-splash p { margin: 0; font-size: 13px; color: rgba(255,255,255,.55); }
+    #arena-splash .spinner {
+      width: 28px; height: 28px; border-radius: 50%;
+      border: 3px solid rgba(255,200,87,.2);
+      border-top-color: #FFC857;
+      animation: arena-spin 0.9s linear infinite;
+    }
+    @keyframes arena-spin { to { transform: rotate(360deg); } }
+  </style>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
-
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
+  <!-- Branded loading screen, removed on Flutter's first frame. -->
+  <div id="arena-splash" role="status" aria-label="Loading Capture Tens Arena">
+    <div class="logo" aria-hidden="true">♠ ♥ ♣ ♦</div>
+    <h1>Capture Tens <span>Arena</span></h1>
+    <div class="spinner" aria-hidden="true"></div>
+    <p>Loading the Arena…</p>
+  </div>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var splash = document.getElementById('arena-splash');
+      if (splash) splash.remove();
+    });
+  </script>
   <script src="backend_config.js"></script>
   <script src="flutter_bootstrap.js" async></script>
 </body>

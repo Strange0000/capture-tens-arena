@@ -1,6 +1,7 @@
 import { Request, Router } from "express";
 import type { Server } from "socket.io";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, signJwt } from "../middleware/auth.js";
+import { usernameCheckRateLimit, usernameClaimRateLimit } from "../middleware/rateLimit.js";
 import { RankingModel } from "../models/Ranking.js";
 import { StatisticsModel } from "../models/Statistics.js";
 import { FriendModel } from "../models/Friend.js";
@@ -10,18 +11,31 @@ import { rankForMmr, TIERS } from "../services/rankingService.js";
 import { AchievementModel } from "../models/Achievement.js";
 import { ACHIEVEMENTS } from "../game/achievements.js";
 import { classifyFriendRequest, friendshipPairKey } from "../services/friendshipService.js";
+import {
+  checkUsernameAvailability,
+  claimUsername,
+  validateUsername,
+  UsernameError,
+  type UsernameStore,
+} from "../services/usernameService.js";
 
 export const usersRouter = Router();
 
 usersRouter.get("/me", requireAuth, async (req, res, next) => {
   if (isOfflineDevMode) {
     const rank = rankForMmr(0);
-    return res.json({ user: req.user, ranking: { ...rank, wins: 0, losses: 0, peakMmr: 0 }, statistics: null });
+    return res.json({ user: { ...req.user, hasChosenUsername: true }, ranking: { ...rank, wins: 0, losses: 0, peakMmr: 0 }, statistics: null });
   }
   try {
-    const [ranking, statistics] = await Promise.all([
+    const [ranking, statistics, userDoc] = await Promise.all([
       RankingModel.findOne({ userId: req.user!.id, season: currentSeason() }),
-      StatisticsModel.findOne({ userId: req.user!.id })
+      StatisticsModel.findOne({ userId: req.user!.id }),
+      // PR-C: the flag is read from the DB (authoritative), not the JWT —
+      // the JWT lives 7 days and goes stale after a username claim.
+      // Pre-migration docs lack the field, so they read as false and are
+      // prompted once at next game entry; the migration sets it true for
+      // existing non-duplicate accounts.
+      UserModel.findById(req.user!.id).select("hasChosenUsername").lean(),
     ]);
     
     // Build rank detail even if no ranking doc exists yet
@@ -29,7 +43,7 @@ usersRouter.get("/me", requireAuth, async (req, res, next) => {
     const rank = rankForMmr(mmr);
     
     res.json({
-      user: req.user,
+      user: { ...req.user, hasChosenUsername: userDoc?.hasChosenUsername ?? false },
       ranking: ranking ? {
         ...rank,
         peakMmr: ranking.peakMmr ?? ranking.mmr,
@@ -49,8 +63,93 @@ usersRouter.get("/me", requireAuth, async (req, res, next) => {
   }
 });
 
-usersRouter.get("/rank/:userId", requireAuth, async (req, res, next) => {
-  if (isOfflineDevMode) {
+function usernameStore(): UsernameStore {
+  return {
+    findOne: (query) =>
+      UserModel.findOne(query as never)
+        .lean()
+        .exec() as unknown as ReturnType<UsernameStore["findOne"]>,
+    findOneAndUpdate: (filter, update, options) =>
+      UserModel.findOneAndUpdate(filter as never, update as never, options)
+        .lean()
+        .exec() as unknown as ReturnType<UsernameStore["findOneAndUpdate"]>,
+  };
+}
+
+/**
+ * PR-C: is this username free? Answered live as the player types (the
+ * client debounces), so a taken name shows "already taken" with
+ * suggestions instead of failing on submit. Always 200 — the body says
+ * whether the name is free and why not.
+ */
+usersRouter.get(
+  "/username/available",
+  requireAuth,
+  usernameCheckRateLimit,
+  async (req, res, next) => {
+    try {
+      const raw = typeof req.query.username === "string" ? req.query.username : "";
+      if (isOfflineDevMode) {
+        const validation = validateUsername(raw);
+        if (!validation.valid) {
+          return res.json({
+            available: false,
+            reason: validation.problem === "reserved" ? "reserved" : "invalid",
+            message: validation.message,
+            suggestions: [],
+          });
+        }
+        return res.json({ available: true, message: "That name is free.", suggestions: [] });
+      }
+      res.json(await checkUsernameAvailability(raw, usernameStore()));
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * PR-C: claim a username, exactly once per account. The player is prompted
+ * at first game entry; claiming returns a fresh JWT carrying the new name,
+ * and the client reconnects its socket with it. No rename endpoint exists
+ * yet — the name is permanent for this round.
+ */
+usersRouter.post(
+  "/username/claim",
+  requireAuth,
+  usernameClaimRateLimit,
+  async (req, res, next) => {
+    try {
+      const raw = typeof req.body?.username === "string" ? req.body.username : "";
+      if (isOfflineDevMode) {
+        const validation = validateUsername(raw);
+        if (!validation.valid) {
+          return res.status(400).json({ error: validation.message });
+        }
+        const token = signJwt({
+          id: req.user!.id,
+          username: validation.username,
+          roles: req.user!.roles,
+        });
+        return res.json({
+          token,
+          user: { id: req.user!.id, username: validation.username, hasChosenUsername: true },
+        });
+      }
+      const result = await claimUsername(req.user!.id, raw, usernameStore(), (user) =>
+        signJwt(user),
+      );
+      res.json(result);
+    } catch (error) {
+      if (error instanceof UsernameError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      next(error);
+    }
+  },
+);
+
+usersRouter.get("/rank/:userId", requireAuth, async (req, res, next) => {  if (isOfflineDevMode) {
     return res.json({ rank: rankForMmr(0) });
   }
   try {

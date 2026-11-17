@@ -38,18 +38,28 @@ class GuestSession {
     required this.token,
     required this.userId,
     required this.username,
+    this.hasChosenUsername = false,
   });
 
   final String token;
   final String userId;
   final String username;
+  /// True once the player has picked their own username (PR-C). New
+  /// accounts start false and are prompted at first game entry.
+  final bool hasChosenUsername;
 }
 
 class AuthService {
-  AuthService({String? baseUrl}) 
-    : baseUrl = baseUrl ?? 'https://capture-tens-arena.onrender.com';
+  AuthService({String? baseUrl, http.Client? httpClient})
+      : baseUrl = baseUrl ?? 'https://capture-tens-arena.onrender.com',
+        _httpClient = httpClient ?? http.Client();
 
   final String baseUrl;
+
+  /// Injectable HTTP client — only the username endpoints use it, so tests
+  /// can fake the backend with package:http/testing's MockClient. The
+  /// older methods keep the top-level http calls.
+  final http.Client _httpClient;
 
   // PR-A (G3): ONE shared GoogleSignIn for the whole app, owned here and
   // injected into the web GIS button widget. A second instance would never
@@ -173,13 +183,76 @@ class AuthService {
     final user = data['user'] as Map<String, dynamic>;
     final userId = user['id'] as String;
     final username = user['username'] as String;
+    final hasChosenUsername = user['hasChosenUsername'] as bool? ?? false;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('jwt', token);
     await prefs.setString('userId', userId);
     await prefs.setString('username', username);
 
-    return GuestSession(token: token, userId: userId, username: username);
+    return GuestSession(token: token, userId: userId, username: username, hasChosenUsername: hasChosenUsername);
+  }
+
+  /// Saves a session issued after login (used when a username claim returns
+  /// a fresh JWT — the new token replaces the old one everywhere).
+  Future<void> saveSession(GuestSession session) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('jwt', session.token);
+    await prefs.setString('userId', session.userId);
+    await prefs.setString('username', session.username);
+  }
+
+  /// PR-C: is this username free? Answered live as the player types.
+  /// Returns the server's answer verbatim: {available, reason, message,
+  /// suggestions}. Throws a plain-words Exception on transport failure.
+  Future<Map<String, dynamic>> checkUsernameAvailability(String token, String username) async {
+    final response = await _httpClient.get(
+      Uri.parse('$baseUrl/users/username/available').replace(queryParameters: {'username': username.trim()}),
+      headers: _authHeaders(token),
+    ).timeout(_timeout);
+    if (response.statusCode >= 400) {
+      throw Exception('Could not check that name. Try again.');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// PR-C: claim a username, exactly once per account. Returns the fresh
+  /// session (new JWT carrying the new name). Throws a plain-words
+  /// Exception with the server's message on failure.
+  Future<GuestSession> claimUsername(String token, String username) async {
+    final response = await _httpClient.post(
+      Uri.parse('$baseUrl/users/username/claim'),
+      headers: {
+        'Content-Type': 'application/json',
+        ..._authHeaders(token),
+      },
+      body: jsonEncode({'username': username.trim()}),
+    ).timeout(_timeout);
+    if (response.statusCode >= 400) {
+      final msg = _errorMessage(response.body, 'Could not save that name. Try again.');
+      throw Exception(msg);
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final newToken = data['token'] as String;
+    final user = data['user'] as Map<String, dynamic>;
+    final session = GuestSession(
+      token: newToken,
+      userId: user['id'] as String,
+      username: user['username'] as String,
+      hasChosenUsername: true,
+    );
+    await saveSession(session);
+    return session;
+  }
+
+  String _errorMessage(String body, String fallback) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic> && decoded['error'] is String) {
+        return decoded['error'] as String;
+      }
+    } catch (_) {}
+    return fallback;
   }
 
   Future<GuestSession> googleLogin() async {
@@ -240,13 +313,14 @@ class AuthService {
     final user = data['user'] as Map<String, dynamic>;
     final userId = user['id'] as String;
     final savedUsername = user['username'] as String;
+    final hasChosenUsername = user['hasChosenUsername'] as bool? ?? false;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('jwt', token);
     await prefs.setString('userId', userId);
     await prefs.setString('username', savedUsername);
 
-    return GuestSession(token: token, userId: userId, username: savedUsername);
+    return GuestSession(token: token, userId: userId, username: savedUsername, hasChosenUsername: hasChosenUsername);
   }
 
   Future<Map<String, dynamic>> fetchMe(String token) async {

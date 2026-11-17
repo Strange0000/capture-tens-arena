@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'state/app_state.dart';
 
+import 'screens/choose_username_screen.dart';
 import 'screens/game_screen.dart';
 import 'screens/lobby_screen.dart';
 import 'screens/login_screen.dart';
@@ -15,6 +16,12 @@ import 'screens/tutorial_screen.dart';
 import 'services/audio_service.dart';
 import 'theme.dart';
 
+/// Global navigator key so AppState can push / pop the username route
+/// without needing a BuildContext. Only used for the username chooser
+/// navigation — every other screen still navigates via
+/// Navigator.of(context) from widget code.
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
 class CaptureTensApp extends StatelessWidget {
   const CaptureTensApp({super.key});
 
@@ -24,7 +31,17 @@ class CaptureTensApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Capture Tens Arena',
       theme: buildArenaTheme(),
+      navigatorKey: appNavigatorKey,
       builder: (context, child) {
+        // The Navigator (child) must ALWAYS be in the tree. On Flutter
+        // web the Navigator owns the FocusScope and text-input bridge
+        // that connects the browser's hidden <input> element to Flutter
+        // TextEditingControllers. Any widget with a TextField must live
+        // INSIDE the Navigator subtree — otherwise the field renders
+        // visually but keystrokes never reach the controller (txt=""
+        // in the debug readout while the box shows typed text). That is
+        // why the username chooser is now a proper route inside the
+        // Navigator (/choose-username), not a widget in this builder.
         return _GlobalClickFeedback(
           child: Stack(
             children: [
@@ -40,6 +57,7 @@ class CaptureTensApp extends StatelessWidget {
           '/': (_) => const LoginScreen(),
           '/lobby': (_) => const LobbyScreen(),
           '/game': (_) => const GameScreen(),
+          '/choose-username': (_) => const ChooseUsernameScreen(),
           '/matchmaking': (_) => const MatchmakingScreen(),
           '/profile': (_) => const ProfileScreen(),
           '/replay': (_) => const ReplayScreen(),
