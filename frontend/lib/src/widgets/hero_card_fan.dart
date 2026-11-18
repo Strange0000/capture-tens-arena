@@ -79,6 +79,22 @@ class _HeroCardFanState extends State<HeroCardFan>
             child: Stack(
               alignment: Alignment.center,
               children: [
+                // Ambient casino table light pool under the cards
+                Container(
+                  width: fanWidth * 0.95,
+                  height: height * 0.85,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        ArenaColors.gold.withOpacity(0.18),
+                        const Color(0xFF0F3827).withOpacity(0.22),
+                        Colors.transparent,
+                      ],
+                      stops: const [0.0, 0.45, 1.0],
+                    ),
+                  ),
+                ),
                 const Positioned.fill(child: SparkleField()),
                 AnimatedBuilder(
                   animation: _fanCtrl,

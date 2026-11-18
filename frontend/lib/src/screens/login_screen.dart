@@ -280,28 +280,96 @@ class _LoginScreenState extends State<LoginScreen>
                                   children: [
                                     const SizedBox(height: 12),
 
-                                    // Title — gold serif, like the mockup.
-                                    const RoyalTitle('Capture Tens Arena', fontSize: 40),
+                                    // Title — gold-foil luxury marquee
+                                    ShaderMask(
+                                      shaderCallback: (bounds) => const LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Color(0xFFFFF2C2),
+                                          Color(0xFFFFD166),
+                                          Color(0xFFFFC857),
+                                          Color(0xFFD4A017),
+                                        ],
+                                      ).createShader(bounds),
+                                      child: const Text(
+                                        'CAPTURE TENS ARENA',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 28,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: 4.0,
+                                          color: Colors.white,
+                                          height: 1.1,
+                                        ),
+                                      ),
+                                    ),
                                     const SizedBox(height: 8),
-                                    const Text('Capture the most 10s. Win the table.', style: TextStyle(
-                                      fontSize: 13, color: Colors.white54, fontWeight: FontWeight.w600, letterSpacing: 0.5,
-                                    )),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Container(
+                                          width: 48,
+                                          height: 1,
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              colors: [
+                                                Colors.transparent,
+                                                ArenaColors.gold.withOpacity(0.65),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        const Padding(
+                                          padding: EdgeInsets.symmetric(horizontal: 8),
+                                          child: Text(
+                                            '♦',
+                                            style: TextStyle(
+                                              color: Color(0xFFFFD166),
+                                              fontSize: 11,
+                                              shadows: [
+                                                Shadow(color: Color(0x88FFD166), blurRadius: 6),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        Container(
+                                          width: 48,
+                                          height: 1,
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              colors: [
+                                                ArenaColors.gold.withOpacity(0.65),
+                                                Colors.transparent,
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      'CAPTURE THE MOST 10s · WIN THE TABLE',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 1.5,
+                                        color: Color(0xFFD6C8A1),
+                                      ),
+                                    ),
 
                                     const SizedBox(height: 16),
 
-                                    // Hero tens (concept 2): the fan of cards
-                                    // with the glowing golden 10♠ in front
-                                    // replaces the old circular logo — the
-                                    // first page now shows the game itself.
-                                    HeroCardFan(pulse: _pulseCtrl),
-                                    const SizedBox(height: 8),
+                                    // 3D Luxury Royal Hero Emblem (Golden 10 & Royal Court)
+                                    _buildHeroEmblem(),
+                                    const SizedBox(height: 14),
 
                                     // Card suits strip with dividers
                                     _buildSuitStrip(),
-                                    const SizedBox(height: 28),
+                                    const SizedBox(height: 24),
 
-                                    // Buttons — "Welcome back" card, like the
-                                    // mockup: Google first, guest below.
+                                    // Buttons — VIP Arena Plaque
                                     AnimatedOpacity(
                                       opacity: _buttonsVisible ? 1.0 : 0.0,
                                       duration: const Duration(milliseconds: 700),
@@ -310,23 +378,83 @@ class _LoginScreenState extends State<LoginScreen>
                                         duration: const Duration(milliseconds: 700),
                                         curve: Curves.easeOutCubic,
                                         child: RoyalPanel(
-                                          padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                                          padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
                                           child: Column(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              const Text(
-                                                'Welcome back',
-                                                style: TextStyle(
-                                                  fontFamily: 'Georgia',
-                                                  fontSize: 26,
-                                                  fontWeight: FontWeight.w900,
-                                                  color: ArenaColors.goldSoft,
+                                              // Live salon status pill
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: ArenaColors.emerald.withOpacity(0.15),
+                                                  borderRadius: BorderRadius.circular(16),
+                                                  border: Border.all(
+                                                    color: ArenaColors.emerald.withOpacity(0.35),
+                                                    width: 1,
+                                                  ),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Container(
+                                                      width: 6,
+                                                      height: 6,
+                                                      decoration: const BoxDecoration(
+                                                        shape: BoxShape.circle,
+                                                        color: Color(0xFF34D399),
+                                                        boxShadow: [
+                                                          BoxShadow(
+                                                            color: Color(0xFF34D399),
+                                                            blurRadius: 6,
+                                                            spreadRadius: 1,
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    const Text(
+                                                      'ARENA SALON ACTIVE',
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        fontWeight: FontWeight.w800,
+                                                        letterSpacing: 1.0,
+                                                        color: Color(0xFF6EE7B7),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(height: 12),
+                                              ShaderMask(
+                                                shaderCallback: (bounds) => const LinearGradient(
+                                                  begin: Alignment.topCenter,
+                                                  end: Alignment.bottomCenter,
+                                                  colors: [
+                                                    Color(0xFFFFF2C2),
+                                                    Color(0xFFFFD166),
+                                                    Color(0xFFFFC857),
+                                                    Color(0xFFD4A017),
+                                                  ],
+                                                ).createShader(bounds),
+                                                child: Text(
+                                                  hasCached ? 'WELCOME BACK' : 'ENTER THE ARENA',
+                                                  style: const TextStyle(
+                                                    fontSize: 22,
+                                                    fontWeight: FontWeight.w900,
+                                                    letterSpacing: 2.2,
+                                                    color: Colors.white,
+                                                  ),
                                                 ),
                                               ),
                                               const SizedBox(height: 4),
                                               const Text(
-                                                'Multiplayer card game · Play now',
-                                                style: TextStyle(fontSize: 12, color: Colors.white54),
+                                                'High-Stakes 2v2 Card Combat · 4 Players / Table',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.white60,
+                                                  fontWeight: FontWeight.w500,
+                                                  letterSpacing: 0.3,
+                                                ),
                                               ),
                                               const SizedBox(height: 18),
                                               _buildButtons(hasCached, app),
@@ -336,17 +464,24 @@ class _LoginScreenState extends State<LoginScreen>
                                       ),
                                     ),
 
-                                    const SizedBox(height: 28),
+                                    const SizedBox(height: 24),
 
                                     Text(
                                       'v1.0  ·  Strategy • Teamwork • Tens',
-                                      style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.15), letterSpacing: 1),
+                                      style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.20), letterSpacing: 1.2),
                                     ),
-                                    const SizedBox(height: 10),
+                                    const SizedBox(height: 8),
                                     TextButton.icon(
                                       onPressed: () => Navigator.pushNamed(context, '/tutorial'),
-                                      icon: const Icon(Icons.menu_book_rounded, size: 16),
-                                      label: const Text('How to Play'),
+                                      icon: const Icon(Icons.menu_book_rounded, size: 16, color: ArenaColors.gold),
+                                      label: const Text(
+                                        'How to Play',
+                                        style: TextStyle(
+                                          color: ArenaColors.goldSoft,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -379,27 +514,108 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildSuitStrip() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        _SuitIcon('♥', const Color(0xFFE53935)),
-        _dot(),
-        _SuitIcon('♦', const Color(0xFFE53935)),
-        _dot(),
-        _SuitIcon('♣', Colors.white),
-        _dot(),
-        _SuitIcon('♠', Colors.white),
-      ],
+  Widget _buildHeroEmblem() {
+    return AnimatedBuilder(
+      animation: _pulseCtrl,
+      builder: (context, _) {
+        final p = Curves.easeInOut.transform(_pulseCtrl.value);
+        return Transform.scale(
+          scale: 1.0 + 0.025 * p,
+          child: Container(
+            width: 190,
+            height: 190,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                color: Color.lerp(
+                  const Color(0xFFD4A017),
+                  const Color(0xFFFFE9A8),
+                  p,
+                )!.withOpacity(0.85),
+                width: 2.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFFFD166).withOpacity(0.32 + 0.18 * p),
+                  blurRadius: 30 + 16 * p,
+                  spreadRadius: 2 + 3 * p,
+                ),
+                const BoxShadow(
+                  color: Color(0xFF0F3827),
+                  blurRadius: 40,
+                  spreadRadius: 8,
+                ),
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.75),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.asset(
+                  'assets/images/capture_tens_hero_emblem.jpg',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => HeroCardFan(pulse: _pulseCtrl),
+                ),
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(26),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.15 + 0.10 * p),
+                        width: 1,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
-  Widget _dot() => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 8),
-    child: Container(width: 3, height: 3, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white10)),
+  Widget _buildSuitStrip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.25),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: ArenaColors.gold.withOpacity(0.25),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _SuitIcon('♠', const Color(0xFFE2E8F0)),
+          _diamondDot(),
+          _SuitIcon('♥', const Color(0xFFEF4444)),
+          _diamondDot(),
+          _SuitIcon('♣', const Color(0xFFE2E8F0)),
+          _diamondDot(),
+          _SuitIcon('♦', const Color(0xFFEF4444)),
+        ],
+      ),
+    );
+  }
+
+  Widget _diamondDot() => const Padding(
+    padding: EdgeInsets.symmetric(horizontal: 10),
+    child: Text('♦', style: TextStyle(fontSize: 8, color: Color(0x66FFD166))),
   );
 
-  Widget _SuitIcon(String s, Color c) => Text(s, style: TextStyle(fontSize: 28, color: c.withOpacity(0.18)));
+  Widget _SuitIcon(String s, Color c) => Text(
+    s,
+    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: c.withOpacity(0.85)),
+  );
 
   /// Plain-words version of a Google sign-in failure. The raw SDK
   /// errors ("Bad state: Future already completed") mean nothing to a
@@ -512,9 +728,12 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildSwitchGoogleAccountButton() {
     return TextButton(
       onPressed: _switchingGoogle ? null : _switchGoogleAccount,
+      style: TextButton.styleFrom(
+        foregroundColor: ArenaColors.goldSoft.withOpacity(0.85),
+      ),
       child: const Text(
         'Use a different Google account',
-        style: TextStyle(fontSize: 12),
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -525,65 +744,102 @@ class _LoginScreenState extends State<LoginScreen>
         GlowPulse(
           child: RoyalGoldButton(
             label: 'Continue as ${app.cachedUsername}',
-          // Two-part label: plain "Continue as" + bold username, so
-          // the name can never read as run-on text.
-          labelWidget: RichText(
-            textAlign: TextAlign.center,
-            text: TextSpan(
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.4,
-                color: ArenaColors.ink,
-              ),
-              children: [
-                const TextSpan(text: 'Continue as  '),
-                TextSpan(
-                  text: app.cachedUsername,
-                  style: const TextStyle(fontWeight: FontWeight.w900),
+            labelWidget: RichText(
+              textAlign: TextAlign.center,
+              text: TextSpan(
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.4,
+                  color: ArenaColors.ink,
                 ),
-              ],
+                children: [
+                  const TextSpan(text: 'Continue as  '),
+                  TextSpan(
+                    text: app.cachedUsername,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ],
+              ),
             ),
-          ),
-          icon: Icons.arrow_forward_rounded,
-          loading: _loading,
-          onTap: _continueAsExisting,
+            icon: Icons.arrow_forward_rounded,
+            loading: _loading,
+            onTap: _continueAsExisting,
+            primary: true,
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         Row(children: [
           Expanded(
             child: RoyalGoldButton(
               label: 'New Guest',
-              icon: Icons.play_arrow_rounded,
+              icon: Icons.person_add_rounded,
               loading: false,
               onTap: _loginAsGuest,
               primary: false,
-              height: 50,
+              height: 48,
             ),
           ),
           const SizedBox(width: 10),
           Expanded(child: _buildGoogleButton(app, compact: true)),
         ]),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         _buildSwitchGoogleAccountButton(),
       ]);
     }
     return Column(children: [
-      // "Welcome back" card: Google first, guest below, plain words.
-      _buildGoogleButton(app),
-      const SizedBox(height: 6),
-      _buildSwitchGoogleAccountButton(),
-      const SizedBox(height: 8),
+      // Primary radiant gold Guest CTA button
       GlowPulse(
         child: RoyalGoldButton(
           label: 'Play as Guest',
           icon: Icons.play_arrow_rounded,
           loading: _loading,
           onTap: _loginAsGuest,
-          primary: false,
+          primary: true,
         ),
       ),
+      const SizedBox(height: 14),
+      // Elegant Divider
+      Row(
+        children: [
+          Expanded(
+            child: Container(
+              height: 1,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.transparent, Colors.white.withOpacity(0.18)],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              'OR SIGN IN WITH',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.4,
+                color: Colors.white.withOpacity(0.40),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Container(
+              height: 1,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.white.withOpacity(0.18), Colors.transparent],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 14),
+      _buildGoogleButton(app),
+      const SizedBox(height: 6),
+      _buildSwitchGoogleAccountButton(),
     ]);
   }
 }
