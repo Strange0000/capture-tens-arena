@@ -46,12 +46,13 @@ flutter run -d chrome
 
 ### Game Flow
 
-The game now features a complete, polished user flow:
-1. **Login Screen (`/`)**: A premium dark UI featuring an animated floating card suit background and a pulsing gradient logo. Supports Guest Login (with caching via `SharedPreferences`) and a placeholder for Google Sign-In.
-2. **Lobby Screen (`/lobby`)**: A dedicated screen replacing the old home screen. Features premium action cards for Ranked Match, Bot Match, and a Private Room expandable panel. Includes Queue/Room status banners and player Rank panel.
-3. **Rules Overlay**: A scrollable bottom sheet accessible from the Lobby and Game screens, detailing all game rules with icons and clear sections.
-4. **Game Screen (`/game`)**: The main gameplay area. Features a custom slide-up and fade entry transition. The player's hand enters with a staggered slide-up animation. 
-5. **Win Screen**: Enhanced `MatchResultOverlay` with a pulsing gold glow behind a trophy, animated score counters (counting up from zero), extended 6-second confetti for winners, and empathetic messages for defeat.
+The game features a complete, production-polished user flow:
+1. **Login Screen (`/`)**: Premium dark UI featuring animated floating card suits. Supports Guest Login (with caching via `SharedPreferences`), official Google Sign-In button with 15s watchdog protection, and mandatory unique username registration.
+2. **Lobby Screen (`/lobby`)**: Features action cards for Ranked Match (solo or party duo queue with 10s bot fallback), Bot Combat (Practice), and Custom Match Salon. Includes real-time Friends panel, presence badges, incoming toasts, and seasonal Leaderboards.
+3. **Custom Match Salon**: 4-player room topology with dynamic seat role indicators: **Teammate** (Seat 3, opposite you, emerald highlight) and **Opponents** (Seats 2 and 4). Supports direct code join and VIP in-room friend invitations.
+4. **Rules & Tutorial**: Interactive How-to-Play tutorial and scrollable bottom sheet detailing trick rules, 10s protection, and power suit selection.
+5. **Game Screen (`/game`)**: Royal Casino green felt oval table with score pill on top (`Tens / Cards / Aces`), fanned cards along the bottom, first-tap play guarantee, power-select timeout auto-pick watchdog (CR-1), and browser back button quit-proofing via `PopScope` (CR-4).
+6. **Win Screen**: Enhanced `MatchResultOverlay` with pulsing gold glow, animated score counters, confetti for winners, empathetic defeat messaging, and post-match "Add Friend" buttons.
 
 ### UI & Animations
 
