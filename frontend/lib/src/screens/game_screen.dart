@@ -352,6 +352,20 @@ class _GameScreenState extends State<GameScreen> {
       });
     }
 
+    // In-match announcement (e.g. player left / inactive bot replacement)
+    if (app.matchAnnouncement != null) {
+      final announcement = app.matchAnnouncement!;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        app.clearMatchAnnouncement();
+        _showBannerAlert(
+          announcement,
+          Icons.smart_toy_rounded,
+          const Color(0xFFFFD166),
+        );
+      });
+    }
+
     // Detect power suit selection (HUD banner, NOT bottom snackbar)
     if (match.powerSuit != null && _lastPowerSuit == null) {
       final selector = match.players.firstWhere((p) => p.seat == match.firstPlayerSeat, orElse: () => match.players.first).username;

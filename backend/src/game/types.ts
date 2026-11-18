@@ -18,6 +18,7 @@ export interface PlayerSeat {
   connected: boolean;
   isBot: boolean;
   botDifficulty?: BotDifficulty;
+  timeoutCount?: number;
 }
 
 export interface PlayedCard {

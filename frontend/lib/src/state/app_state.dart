@@ -93,6 +93,9 @@ class AppState extends ChangeNotifier {
   /// through errorMessage (red). PR-B (F5/F7).
   String? infoMessage;
 
+  /// In-match announcements (player left, inactive bot replacement, trump declared)
+  String? matchAnnouncement;
+
   /// Whether friends have been loaded at least once, so the "new
   /// friend request" toast only fires for requests that arrived after
   /// the first load — never for ones already waiting at login.
@@ -278,6 +281,7 @@ class AppState extends ChangeNotifier {
     _pendingGameEntry = null;
     _isGuestFlag = null;
     infoMessage = null;
+    matchAnnouncement = null;
     _friendsLoadedOnce = false;
     match = null;
     rankInfo = null;
@@ -327,6 +331,7 @@ class AppState extends ChangeNotifier {
       onEmoteReceived: _onEmoteReceived,
       onAchievementUnlocked: _onAchievementUnlocked,
       onPlayerBotReplaced: _onPlayerBotReplaced,
+      onMatchAnnouncement: _onMatchAnnouncement,
       onError: _onError,
       onConnected: _onSocketConnected,
     );
@@ -603,7 +608,26 @@ class AppState extends ChangeNotifier {
   }
 
   void _onPlayerBotReplaced(Map<String, dynamic> json) {
-    // A disconnected player was replaced by a bot
+    final uName = json['username']?.toString() ?? 'A player';
+    final reason = json['reason']?.toString() ?? 'left';
+    if (reason == 'inactive') {
+      matchAnnouncement = '$uName was inactive and left the game. Bot took over!';
+    } else {
+      matchAnnouncement = '$uName left the game. Bot took over!';
+    }
+    notifyListeners();
+  }
+
+  void _onMatchAnnouncement(Map<String, dynamic> json) {
+    final msg = json['message']?.toString();
+    if (msg != null && msg.isNotEmpty) {
+      matchAnnouncement = msg;
+      notifyListeners();
+    }
+  }
+
+  void clearMatchAnnouncement() {
+    matchAnnouncement = null;
     notifyListeners();
   }
 

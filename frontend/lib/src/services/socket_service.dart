@@ -34,6 +34,7 @@ class SocketService {
     required VoidJsonCallback onEmoteReceived,
     required VoidJsonCallback onAchievementUnlocked,
     required VoidJsonCallback onPlayerBotReplaced,
+    VoidJsonCallback? onMatchAnnouncement,
     required void Function(String msg) onError,
     void Function()? onConnected,
   }) {
@@ -112,6 +113,14 @@ class SocketService {
       ..on('emote:received', (data) => onEmoteReceived(_asMap(data)))
       ..on('achievements:unlocked', (data) => onAchievementUnlocked(_asMap(data)))
       ..on('match:playerBotReplaced', (data) => onPlayerBotReplaced(_asMap(data)))
+      ..on('match:announcement', (data) => onMatchAnnouncement?.call(_asMap(data)))
+      ..on('match:abandoned', (data) {
+        final map = _asMap(data);
+        final uname = map['username']?.toString() ?? 'A player';
+        if (map['ended'] != true) {
+          onMatchAnnouncement?.call({'message': '$uname left the game. Bot took over!'});
+        }
+      })
       ..on('error', (data) {
         final msg = data is Map ? (data['message'] ?? 'Socket error') : data.toString();
         print('[Socket] Socket error: $msg');
