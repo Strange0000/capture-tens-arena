@@ -9,7 +9,7 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default("7d"),
   MONGO_URI: z.string().default("mongodb://localhost:27017/capture_tens"),
   REDIS_URL: z.string().default("redis://localhost:6379"),
-  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_ID: z.string().default("925721095742-omjs30pn4s3lcag3r8pr5grl514voisn.apps.googleusercontent.com"),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX: z.coerce.number().default(120),
   TURN_TIMEOUT_MS: z.coerce.number().default(45000),

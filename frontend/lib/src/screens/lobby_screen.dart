@@ -2601,95 +2601,138 @@ class _RoomBanner extends StatelessWidget {
             style: TextStyle(fontSize: 10, color: Colors.white54, letterSpacing: 1.2, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 6),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: List.generate(4, (index) {
-              if (index < players.length) {
-                final p = players[index];
-                final uName = p['username']?.toString() ?? 'Player';
-                final uId = p['userId']?.toString() ?? '';
-                final isMe = uId == currentUserId;
-                final alreadyFriend = isFriend(uId);
+          Builder(
+            builder: (context) {
+              final myIndex = players.indexWhere((p) => p['userId']?.toString() == currentUserId);
+              final effectiveMyIndex = myIndex >= 0 ? myIndex : 0;
 
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.35),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isMe ? ArenaColors.gold.withOpacity(0.6) : Colors.white24,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircleAvatar(
-                        radius: 12,
-                        backgroundColor: isMe ? ArenaColors.gold : Colors.white24,
-                        child: Text(
-                          uName.isEmpty ? '?' : uName[0].toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: isMe ? const Color(0xFF070B13) : Colors.white,
-                          ),
+              return Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: List.generate(4, (index) {
+                  final isMe = index == effectiveMyIndex && index < players.length;
+                  final isTeammate = (index - effectiveMyIndex).abs() == 2;
+                  final roleName = isMe
+                      ? 'You'
+                      : isTeammate
+                          ? 'Teammate'
+                          : 'Opponent';
+
+                  if (index < players.length) {
+                    final p = players[index];
+                    final uName = p['username']?.toString() ?? 'Player';
+                    final uId = p['userId']?.toString() ?? '';
+                    final playerIsMe = uId == currentUserId;
+                    final alreadyFriend = isFriend(uId);
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.35),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: playerIsMe
+                              ? ArenaColors.gold.withOpacity(0.6)
+                              : isTeammate
+                                  ? ArenaColors.emerald.withOpacity(0.55)
+                                  : Colors.white24,
+                          width: playerIsMe || isTeammate ? 1.2 : 1.0,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '$uName${isMe ? ' (You)' : ''}',
-                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                      ),
-                      if (!isMe) ...[
-                        const SizedBox(width: 6),
-                        if (alreadyFriend)
-                          const Icon(Icons.check_circle, size: 14, color: ArenaColors.emerald)
-                        else
-                          InkWell(
-                            onTap: () => onAddFriend(uId, uName),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: ArenaColors.gold.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text(
-                                '+ Friend',
-                                style: TextStyle(color: ArenaColors.gold, fontSize: 10, fontWeight: FontWeight.bold),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircleAvatar(
+                            radius: 12,
+                            backgroundColor: playerIsMe
+                                ? ArenaColors.gold
+                                : isTeammate
+                                    ? ArenaColors.emerald
+                                    : Colors.white24,
+                            child: Text(
+                              uName.isEmpty ? '?' : uName[0].toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: playerIsMe || isTeammate ? const Color(0xFF070B13) : Colors.white,
                               ),
                             ),
                           ),
-                      ],
-                    ],
-                  ),
-                );
-              } else {
-                return InkWell(
-                  onTap: onInviteFriends,
-                  borderRadius: BorderRadius.circular(10),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.04),
+                          const SizedBox(width: 8),
+                          Text(
+                            playerIsMe ? '$uName (You)' : '$uName ($roleName)',
+                            style: TextStyle(
+                              color: playerIsMe
+                                  ? Colors.white
+                                  : isTeammate
+                                      ? ArenaColors.emerald
+                                      : Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (!playerIsMe) ...[
+                            const SizedBox(width: 6),
+                            if (alreadyFriend)
+                              const Icon(Icons.check_circle, size: 14, color: ArenaColors.emerald)
+                            else
+                              InkWell(
+                                onTap: () => onAddFriend(uId, uName),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: ArenaColors.gold.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    '+ Friend',
+                                    style: TextStyle(color: ArenaColors.gold, fontSize: 10, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ],
+                      ),
+                    );
+                  } else {
+                    return InkWell(
+                      onTap: onInviteFriends,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white12, style: BorderStyle.solid),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.person_add_rounded, size: 16, color: ArenaColors.gold.withOpacity(0.7)),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Seat ${index + 1}: + Invite',
-                          style: TextStyle(color: ArenaColors.gold.withOpacity(0.8), fontSize: 12),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isTeammate ? ArenaColors.emerald.withOpacity(0.08) : Colors.white.withOpacity(0.04),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isTeammate ? ArenaColors.emerald.withOpacity(0.4) : Colors.white12,
+                            style: BorderStyle.solid,
+                          ),
                         ),
-                      ],
-                    ),
-                  ),
-                );
-              }
-            }),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isTeammate ? Icons.handshake_rounded : Icons.person_add_rounded,
+                              size: 16,
+                              color: isTeammate ? ArenaColors.emerald : ArenaColors.gold.withOpacity(0.7),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '$roleName: + Invite',
+                              style: TextStyle(
+                                color: isTeammate ? ArenaColors.emerald : ArenaColors.gold.withOpacity(0.85),
+                                fontSize: 12,
+                                fontWeight: isTeammate ? FontWeight.bold : FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                }),
+              );
+            },
           ),
           const SizedBox(height: 14),
 

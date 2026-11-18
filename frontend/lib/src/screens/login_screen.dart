@@ -479,7 +479,7 @@ class _LoginScreenState extends State<LoginScreen>
     // cooldown, or no Google session in the browser) — the rendered GIS
     // button's popup flow is offered instead, so point the player at it.
     if (msg.contains('prompt suppressed')) {
-      return "Google sign-in didn't open. Try the Google button again, or play as a guest.";
+      return "Tap the official Google button below to sign in, or play as guest.";
     }
     // Round 2, bug 2: the Google popup closed without a credential
     // (e.g. Google's Error 400 page). The plugin never reports the
