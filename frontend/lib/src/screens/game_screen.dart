@@ -322,7 +322,12 @@ class _GameScreenState extends State<GameScreen> {
       final winner = match.lastTrickWinner;
       if (winner != null) {
         final team = match.lastTrickWinnerTeam;
-        _lastTrickLabel = team == null ? winner : '$winner · Team $team';
+        if (team == null) {
+          _lastTrickLabel = winner;
+        } else {
+          final isMyTeam = team == app.myTeam;
+          _lastTrickLabel = '$winner (${isMyTeam ? "You · Team $team" : "Opponent · Team $team"})';
+        }
       }
       if (winner != null && _trickWinnerMessage == null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {

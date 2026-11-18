@@ -175,54 +175,100 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
                           SizedBox(height: isShort ? 24 : 48),
 
                     // Searching text
-                    Text(
-                      isCustom ? 'CUSTOM ROOM' : 'FINDING OPPONENTS',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        letterSpacing: 4,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFFFFC857),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFC857).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFFFFC857).withOpacity(0.35)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFFFC857),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            isCustom ? 'CUSTOM SALON' : 'FINDING OPPONENTS',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              letterSpacing: 2.2,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFFFFC857),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      isCustom ? 'Room ${app.roomCode ?? ""}' : 'Ranked Match',
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
+                    const SizedBox(height: 14),
+                    ShaderMask(
+                      shaderCallback: (bounds) => const LinearGradient(
+                        colors: [Color(0xFFFFF6DD), Color(0xFFFFD166), Color(0xFFD4A017)],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ).createShader(bounds),
+                      child: Text(
+                        isCustom ? 'Room ${app.roomCode ?? ""}' : 'Ranked Arena',
+                        style: const TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.0,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       isCustom
-                          ? 'Waiting for players to join…'
-                          : 'Searching for players of similar rank…',
+                          ? 'Waiting for commanders to enter salon…'
+                          : (_elapsedSeconds < 4
+                              ? 'Searching for players of similar rank…'
+                              : (_elapsedSeconds < 8
+                                  ? 'Matching competitive 2v2 teams…'
+                                  : 'Preparing the Royal arena table…')),
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 14),
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.6),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.2,
+                      ),
                     ),
 
                     SizedBox(height: isShort ? 16 : 32),
 
                     // Timer
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(40),
-                        border: Border.all(color: Colors.white.withOpacity(0.1)),
+                        color: const Color(0xFF0F2018),
+                        borderRadius: BorderRadius.circular(30),
+                        border: Border.all(color: const Color(0xFF3FA97C).withOpacity(0.4)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF3FA97C).withOpacity(0.12),
+                            blurRadius: 14,
+                          ),
+                        ],
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.timer_outlined, color: Color(0xFF48E5C2), size: 18),
+                          const Icon(Icons.timer_outlined, color: Color(0xFF3FA97C), size: 18),
                           const SizedBox(width: 8),
                           Text(
                             _elapsed,
                             style: const TextStyle(
-                              fontSize: 22,
+                              fontSize: 20,
                               fontWeight: FontWeight.w900,
-                              color: Color(0xFF48E5C2),
+                              color: Color(0xFF3FA97C),
+                              letterSpacing: 1.5,
                               fontFeatures: [FontFeature.tabularFigures()],
                             ),
                           ),
@@ -263,41 +309,22 @@ class _MatchmakingScreenState extends State<MatchmakingScreen>
                     // Dot animation
                     _DotLoader(),
 
-                    SizedBox(height: isShort ? 16 : 32),
+                    SizedBox(height: isShort ? 24 : 40),
 
-                    if (_elapsedSeconds >= 4) ...[
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFFFC857),
-                          foregroundColor: const Color(0xFF070B13),
-                          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          elevation: 4,
-                        ),
-                        onPressed: () {
-                          app.startRankedQueueWithBots();
-                        },
-                        icon: const Icon(Icons.smart_toy_rounded, size: 20),
-                        label: const Text('Start with Bots', style: TextStyle(fontWeight: FontWeight.w900)),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-
-                    // Cancel button — always reachable now: the
-                    // scrollable layout guarantees it is on screen
-                    // (or one scroll away) at any window height.
+                    // Cancel button
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.redAccent, width: 1.2),
+                        side: BorderSide(color: Colors.redAccent.withOpacity(0.6), width: 1.2),
+                        backgroundColor: Colors.redAccent.withOpacity(0.06),
                         foregroundColor: Colors.redAccent,
                         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       ),
                       onPressed: () {
                         app.cancelRankedQueue();
                       },
                       icon: const Icon(Icons.close_rounded, size: 18),
-                      label: const Text('Cancel Search', style: TextStyle(fontWeight: FontWeight.w800)),
+                      label: const Text('Cancel Search', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5)),
                     ),
 
                     SizedBox(height: isShort ? 16 : 40),

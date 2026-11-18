@@ -250,8 +250,15 @@ class _MatchResultOverlayState extends State<MatchResultOverlay>
                             ),
                             if (winner != null) ...[
                               const SizedBox(height: 4),
-                              Text('Team $winner wins',
-                                style: const TextStyle(fontSize: 12, color: Colors.white38, fontWeight: FontWeight.w600),
+                              Text(
+                                winner == widget.myTeam
+                                    ? 'Your Team (Team $winner) wins!'
+                                    : 'Opponents (Team $winner) win',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: winner == widget.myTeam ? const Color(0xFF3FA97C) : Colors.white54,
+                                  fontWeight: FontWeight.w700,
+                                ),
                                 textAlign: TextAlign.center,
                               ),
                             ],
@@ -268,11 +275,21 @@ class _MatchResultOverlayState extends State<MatchResultOverlay>
                               animation: _countAnim,
                               builder: (context, _) => Row(
                                 children: [
-                                  _ScoreCol(label: 'Team A', captures: a, highlight: winner == 'A', progress: _countAnim.value),
+                                  _ScoreCol(
+                                    label: widget.myTeam == 'A' ? 'Your Team (A)' : 'Opponents (A)',
+                                    captures: a,
+                                    highlight: winner == 'A',
+                                    progress: _countAnim.value,
+                                  ),
                                   const SizedBox(width: 16),
                                   Container(width: 1, height: 80, color: Colors.white10),
                                   const SizedBox(width: 16),
-                                  _ScoreCol(label: 'Team B', captures: b, highlight: winner == 'B', progress: _countAnim.value),
+                                  _ScoreCol(
+                                    label: widget.myTeam == 'B' ? 'Your Team (B)' : 'Opponents (B)',
+                                    captures: b,
+                                    highlight: winner == 'B',
+                                    progress: _countAnim.value,
+                                  ),
                                 ],
                               ),
                             ),

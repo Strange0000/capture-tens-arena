@@ -93,6 +93,7 @@ class CapturesBar extends StatelessWidget {
                 _ScoreRows(
                   captures: captures,
                   completedTricks: completedTricks,
+                  myTeam: myTeam,
                   isMobile: isMobile,
                   powerSuit: powerSuit,
                   lastTrickWinnerLabel: lastTrickWinnerLabel,
@@ -137,13 +138,12 @@ class CapturesBar extends StatelessWidget {
   /// are tied too — but both counts are always displayed, so the pill
   /// never loses a segment mid-game.
   String _tiebreakerText() {
-    // Round 11: aces used to be shown only when the card counts were
-    // tied — so in a real game they vanished after trick 2 (cards
-    // were never tied again in tricks 5-13) and only reappeared in
-    // the end modal. Cards and aces are both part of the score now,
-    // always visible like the Cards line.
-    return 'Cards: Team A ${captures.a.cards}, Team B ${captures.b.cards} '
-        '· Aces: Team A ${captures.a.aces}, Team B ${captures.b.aces}';
+    final isMyTeamA = myTeam == 'A';
+    final myCards = isMyTeamA ? captures.a.cards : captures.b.cards;
+    final oppCards = isMyTeamA ? captures.b.cards : captures.a.cards;
+    final myAces = isMyTeamA ? captures.a.aces : captures.b.aces;
+    final oppAces = isMyTeamA ? captures.b.aces : captures.a.aces;
+    return 'Cards: You $myCards, Opp $oppCards · Aces: You $myAces, Opp $oppAces';
   }
 }
 
@@ -155,6 +155,7 @@ class _ScoreRows extends StatelessWidget {
   const _ScoreRows({
     required this.captures,
     required this.completedTricks,
+    required this.myTeam,
     required this.isMobile,
     required this.powerSuit,
     required this.lastTrickWinnerLabel,
@@ -163,6 +164,7 @@ class _ScoreRows extends StatelessWidget {
 
   final MatchCaptures captures;
   final int completedTricks;
+  final String myTeam;
   final bool isMobile;
   final String? powerSuit;
   final String? lastTrickWinnerLabel;
@@ -170,17 +172,19 @@ class _ScoreRows extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final aLeads = captures.a.tens > captures.b.tens;
-    final bLeads = captures.b.tens > captures.a.tens;
-    final tensTied = !aLeads && !bLeads;
+    final isMyTeamA = myTeam == 'A';
+    final myTens = isMyTeamA ? captures.a.tens : captures.b.tens;
+    final oppTens = isMyTeamA ? captures.b.tens : captures.a.tens;
+    final youLead = myTens > oppTens;
+    final oppLeads = oppTens > myTens;
+    final tensTied = myTens == oppTens;
     final trickNumber = (completedTricks + 1).clamp(1, 13);
     final progress = (completedTricks.clamp(0, 13)) / 13;
     final statusText = tensTied
-        ? 'Tied ${captures.a.tens}–${captures.b.tens}'
-        : aLeads
-            ? 'Team A leads'
-            : 'Team B leads';
-
+        ? 'Tied $myTens–$oppTens'
+        : youLead
+            ? 'You Lead'
+            : 'Opponents Lead';
 
     return Column(
       key: const ValueKey('score_card'),
@@ -189,32 +193,30 @@ class _ScoreRows extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 1) Tens score — the headline. Fixed Team A / Team B order
-            // (not swapped by myTeam), so "A 2 — 1 B" always means the
-            // same thing. The leading side is gold.
+            // 1) Tens score — You vs Opponents with Team indicator
             Flexible(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'TENS CAPTURED',
-                    style: TextStyle(
+                  Text(
+                    'TENS (TEAM $myTeam vs ${isMyTeamA ? "B" : "A"})',
+                    style: const TextStyle(
                       fontSize: 8,
                       fontWeight: FontWeight.w800,
                       color: Colors.white38,
-                      letterSpacing: 1.2,
+                      letterSpacing: 1.0,
                     ),
                   ),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'A ${captures.a.tens}',
+                        'YOU $myTens',
                         style: TextStyle(
-                          fontSize: 19,
+                          fontSize: 18,
                           fontWeight: FontWeight.w900,
-                          color: aLeads ? ArenaColors.gold : Colors.white,
+                          color: youLead ? ArenaColors.emerald : (oppLeads ? Colors.white70 : Colors.white),
                         ),
                       ),
                       const Padding(
@@ -225,11 +227,11 @@ class _ScoreRows extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '${captures.b.tens} B',
+                        '$oppTens OPP',
                         style: TextStyle(
-                          fontSize: 19,
+                          fontSize: 18,
                           fontWeight: FontWeight.w900,
-                          color: bLeads ? ArenaColors.gold : Colors.white,
+                          color: oppLeads ? ArenaColors.ruby : (youLead ? Colors.white70 : Colors.white),
                         ),
                       ),
                     ],
@@ -239,7 +241,7 @@ class _ScoreRows extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             // Plain-words leader / tie state.
-            _StatusPill(text: statusText, isTie: tensTied),
+            _StatusPill(text: statusText, isTie: tensTied, isLead: youLead),
             const SizedBox(width: 10),
             const _Divider(),
             const SizedBox(width: 10),
@@ -349,26 +351,43 @@ class _Divider extends StatelessWidget {
   }
 }
 
-/// Plain-words status pill: "Tied 2–2" (neutral) or "Team A leads"
-/// (gold tint, so the leader is obvious without reading numbers).
+/// Plain-words status pill: "Tied 2–2" (neutral), "You Lead" (emerald),
+/// or "Opponents Lead" (ruby).
 class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.text, required this.isTie});
+  const _StatusPill({
+    required this.text,
+    required this.isTie,
+    this.isLead = false,
+  });
   final String text;
   final bool isTie;
+  final bool isLead;
 
   @override
   Widget build(BuildContext context) {
+    final bg = isTie
+        ? Colors.white.withOpacity(0.08)
+        : isLead
+            ? ArenaColors.emerald.withOpacity(0.18)
+            : ArenaColors.ruby.withOpacity(0.18);
+    final border = isTie
+        ? Colors.white24
+        : isLead
+            ? ArenaColors.emerald.withOpacity(0.55)
+            : ArenaColors.ruby.withOpacity(0.55);
+    final fg = isTie
+        ? Colors.white70
+        : isLead
+            ? ArenaColors.emerald
+            : const Color(0xFFFF8585);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: isTie
-            ? Colors.white.withOpacity(0.08)
-            : ArenaColors.gold.withOpacity(0.16),
+        color: bg,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isTie
-              ? Colors.white24
-              : ArenaColors.gold.withOpacity(0.45),
+          color: border,
           width: 1,
         ),
       ),
@@ -377,7 +396,7 @@ class _StatusPill extends StatelessWidget {
         style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w900,
-          color: isTie ? Colors.white70 : ArenaColors.gold,
+          color: fg,
         ),
       ),
     );

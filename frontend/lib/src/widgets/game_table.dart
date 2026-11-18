@@ -85,7 +85,7 @@ class GameTable extends StatelessWidget {
         final double chipH = ovalHeight < 200
             ? (mobileLayout ? 47.0 : 51.0)
             : (mobileLayout ? 53.0 : 59.0);
-        final double chipW = ovalHeight < 200 ? 132.0 : 150.0;
+        final double chipW = ovalHeight < 200 ? 140.0 : 158.0;
         const double chipGap = 8.0; // clear space between a chip and a played card
 
         // Height of one player's chip (the active player's chip is
@@ -354,10 +354,12 @@ class _PlayerChip extends StatelessWidget {
   final double chipWidth;
 
   String _seatRole(int relativeSeat) {
+    final myTeamLetter = mySeat % 2 == 0 ? 'A' : 'B';
+    final oppTeamLetter = myTeamLetter == 'A' ? 'B' : 'A';
     return switch (relativeSeat) {
-      0 => 'YOU',
-      2 => 'PARTNER',
-      _ => 'OPPONENT',
+      0 => 'YOU (Team $myTeamLetter)',
+      2 => 'PARTNER (Team $myTeamLetter)',
+      _ => 'OPPONENT (Team $oppTeamLetter)',
     };
   }
 
