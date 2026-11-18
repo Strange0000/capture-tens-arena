@@ -617,7 +617,11 @@ function startMatch(io: Server, players: PlayerSeat[], mode: MatchMode) {
   }
   io.to(`match:${state.id}`).emit("match:created", { matchId: state.id, mode });
   broadcastState(io, state.id);
-  maybeBotPowerSelect(io, state.id);
+  if (state.players[state.firstPlayerSeat]?.isBot) {
+    maybeBotPowerSelect(io, state.id);
+  } else {
+    schedulePowerSelectTimeout(io, state.id, state.firstPlayerSeat, state.turnDeadline!);
+  }
 }
 
 function broadcastState(io: Server, matchId: string) {
@@ -676,6 +680,32 @@ function maybeBotPowerSelect(io: Server, matchId: string) {
       scheduleTurnTimeout(io, matchId, stateAfterDeal.currentTurnSeat, stateAfterDeal.turnDeadline, stateAfterDeal.turnGeneration);
     }
   }, env.BOT_THINK_MS);
+}
+
+function schedulePowerSelectTimeout(io: Server, matchId: string, expectedSeat: number, deadline: number) {
+  const waitMs = Math.max(0, deadline - Date.now());
+  setTimeout(() => {
+    const fresh = matchStore.get(matchId);
+    if (!fresh || fresh.phase !== "power-select" || fresh.firstPlayerSeat !== expectedSeat) return;
+
+    // Auto-select best suit: count suits in the first player's 5 cards
+    const hand = fresh.hands[fresh.firstPlayerSeat] || [];
+    const suitCounts: Record<string, number> = {};
+    for (const c of hand) {
+      suitCounts[c.suit] = (suitCounts[c.suit] || 0) + 1;
+    }
+    const bestSuit = (Object.entries(suitCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "spades") as Suit;
+    console.log(`[GAME] Match ${matchId}: Power-select timed out for human seat ${expectedSeat}. Auto-selected ${bestSuit}.`);
+
+    const stateAfterDeal = dealRemainingCards(selectPowerSuit(fresh, fresh.firstPlayerSeat, bestSuit));
+    stateAfterDeal.turnDeadline = Date.now() + env.TURN_TIMEOUT_MS;
+    matchStore.set(stateAfterDeal);
+    broadcastState(io, matchId);
+    maybeBotTurn(io, matchId);
+    if (!stateAfterDeal.players[stateAfterDeal.currentTurnSeat].isBot) {
+      scheduleTurnTimeout(io, matchId, stateAfterDeal.currentTurnSeat, stateAfterDeal.turnDeadline, stateAfterDeal.turnGeneration);
+    }
+  }, waitMs);
 }
 
 // Bot-turn watchdog. The previous version had no retry: if

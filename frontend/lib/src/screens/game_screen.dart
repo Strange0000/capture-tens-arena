@@ -370,8 +370,17 @@ class _GameScreenState extends State<GameScreen> {
     // Royal Casino room (poker reference): the old game_bg.png photo —
     // a chrome/cyan sci-fi table — is gone. The drawn wood-rim oval in
     // GameTable IS the table now, on a code-drawn felt background.
-    return RoyalBackground(
-      child: Scaffold(
+    //
+    // PR-QA (CR-4): wrap in PopScope so browser back or device back button
+    // prompts the player to confirm before abandoning an in-progress match.
+    return PopScope(
+      canPop: match.phase == 'complete',
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _confirmQuit(context, app);
+      },
+      child: RoyalBackground(
+        child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
@@ -900,8 +909,9 @@ class _GameScreenState extends State<GameScreen> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Future<void> _confirmQuit(BuildContext context, AppState app) async {
     // A finished match is not forfeited by leaving — say so, instead of
