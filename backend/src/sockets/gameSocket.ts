@@ -360,7 +360,26 @@ export function registerGameSockets(io: Server) {
       socket.join(`user:${userId}`);
       // If user is already in a match, clean it up first
       const existing = matchStore.findByUser(userId);
-      if (existing) matchStore.delete(existing.id);
+      if (existing) {
+        if (existing.mode === "offline") {
+          matchStore.delete(existing.id);
+        } else {
+          const seat = existing.players.find((p) => p.userId === userId);
+          if (seat) {
+            seat.connected = false;
+            seat.isBot = true;
+            seat.botDifficulty = "medium";
+            seat.userId = `bot-${seat.seat}-${Date.now()}`;
+            matchStore.disassociateUser(userId);
+            socket.leave(`match:${existing.id}`);
+            matchStore.set(existing);
+            broadcastState(io, existing.id);
+            if (existing.phase === "playing" && existing.currentTurnSeat === seat.seat) {
+              maybeBotTurn(io, existing.id);
+            }
+          }
+        }
+      }
 
       const seats: PlayerSeat[] = [
         { seat: 0, userId, username: playerName, connected: true, isBot: false },
@@ -399,7 +418,9 @@ export function registerGameSockets(io: Server) {
           player.connected = false;
           player.isBot = true;
           player.botDifficulty = "medium";
+          player.userId = `bot-${player.seat}-${Date.now()}`;
         }
+        matchStore.disassociateUser(userId);
         socket.leave(`match:${state.id}`);
         matchStore.set(state);
         broadcastState(io, state.id);
@@ -589,6 +610,8 @@ export function registerGameSockets(io: Server) {
         
         freshPlayer.isBot = true;
         freshPlayer.botDifficulty = "medium";
+        freshPlayer.userId = `bot-${freshPlayer.seat}-${Date.now()}`;
+        matchStore.disassociateUser(userId);
         matchStore.set(freshState);
         io.to(`match:${freshState.id}`).emit("match:announcement", {
           message: `${freshPlayer.username} left the game. Bot took over!`,
@@ -995,32 +1018,14 @@ function scheduleTurnTimeout(io: Server, matchId: string, expectedSeat: number, 
     if (player.isBot) return;
     
     player.timeoutCount = (player.timeoutCount || 0) + 1;
-    console.log(`[GAME] Match ${matchId}: Seat ${expectedSeat} (${player.username}) timed out (count: ${player.timeoutCount}).`);
+    console.log(`[GAME] Match ${matchId}: Seat ${expectedSeat} (${player.username}) timed out (count: ${player.timeoutCount}). Auto-playing card.`);
 
-    if (player.timeoutCount >= 2) {
-      player.isBot = true;
-      player.connected = false;
-      player.botDifficulty = "medium";
-      console.log(`[GAME] Match ${matchId}: Seat ${expectedSeat} (${player.username}) flagged inactive and converted to BOT.`);
-      io.to(`match:${matchId}`).emit("match:announcement", {
-        message: `${player.username} was inactive and left the game. Bot took over!`,
-        userId: player.userId,
-        username: player.username,
-        reason: "inactive",
-      });
-      io.to(`match:${matchId}`).emit("match:playerBotReplaced", {
-        userId: player.userId,
-        username: player.username,
-        reason: "inactive",
-      });
-    } else {
-      io.to(`match:${matchId}`).emit("match:announcement", {
-        message: `${player.username} was inactive (auto-played).`,
-        userId: player.userId,
-        username: player.username,
-        reason: "auto-play",
-      });
-    }
+    io.to(`match:${matchId}`).emit("match:announcement", {
+      message: `${player.username} was inactive (auto-played).`,
+      userId: player.userId,
+      username: player.username,
+      reason: "auto-play",
+    });
 
     const legalCards = legalCardsForSeat(state, expectedSeat);
     if (!legalCards || legalCards.length === 0) return;

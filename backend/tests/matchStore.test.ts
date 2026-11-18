@@ -54,4 +54,16 @@ describe("MatchStore player lifecycle", () => {
       expect(store.findByUser(userId)).toBeUndefined();
     }
   });
+
+  it("clears user mapping immediately on disassociateUser", () => {
+    const store = new MatchStore();
+    const match = makeMatch(["leaver", "p1", "p2", "p3"]);
+    store.set(match);
+
+    expect(store.findByUser("leaver")?.id).toBe(match.id);
+
+    store.disassociateUser("leaver");
+    expect(store.findByUser("leaver")).toBeUndefined();
+    expect(store.findByUser("p1")?.id).toBe(match.id);
+  });
 });

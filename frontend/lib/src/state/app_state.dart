@@ -65,7 +65,7 @@ class AppState extends ChangeNotifier {
   int roomPlayerCount = 1;
   int roomCapacity = 4;
   String? errorMessage;
-  String? _leftMatchId; // Track left match to ignore stale server updates
+  final Set<String> _leftMatchIds = {}; // Track left matches to ignore stale server updates
   
   // Rank info & Statistics
   RankInfo? rankInfo;
@@ -351,9 +351,11 @@ class AppState extends ChangeNotifier {
     // victory modal reappeared on top of a dead game. A left match id
     // is dead forever; a genuinely new match always gets a new id, and
     // only then is the guard cleared.
-    if (_leftMatchId != null) {
-      if (incoming.id == _leftMatchId) return;
-      if (incoming.phase != 'complete') _leftMatchId = null;
+    // A left match id is dead forever; a genuinely new match always gets
+    // a new id. Any incoming broadcasts from a left match are ignored.
+    if (_leftMatchIds.contains(incoming.id)) {
+      debugPrint('[AppState] ignoring match:state for left match ${incoming.id}');
+      return;
     }
     // Stale-broadcast guard: the in-memory matchStore is per-process
     // while the socket adapter is shared, so an older match:state can
@@ -1045,8 +1047,7 @@ class AppState extends ChangeNotifier {
   Future<void> queueRanked() async {
     await _startGame(() {
       print('[AppState] queueRanked called, socket connected=${socket.connected}');
-      // Ignore late state broadcasts from the previous match until a new match
-      // ID arrives. Do not clear _leftMatchId here when searching again.
+      if (match != null) _leftMatchIds.add(match!.id);
       match = null;
       socket.queueRanked(mmr: rankInfo?.mmr ?? 0);
       lobbyStatus = LobbyStatus.queuing;
@@ -1071,6 +1072,10 @@ class AppState extends ChangeNotifier {
   Future<void> startOffline(String difficulty) async {
     await _startGame(() {
       print('[AppState] startOffline($difficulty) called, socket connected=${socket.connected}');
+      if (match != null) {
+        _leftMatchIds.add(match!.id);
+        match = null;
+      }
       if (!socket.connected && token != null) {
         _connectSocket();
       }
@@ -1082,12 +1087,20 @@ class AppState extends ChangeNotifier {
 
   Future<void> createRoom() async {
     await _startGame(() {
+      if (match != null) {
+        _leftMatchIds.add(match!.id);
+        match = null;
+      }
       socket.createRoom();
     });
   }
 
   Future<void> joinRoom(String code) async {
     await _startGame(() {
+      if (match != null) {
+        _leftMatchIds.add(match!.id);
+        match = null;
+      }
       socket.joinRoom(code);
     });
   }
@@ -1116,7 +1129,7 @@ class AppState extends ChangeNotifier {
     // guard with null: a second leaveMatch() while match is already null
     // (double-tap, queue cancel) used to wipe it and let the stale
     // completed match come back.
-    if (match != null) _leftMatchId = match!.id;
+    if (match != null) _leftMatchIds.add(match!.id);
     // Explicitly cancel any ranked search as well as marking a match leave.
     socket.cancelRankedQueue();
     socket.leaveMatch();

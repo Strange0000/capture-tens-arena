@@ -23,6 +23,10 @@ export class MatchStore {
     return this.matches.get(id);
   }
 
+  disassociateUser(userId: string) {
+    this.userToMatch.delete(userId);
+  }
+
   findByUser(userId: string) {
     const matchId = this.userToMatch.get(userId);
     if (!matchId) return undefined;
