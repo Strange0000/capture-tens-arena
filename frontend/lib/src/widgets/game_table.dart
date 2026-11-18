@@ -85,7 +85,7 @@ class GameTable extends StatelessWidget {
         final double chipH = ovalHeight < 200
             ? (mobileLayout ? 47.0 : 51.0)
             : (mobileLayout ? 53.0 : 59.0);
-        final double chipW = ovalHeight < 200 ? 140.0 : 158.0;
+        final double chipW = ovalHeight < 200 ? 148.0 : 168.0;
         const double chipGap = 8.0; // clear space between a chip and a played card
 
         // Height of one player's chip (the active player's chip is
@@ -354,26 +354,24 @@ class _PlayerChip extends StatelessWidget {
   final double chipWidth;
 
   String _seatRole(int relativeSeat) {
-    final myTeamLetter = mySeat % 2 == 0 ? 'A' : 'B';
-    final oppTeamLetter = myTeamLetter == 'A' ? 'B' : 'A';
     return switch (relativeSeat) {
-      0 => 'YOU (Team $myTeamLetter)',
-      2 => 'PARTNER (Team $myTeamLetter)',
-      _ => 'OPPONENT (Team $oppTeamLetter)',
+      0 => 'YOUR TEAM · YOU',
+      2 => 'YOUR TEAM · PARTNER',
+      _ => 'OPPONENT',
     };
   }
 
   Color _teamAccent(int relativeSeat) {
     return switch (relativeSeat) {
-      0 => ArenaColors.gold, // You = Gold
-      2 => ArenaColors.emerald, // Partner = Felt green
-      _ => ArenaColors.ruby, // Opponents = Muted ruby
+      0 || 2 => ArenaColors.emerald, // You & Partner = Emerald Green (Same Team)
+      _ => ArenaColors.ruby,         // Opponents = Ruby Red
     };
   }
 
   @override
   Widget build(BuildContext context) {
     final relativeSeat = (player.seat - mySeat + 4) % 4;
+    final isMyTeam = relativeSeat == 0 || relativeSeat == 2;
     final role = _seatRole(relativeSeat);
     final accent = _teamAccent(relativeSeat);
     final borderColor = !player.connected
@@ -390,6 +388,7 @@ class _PlayerChip extends StatelessWidget {
         accentColor: accent,
         borderColor: borderColor,
         isLead: isLead,
+        isMyTeam: isMyTeam,
         avatarSize: avatarSize,
         chipWidth: chipWidth,
       );
@@ -406,7 +405,13 @@ class _PlayerChip extends StatelessWidget {
           size: avatarSize,
         ),
         const SizedBox(height: 3),
-        _NamePill(player: player, role: role, accentColor: accent, maxWidth: chipWidth),
+        _NamePill(
+          player: player,
+          role: role,
+          accentColor: accent,
+          isMyTeam: isMyTeam,
+          maxWidth: chipWidth,
+        ),
       ],
     );
   }
@@ -476,28 +481,66 @@ class _AvatarCircle extends StatelessWidget {
 
 /// Name + card count pill under the avatar — compact, never covering cards.
 class _NamePill extends StatelessWidget {
-  const _NamePill({required this.player, required this.role, required this.accentColor, this.maxWidth = 150});
+  const _NamePill({
+    required this.player,
+    required this.role,
+    required this.accentColor,
+    required this.isMyTeam,
+    this.maxWidth = 168,
+  });
   final MatchPlayer player;
   final String role;
   final Color accentColor;
+  final bool isMyTeam;
   final double maxWidth;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       constraints: BoxConstraints(maxWidth: maxWidth),
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
       decoration: BoxDecoration(
-        color: const Color(0xFF070B13).withOpacity(0.88),
+        color: const Color(0xFF070B13).withOpacity(0.92),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withOpacity(0.12)),
+        border: Border.all(
+          color: isMyTeam
+              ? ArenaColors.emerald.withOpacity(0.45)
+              : ArenaColors.ruby.withOpacity(0.35),
+          width: 1,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            role,
-            style: TextStyle(color: accentColor, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            decoration: BoxDecoration(
+              color: accentColor.withOpacity(0.18),
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 5,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: accentColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  role,
+                  style: TextStyle(
+                    color: accentColor,
+                    fontSize: 7.5,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(width: 4),
           Flexible(
@@ -532,8 +575,9 @@ class _TimedChip extends StatefulWidget {
     required this.accentColor,
     required this.borderColor,
     required this.isLead,
+    required this.isMyTeam,
     this.avatarSize = 36.0,
-    this.chipWidth = 150.0,
+    this.chipWidth = 168.0,
   });
 
   final MatchPlayer player;
@@ -542,6 +586,7 @@ class _TimedChip extends StatefulWidget {
   final Color accentColor;
   final Color borderColor;
   final bool isLead;
+  final bool isMyTeam;
   final double avatarSize;
   final double chipWidth;
 
@@ -610,6 +655,7 @@ class _TimedChipState extends State<_TimedChip> {
           player: widget.player,
           role: widget.role,
           accentColor: widget.accentColor,
+          isMyTeam: widget.isMyTeam,
           maxWidth: widget.chipWidth,
         ),
         const SizedBox(height: 3),

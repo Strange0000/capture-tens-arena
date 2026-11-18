@@ -70,6 +70,21 @@
     <p>Loading the Arena…</p>
   </div>
   <script>
+    // Clean cache and unregister old service workers so updates load immediately
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function (registrations) {
+        for (var reg of registrations) {
+          reg.unregister();
+        }
+      });
+      if (window.caches) {
+        caches.keys().then(function (keys) {
+          for (var key of keys) {
+            caches.delete(key);
+          }
+        });
+      }
+    }
     window.addEventListener('flutter-first-frame', function () {
       var splash = document.getElementById('arena-splash');
       if (splash) splash.remove();

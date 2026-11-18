@@ -40,6 +40,8 @@ class CapturesBar extends StatelessWidget {
     this.powerSuit,
     this.trickWinnerMessage,
     this.lastTrickWinnerLabel,
+    this.teammateName,
+    this.opponentNames,
   });
 
   final MatchCaptures captures;
@@ -47,6 +49,8 @@ class CapturesBar extends StatelessWidget {
   final String myTeam;
   final String? powerSuit;
   final String? trickWinnerMessage;
+  final String? teammateName;
+  final String? opponentNames;
 
   /// Persistent "Last trick: <name> · Team A" — unlike
   /// [trickWinnerMessage], this is never cleared after 2 seconds.
@@ -98,6 +102,8 @@ class CapturesBar extends StatelessWidget {
                   powerSuit: powerSuit,
                   lastTrickWinnerLabel: lastTrickWinnerLabel,
                   tiebreakerText: _tiebreakerText(),
+                  teammateName: teammateName,
+                  opponentNames: opponentNames,
                 ),
                 if (trickWinnerMessage != null) ...[
                   const SizedBox(height: 5),
@@ -160,6 +166,8 @@ class _ScoreRows extends StatelessWidget {
     required this.powerSuit,
     required this.lastTrickWinnerLabel,
     required this.tiebreakerText,
+    this.teammateName,
+    this.opponentNames,
   });
 
   final MatchCaptures captures;
@@ -169,6 +177,8 @@ class _ScoreRows extends StatelessWidget {
   final String? powerSuit;
   final String? lastTrickWinnerLabel;
   final String tiebreakerText;
+  final String? teammateName;
+  final String? opponentNames;
 
   @override
   Widget build(BuildContext context) {
@@ -186,6 +196,13 @@ class _ScoreRows extends StatelessWidget {
             ? 'You Lead'
             : 'Opponents Lead';
 
+    final teamNamesLabel = teammateName != null
+        ? 'YOU & $teammateName'
+        : 'YOUR TEAM';
+    final oppNamesLabel = opponentNames != null
+        ? opponentNames!
+        : 'OPPONENTS';
+
     return Column(
       key: const ValueKey('score_card'),
       mainAxisSize: MainAxisSize.min,
@@ -199,40 +216,83 @@ class _ScoreRows extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    'TENS (TEAM $myTeam vs ${isMyTeamA ? "B" : "A"})',
-                    style: const TextStyle(
-                      fontSize: 8,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white38,
-                      letterSpacing: 1.0,
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: ArenaColors.emerald.withOpacity(0.18),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: ArenaColors.emerald.withOpacity(0.6), width: 0.8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(width: 5, height: 5, decoration: const BoxDecoration(color: ArenaColors.emerald, shape: BoxShape.circle)),
+                            const SizedBox(width: 4),
+                            Text(
+                              teamNamesLabel,
+                              style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, color: ArenaColors.emerald, letterSpacing: 0.3),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Text('vs', style: TextStyle(fontSize: 8, color: Colors.white38, fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: ArenaColors.ruby.withOpacity(0.18),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: ArenaColors.ruby.withOpacity(0.6), width: 0.8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(width: 5, height: 5, decoration: const BoxDecoration(color: ArenaColors.ruby, shape: BoxShape.circle)),
+                            const SizedBox(width: 4),
+                            Text(
+                              oppNamesLabel,
+                              style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, color: Color(0xFFFF8585), letterSpacing: 0.3),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 2),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'YOU $myTens',
+                        '$myTens',
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 20,
                           fontWeight: FontWeight.w900,
                           color: youLead ? ArenaColors.emerald : (oppLeads ? Colors.white70 : Colors.white),
                         ),
                       ),
                       const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 4),
+                        padding: EdgeInsets.symmetric(horizontal: 5),
                         child: Text(
                           '—',
-                          style: TextStyle(fontSize: 13, color: Colors.white38),
+                          style: TextStyle(fontSize: 14, color: Colors.white38),
                         ),
                       ),
                       Text(
-                        '$oppTens OPP',
+                        '$oppTens',
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 20,
                           fontWeight: FontWeight.w900,
                           color: oppLeads ? ArenaColors.ruby : (youLead ? Colors.white70 : Colors.white),
                         ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '10s',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white.withOpacity(0.55)),
                       ),
                     ],
                   ),
@@ -310,8 +370,10 @@ class _ScoreRows extends StatelessWidget {
             Flexible(
               child: Text(
                 lastTrickWinnerLabel != null
-                    ? 'Last trick won by $lastTrickWinnerLabel'
-                    : 'No tricks played yet',
+                    ? lastTrickWinnerLabel!
+                    : (teammateName != null
+                        ? '🟢 You & $teammateName vs 🔴 $opponentNames'
+                        : 'No tricks played yet'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(

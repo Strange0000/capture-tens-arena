@@ -270,28 +270,41 @@ class _MatchResultOverlayState extends State<MatchResultOverlay>
                             const SizedBox(height: 16),
                             const Divider(color: Colors.white10),
                             const SizedBox(height: 8),
-                            // Animated score table
-                            AnimatedBuilder(
-                              animation: _countAnim,
-                              builder: (context, _) => Row(
-                                children: [
-                                  _ScoreCol(
-                                    label: widget.myTeam == 'A' ? 'Your Team (A)' : 'Opponents (A)',
-                                    captures: a,
-                                    highlight: winner == 'A',
-                                    progress: _countAnim.value,
+                            // Animated score table with player team names
+                            Builder(
+                              builder: (context) {
+                                final partner = widget.match.players.where(
+                                  (p) => p.team == widget.myTeam && p.userId != widget.currentUserId,
+                                ).firstOrNull?.username;
+                                final myTeamLabel = partner != null ? 'Your Team (You & $partner)' : 'Your Team';
+                                final opps = widget.match.players.where(
+                                  (p) => p.team != widget.myTeam,
+                                ).map((p) => p.username).join(' & ');
+                                final oppLabel = opps.isNotEmpty ? 'Opponents ($opps)' : 'Opponents';
+
+                                return AnimatedBuilder(
+                                  animation: _countAnim,
+                                  builder: (context, _) => Row(
+                                    children: [
+                                      _ScoreCol(
+                                        label: widget.myTeam == 'A' ? myTeamLabel : oppLabel,
+                                        captures: a,
+                                        highlight: winner == 'A',
+                                        progress: _countAnim.value,
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Container(width: 1, height: 80, color: Colors.white10),
+                                      const SizedBox(width: 16),
+                                      _ScoreCol(
+                                        label: widget.myTeam == 'B' ? myTeamLabel : oppLabel,
+                                        captures: b,
+                                        highlight: winner == 'B',
+                                        progress: _countAnim.value,
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(width: 16),
-                                  Container(width: 1, height: 80, color: Colors.white10),
-                                  const SizedBox(width: 16),
-                                  _ScoreCol(
-                                    label: widget.myTeam == 'B' ? 'Your Team (B)' : 'Opponents (B)',
-                                    captures: b,
-                                    highlight: winner == 'B',
-                                    progress: _countAnim.value,
-                                  ),
-                                ],
-                              ),
+                                );
+                              },
                             ),
                             // Players in this match (Add Friend)
                             Builder(

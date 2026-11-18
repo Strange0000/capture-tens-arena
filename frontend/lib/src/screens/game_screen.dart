@@ -322,17 +322,16 @@ class _GameScreenState extends State<GameScreen> {
       final winner = match.lastTrickWinner;
       if (winner != null) {
         final team = match.lastTrickWinnerTeam;
-        if (team == null) {
-          _lastTrickLabel = winner;
-        } else {
-          final isMyTeam = team == app.myTeam;
-          _lastTrickLabel = '$winner (${isMyTeam ? "You · Team $team" : "Opponent · Team $team"})';
-        }
+        final isMyTeam = team == app.myTeam;
+        _lastTrickLabel = 'Last: $winner (${isMyTeam ? "🟢 Your Team" : "🔴 Opponents"})';
       }
       if (winner != null && _trickWinnerMessage == null) {
+        final isMyTeam = match.lastTrickWinnerTeam == app.myTeam;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          setState(() => _trickWinnerMessage = '$winner captured the trick!');
+          setState(() => _trickWinnerMessage = isMyTeam
+              ? '🟢 Your Team ($winner) captured the trick!'
+              : '🔴 Opponents ($winner) captured the trick!');
           AudioService.instance.playTrickWin();
           AudioService.instance.hapticMedium();
           Future.delayed(const Duration(milliseconds: 2200), () {
@@ -589,6 +588,16 @@ class _GameScreenState extends State<GameScreen> {
                     powerSuit: match.powerSuit,
                     trickWinnerMessage: _trickWinnerMessage,
                     lastTrickWinnerLabel: _lastTrickLabel,
+                    teammateName: match.players
+                        .where((p) => (p.seat - app.mySeat + 4) % 4 == 2)
+                        .firstOrNull
+                        ?.username,
+                    opponentNames: match.players
+                        .where((p) =>
+                            (p.seat - app.mySeat + 4) % 4 == 1 ||
+                            (p.seat - app.mySeat + 4) % 4 == 3)
+                        .map((p) => p.username)
+                        .join(' & '),
                   ),
                   // Power-suit phase banner — in the Column, above
                   // the table, so it can never cover a player chip.
