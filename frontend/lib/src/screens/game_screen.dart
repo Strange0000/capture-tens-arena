@@ -398,6 +398,8 @@ class _GameScreenState extends State<GameScreen> {
         _confirmQuit(context, app);
       },
       child: RoyalBackground(
+        showSuits: false,
+        backdropAsset: 'assets/images/game_arena_bg.jpg',
         child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
@@ -713,15 +715,15 @@ class _GameScreenState extends State<GameScreen> {
                       final sw = MediaQuery.sizeOf(context).width;
                       final sh = MediaQuery.sizeOf(context).height;
                       var cw = sw < 375
-                          ? 36.0
+                          ? 38.0
                           : sw < 450
-                              ? 40.0
-                              : (sw / 9).clamp(48.0, 64.0);
+                              ? 42.0
+                              : (sw / 9).clamp(48.0, 72.0);
                       // Short viewports: shrink the cards so the whole
                       // hand fits above the bottom edge (Round 5 test:
                       // the bottom ~20-30% of the hand was clipped).
-                      if (sh < 600) cw = cw.clamp(36.0, 44.0).toDouble();
-                      if (sh < 700) cw = cw.clamp(36.0, 52.0).toDouble();
+                      if (sh < 600) cw = cw.clamp(36.0, 46.0).toDouble();
+                      if (sh < 700) cw = cw.clamp(36.0, 54.0).toDouble();
                       // Round 8: the hand is the LAST child of the
                       // Column, so if the fixed children above it
                       // (app bar + score pill + power-suit picker)

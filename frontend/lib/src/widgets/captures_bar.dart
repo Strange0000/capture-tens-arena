@@ -76,18 +76,23 @@ class CapturesBar extends StatelessWidget {
               gradient: const LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Color(0xFF123527), Color(0xFF0B241A)],
+                colors: [Color(0xFF0F261B), Color(0xFF07140E)],
               ),
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(22),
               border: Border.all(
-                color: ArenaColors.gold.withOpacity(0.55),
-                width: 1.5,
+                color: const Color(0xFFD4A017).withOpacity(0.50),
+                width: 1.2,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.45),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
+                  color: const Color(0xFFFFD166).withOpacity(0.12),
+                  blurRadius: 20,
+                  spreadRadius: 1,
+                ),
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.65),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
                 ),
               ],
             ),
@@ -269,30 +274,38 @@ class _ScoreRows extends StatelessWidget {
                       Text(
                         '$myTens',
                         style: TextStyle(
-                          fontSize: 20,
+                          fontSize: 22,
                           fontWeight: FontWeight.w900,
-                          color: youLead ? ArenaColors.emerald : (oppLeads ? Colors.white70 : Colors.white),
+                          color: youLead ? const Color(0xFF34D399) : (oppLeads ? Colors.white60 : Colors.white),
                         ),
                       ),
                       const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 5),
+                        padding: EdgeInsets.symmetric(horizontal: 6),
                         child: Text(
                           '—',
-                          style: TextStyle(fontSize: 14, color: Colors.white38),
+                          style: TextStyle(fontSize: 16, color: Color(0xFFFFD166), fontWeight: FontWeight.bold),
                         ),
                       ),
                       Text(
                         '$oppTens',
                         style: TextStyle(
-                          fontSize: 20,
+                          fontSize: 22,
                           fontWeight: FontWeight.w900,
-                          color: oppLeads ? ArenaColors.ruby : (youLead ? Colors.white70 : Colors.white),
+                          color: oppLeads ? const Color(0xFFF87171) : (youLead ? Colors.white60 : Colors.white),
                         ),
                       ),
                       const SizedBox(width: 6),
-                      Text(
-                        '10s',
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white.withOpacity(0.55)),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFD166).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(5),
+                          border: Border.all(color: const Color(0xFFFFD166).withOpacity(0.35), width: 0.8),
+                        ),
+                        child: const Text(
+                          '10s',
+                          style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, color: Color(0xFFFFD166), letterSpacing: 0.5),
+                        ),
                       ),
                     ],
                   ),

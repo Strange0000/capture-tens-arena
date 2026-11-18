@@ -18,13 +18,18 @@ class RoyalBackground extends StatelessWidget {
     required this.child,
     this.showSuits = true,
     this.useCinematicBackdrop = true,
+    this.backdropAsset,
   });
   final Widget child;
   final bool showSuits;
   final bool useCinematicBackdrop;
+  final String? backdropAsset;
 
   @override
   Widget build(BuildContext context) {
+    final asset = backdropAsset ?? 'assets/images/arena_loading_bg.jpg';
+    final isCustomBackdrop = backdropAsset != null;
+
     return Stack(
       children: [
         Positioned.fill(
@@ -45,7 +50,7 @@ class RoyalBackground extends StatelessWidget {
         if (useCinematicBackdrop)
           Positioned.fill(
             child: Image.asset(
-              'assets/images/arena_loading_bg.jpg',
+              asset,
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => const SizedBox.shrink(),
             ),
@@ -57,9 +62,9 @@ class RoyalBackground extends StatelessWidget {
                 center: const Alignment(0, -0.15),
                 radius: 1.15,
                 colors: [
-                  Colors.black.withOpacity(useCinematicBackdrop ? 0.38 : 0.0),
-                  const Color(0xFF040A07).withOpacity(useCinematicBackdrop ? 0.86 : 0.40),
-                  const Color(0xFF040A07),
+                  Colors.black.withOpacity(isCustomBackdrop ? 0.12 : (useCinematicBackdrop ? 0.38 : 0.0)),
+                  const Color(0xFF040A07).withOpacity(isCustomBackdrop ? 0.32 : (useCinematicBackdrop ? 0.86 : 0.40)),
+                  const Color(0xFF040A07).withOpacity(isCustomBackdrop ? 0.65 : 1.0),
                 ],
                 stops: const [0.0, 0.65, 1.0],
               ),
@@ -74,9 +79,9 @@ class RoyalBackground extends StatelessWidget {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  ArenaColors.gold.withOpacity(0.10),
+                  ArenaColors.gold.withOpacity(isCustomBackdrop ? 0.06 : 0.10),
                   Colors.transparent,
-                  Colors.black.withOpacity(0.30),
+                  Colors.black.withOpacity(isCustomBackdrop ? 0.20 : 0.30),
                 ],
                 stops: const [0.0, 0.40, 1.0],
               ),

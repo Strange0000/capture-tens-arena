@@ -157,7 +157,7 @@ class GameTable extends StatelessWidget {
             alignment: Alignment.center,
             clipBehavior: Clip.none,
             children: [
-              // ── Oval table: wooden rim + green felt ──
+              // ── Oval table: Luxury padded leather bolster + gold inlay + rich emerald felt ──
               Center(
                 child: Container(
                   width: ovalWidth,
@@ -166,43 +166,92 @@ class GameTable extends StatelessWidget {
                     borderRadius: BorderRadius.all(
                       Radius.elliptical(ovalWidth / 2, ovalHeight / 2),
                     ),
-                    // Light wood rim, like the poker reference —
-                    // warm tan wood, not the old dark brown.
+                    // High-stakes casino padded armrest bolster: rich mahogany & dark leather
                     gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFFB07A45), Color(0xFF7A4E24), Color(0xFF4A2C14)],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0xFF381F13), // Top rim warm light
+                        Color(0xFF221109), // Padded leather armrest
+                        Color(0xFF140804), // Underside bevel shadow
+                      ],
                     ),
                     boxShadow: [
-                      BoxShadow(color: Colors.black.withOpacity(0.55), blurRadius: 28, offset: const Offset(0, 10)),
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.80),
+                        blurRadius: 36,
+                        offset: const Offset(0, 14),
+                        spreadRadius: 2,
+                      ),
+                      BoxShadow(
+                        color: const Color(0xFFFFD166).withOpacity(0.08),
+                        blurRadius: 24,
+                        spreadRadius: 1,
+                      ),
                     ],
                   ),
-                  padding: const EdgeInsets.all(12),
-                  // Gold pinstripe ring between the wood rim and the
-                  // felt, like the reference table.
+                  padding: const EdgeInsets.all(11),
                   child: Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: const BoxDecoration(
-                      borderRadius: BorderRadius.all(Radius.elliptical(999, 999)),
-                      border: Border.fromBorderSide(
-                          BorderSide(color: Color(0xFFFFC857), width: 2)),
+                    padding: const EdgeInsets.all(2.5),
+                    decoration: BoxDecoration(
+                      borderRadius: const BorderRadius.all(Radius.elliptical(999, 999)),
+                      // Inlaid 24K gold pinstripe rail
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Color(0xFFFFF2C2),
+                          Color(0xFFFFD166),
+                          Color(0xFFFFC857),
+                          Color(0xFFD4A017),
+                        ],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFFFD166).withOpacity(0.35),
+                          blurRadius: 8,
+                        ),
+                      ],
                     ),
                     child: Container(
                       decoration: BoxDecoration(
                         borderRadius: const BorderRadius.all(Radius.elliptical(999, 999)),
-                        // Brighter mid-green felt, like the reference —
-                        // the old felt was so dark it read as black.
+                        // Deep royal casino velvet green felt with central spotlight pool
                         gradient: const RadialGradient(
-                          center: Alignment(0, -0.25),
-                          radius: 1.1,
+                          center: Alignment(0, -0.15),
+                          radius: 1.05,
                           colors: [
-                            Color(0xFF1B7A4D),
-                            Color(0xFF0E5C38),
-                            Color(0xFF0B3D2E),
+                            Color(0xFF1C6342), // Illuminated center felt
+                            Color(0xFF104A30), // Mid-felt
+                            Color(0xFF0B3322), // Edge felt
+                            Color(0xFF061B12), // Deep edge rim shadow
                           ],
+                          stops: [0.0, 0.45, 0.85, 1.0],
                         ),
                         boxShadow: [
-                          BoxShadow(color: Colors.black, blurRadius: 12, offset: Offset(0, 2)),
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.55),
+                            blurRadius: 16,
+                            spreadRadius: -2,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      // Subtle watermark gold ring framing the trick area
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Container(
+                            width: ovalWidth * 0.58,
+                            height: ovalHeight * 0.56,
+                            decoration: BoxDecoration(
+                              borderRadius: const BorderRadius.all(Radius.elliptical(999, 999)),
+                              border: Border.all(
+                                color: const Color(0xFFFFD166).withOpacity(0.14),
+                                width: 1.2,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -211,26 +260,15 @@ class GameTable extends StatelessWidget {
               ),
 
               // ── Centre: trick cards only ──
-              // No trump pill here any more: trump lives in the slim
-              // score strip at the top, and the old centre pill used to
-              // float down over the hand cards. (Round 11: the
-              // DragTarget that used to wrap this zone is gone —
-              // drag-to-play was removed because its recognizer
-              // swallowed mouse taps; see _HandArea.)
               Center(
                 child: Container(
                   width: ovalWidth * 0.78,
                   // No fixed height: the trick cards size the zone,
                   // so nothing is clipped on short screens.
                   padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    borderRadius:
-                        const BorderRadius.all(Radius.elliptical(999, 999)),
+                  decoration: const BoxDecoration(
+                    borderRadius: BorderRadius.all(Radius.elliptical(999, 999)),
                     color: Colors.transparent,
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.05),
-                      width: 1,
-                    ),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -449,11 +487,19 @@ class _AvatarCircle extends StatelessWidget {
           height: size,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: const Color(0xFF0B1424),
-            border: Border.all(color: borderColor, width: active ? 2.5 : 1.5),
+            color: const Color(0xFF07140E),
+            border: Border.all(
+              color: active ? const Color(0xFFFFD166) : borderColor,
+              width: active ? 2.5 : 1.5,
+            ),
             boxShadow: active
-                ? [BoxShadow(color: accentColor.withOpacity(0.5), blurRadius: 14, spreadRadius: 1)]
-                : [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 8)],
+                ? [
+                    BoxShadow(color: const Color(0xFFFFD166).withOpacity(0.55), blurRadius: 16, spreadRadius: 2),
+                    BoxShadow(color: accentColor.withOpacity(0.4), blurRadius: 24, spreadRadius: 4),
+                  ]
+                : [
+                    BoxShadow(color: Colors.black.withOpacity(0.55), blurRadius: 8, offset: const Offset(0, 3)),
+                  ],
           ),
           child: Center(
             child: player.isBot
@@ -461,7 +507,7 @@ class _AvatarCircle extends StatelessWidget {
                 : Text(
                     initial,
                     style: TextStyle(
-                      color: accentColor,
+                      color: active ? const Color(0xFFFFD166) : accentColor,
                       fontSize: size * 0.44,
                       fontWeight: FontWeight.w900,
                     ),
@@ -498,67 +544,81 @@ class _NamePill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       constraints: BoxConstraints(maxWidth: maxWidth),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: const Color(0xFF070B13).withOpacity(0.92),
-        borderRadius: BorderRadius.circular(8),
+        color: const Color(0xFF07120D).withOpacity(0.94),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: isMyTeam
-              ? ArenaColors.emerald.withOpacity(0.45)
-              : ArenaColors.ruby.withOpacity(0.35),
-          width: 1,
+              ? const Color(0xFF34D399).withOpacity(0.55)
+              : const Color(0xFFF87171).withOpacity(0.45),
+          width: 1.2,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.6),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
             decoration: BoxDecoration(
-              color: accentColor.withOpacity(0.18),
-              borderRadius: BorderRadius.circular(3),
+              color: accentColor.withOpacity(0.20),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: accentColor.withOpacity(0.4), width: 0.8),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 5,
-                  height: 5,
+                  width: 4,
+                  height: 4,
                   decoration: BoxDecoration(
                     color: accentColor,
                     shape: BoxShape.circle,
                   ),
                 ),
-                const SizedBox(width: 3),
+                const SizedBox(width: 3.5),
                 Text(
                   role,
                   style: TextStyle(
-                    color: accentColor,
-                    fontSize: 7.5,
+                    fontSize: 8.5,
                     fontWeight: FontWeight.w900,
+                    color: accentColor,
                     letterSpacing: 0.3,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 5),
           Flexible(
             child: Text(
               player.username,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
           const SizedBox(width: 4),
-          // A real icon, not the 🂠 emoji: that glyph is missing from
-          // the font and rendered as a tofu box ("■ 8") in the screenshot.
-          const Icon(Icons.style_rounded, size: 10, color: Colors.white70),
+          const Icon(Icons.style_rounded, size: 11, color: Color(0xFFFFD166)),
           const SizedBox(width: 2),
           Text(
             '${player.cardCount}',
-            style: const TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.w800),
+            style: const TextStyle(
+              color: Color(0xFFFFD166),
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ],
       ),
