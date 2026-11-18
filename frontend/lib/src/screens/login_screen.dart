@@ -7,6 +7,7 @@ import '../services/auth_service.dart' show GoogleSwitchResult;
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/arena_loading.dart';
+import '../widgets/hero_card_fan.dart';
 import '../widgets/royal_widgets.dart';
 import '../widgets/google_sign_in_web_button_stub.dart'
     if (dart.library.html) '../widgets/google_sign_in_web_button.dart' as google_web;
@@ -278,18 +279,22 @@ class _LoginScreenState extends State<LoginScreen>
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     const SizedBox(height: 12),
-                                    // Premium logo
-                                    _buildLogo(),
-                                    const SizedBox(height: 24),
 
                                     // Title — gold serif, like the mockup.
-                                    const RoyalTitle('Capture Tens Arena', fontSize: 36),
+                                    const RoyalTitle('Capture Tens Arena', fontSize: 40),
                                     const SizedBox(height: 8),
                                     const Text('Capture the most 10s. Win the table.', style: TextStyle(
                                       fontSize: 13, color: Colors.white54, fontWeight: FontWeight.w600, letterSpacing: 0.5,
                                     )),
 
-                                    const SizedBox(height: 24),
+                                    const SizedBox(height: 16),
+
+                                    // Hero tens (concept 2): the fan of cards
+                                    // with the glowing golden 10♠ in front
+                                    // replaces the old circular logo — the
+                                    // first page now shows the game itself.
+                                    HeroCardFan(pulse: _pulseCtrl),
+                                    const SizedBox(height: 8),
 
                                     // Card suits strip with dividers
                                     _buildSuitStrip(),
@@ -372,55 +377,6 @@ class _LoginScreenState extends State<LoginScreen>
         ),
       ),
     );
-  }
-
-  Widget _buildLogo() {
-    return TweenAnimationBuilder<Offset>(
-      tween: Tween<Offset>(
-        begin: Offset.zero,
-        end: Offset(_mouseX, _mouseY),
-      ),
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutCubic,
-      builder: (context, mouseOffset, child) {
-        return AnimatedBuilder(
-          animation: _pulseCtrl,
-          builder: (context, child) {
-            final t = Curves.easeInOut.transform(_pulseCtrl.value);
-            return Transform(
-              alignment: Alignment.center,
-              transform: Matrix4.identity()
-                ..setEntry(3, 2, 0.001)
-                ..rotateY(mouseOffset.dx * 0.1)
-                ..rotateX(-mouseOffset.dy * 0.1),
-              child: Builder(
-                builder: (context) {
-                  final logoSize = (MediaQuery.of(context).size.width * 0.35).clamp(110.0, 150.0);
-                  return Container(
-                    width: logoSize,
-                    height: logoSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFFFFC857).withOpacity(0.15 + t * 0.2),
-                      blurRadius: 30 + t * 20,
-                      spreadRadius: t * 6,
-                    ),
-                  ],
-                ),
-                child: Image.asset(
-                  'assets/images/lobby_hero_logo.png',
-                  fit: BoxFit.contain,
-                ),
-              );
-            },
-          ),
-        );
-      },
-    );
-  },
-);
   }
 
   Widget _buildSuitStrip() {
@@ -566,8 +522,9 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildButtons(bool hasCached, AppState app) {
     if (hasCached) {
       return Column(children: [
-        RoyalGoldButton(
-          label: 'Continue as ${app.cachedUsername}',
+        GlowPulse(
+          child: RoyalGoldButton(
+            label: 'Continue as ${app.cachedUsername}',
           // Two-part label: plain "Continue as" + bold username, so
           // the name can never read as run-on text.
           labelWidget: RichText(
@@ -591,6 +548,7 @@ class _LoginScreenState extends State<LoginScreen>
           icon: Icons.arrow_forward_rounded,
           loading: _loading,
           onTap: _continueAsExisting,
+          ),
         ),
         const SizedBox(height: 10),
         Row(children: [
@@ -617,12 +575,14 @@ class _LoginScreenState extends State<LoginScreen>
       const SizedBox(height: 6),
       _buildSwitchGoogleAccountButton(),
       const SizedBox(height: 8),
-      RoyalGoldButton(
-        label: 'Play as Guest',
-        icon: Icons.play_arrow_rounded,
-        loading: _loading,
-        onTap: _loginAsGuest,
-        primary: false,
+      GlowPulse(
+        child: RoyalGoldButton(
+          label: 'Play as Guest',
+          icon: Icons.play_arrow_rounded,
+          loading: _loading,
+          onTap: _loginAsGuest,
+          primary: false,
+        ),
       ),
     ]);
   }
