@@ -159,8 +159,12 @@ class AudioService {
       }
       await player.seek(Duration.zero);
       await player.play();
-    } catch (_) {
-      // Audio file playback error — fail silently
+    } catch (err) {
+      // Audio playback failed (e.g. browser audio lock or asset reload error)
+      try {
+        _players[name]?.dispose();
+      } catch (_) {}
+      _players.remove(name);
     }
   }
 

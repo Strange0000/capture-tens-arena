@@ -33,6 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadPreferences() async {
+    await audio.init();
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
@@ -224,8 +225,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           title: 'Background Music',
                           subtitle: 'Original ambient soundtrack for lobby and battle tables',
                           value: audio.musicEnabled,
-                          onChanged: (v) {
-                            setState(() => audio.setMusicEnabled(v));
+                          onChanged: (v) async {
+                            audio.hapticSelection();
+                            if (v) audio.playButtonTap();
+                            await audio.setMusicEnabled(v);
+                            setState(() {
+                              _isTestingBgm = audio.isBgmPlaying;
+                            });
                           },
                           trailingAction: audio.musicEnabled
                               ? _MiniPillButton(
@@ -234,6 +240,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   color: const Color(0xFF48E5C2),
                                   onTap: () async {
                                     audio.playButtonTap();
+                                    audio.hapticSelection();
                                     if (_isTestingBgm) {
                                       await audio.pauseBgm();
                                       setState(() => _isTestingBgm = false);
@@ -254,6 +261,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           onChanged: (v) {
                             setState(() => audio.setMusicVolume(v));
                           },
+                          onChangeEnd: (v) {
+                            audio.hapticLight();
+                          },
                         ),
                         const Divider(color: Colors.white10, height: 1),
 
@@ -264,8 +274,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           title: 'Sound Effects (SFX)',
                           subtitle: 'Card deals, suit slams, trick captures, and UI interactions',
                           value: audio.soundEnabled,
-                          onChanged: (v) {
-                            setState(() => audio.setSoundEnabled(v));
+                          onChanged: (v) async {
+                            audio.hapticSelection();
+                            await audio.setSoundEnabled(v);
+                            if (v) {
+                              await audio.playCardPlace();
+                            }
+                            setState(() {});
                           },
                           trailingAction: audio.soundEnabled
                               ? _MiniPillButton(
@@ -288,6 +303,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           onChanged: (v) {
                             setState(() => audio.setVolume(v));
                           },
+                          onChangeEnd: (v) {
+                            audio.playCardPlace();
+                            audio.hapticLight();
+                          },
                         ),
                         const Divider(color: Colors.white10, height: 1),
 
@@ -298,8 +317,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           title: 'Haptic Feedback',
                           subtitle: 'Physical vibration tactile feedback on card play & captures',
                           value: audio.hapticsEnabled,
-                          onChanged: (v) {
-                            setState(() => audio.setHapticsEnabled(v));
+                          onChanged: (v) async {
+                            await audio.setHapticsEnabled(v);
+                            if (v) {
+                              audio.hapticHeavy();
+                              audio.playButtonTap();
+                            } else {
+                              audio.hapticLight();
+                            }
+                            setState(() {});
                           },
                           trailingAction: audio.hapticsEnabled
                               ? _MiniPillButton(
@@ -334,6 +360,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           subtitle: 'Display golden neon glow around playable cards following lead suit',
                           value: _highlightLegal,
                           onChanged: (v) {
+                            audio.playButtonTap();
+                            audio.hapticSelection();
                             setState(() => _highlightLegal = v);
                             _saveBool('pref_highlight_legal', v);
                           },
@@ -346,6 +374,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           subtitle: 'Automatically organize cards by Diamonds, Hearts, Spades, and Clubs',
                           value: _autoSortHand,
                           onChanged: (v) {
+                            audio.playButtonTap();
+                            audio.hapticSelection();
                             setState(() => _autoSortHand = v);
                             _saveBool('pref_auto_sort_hand', v);
                           },
@@ -358,6 +388,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           subtitle: 'Cinematic 3D isometric pitch on the felt arena table',
                           value: _tableTilt3d,
                           onChanged: (v) {
+                            audio.playButtonTap();
+                            audio.hapticSelection();
                             setState(() => _tableTilt3d = v);
                             _saveBool('pref_table_tilt_3d', v);
                           },
@@ -370,6 +402,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           subtitle: 'Require double-tap or drag release to prevent accidental moves',
                           value: _confirmCardPlay,
                           onChanged: (v) {
+                            audio.playButtonTap();
+                            audio.hapticSelection();
                             setState(() => _confirmCardPlay = v);
                             _saveBool('pref_confirm_card_play', v);
                           },
@@ -864,58 +898,62 @@ class _LuxuryToggleRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: accentColor.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(10),
+    return InkWell(
+      onTap: () => onChanged(!value),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: accentColor.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: accentColor, size: 20),
             ),
-            child: Icon(icon, color: accentColor, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.4),
-                    fontSize: 11,
-                    height: 1.3,
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.4),
+                      fontSize: 11,
+                      height: 1.3,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          if (trailingAction != null) ...[
-            trailingAction!,
             const SizedBox(width: 8),
+            if (trailingAction != null) ...[
+              trailingAction!,
+              const SizedBox(width: 8),
+            ],
+            Switch(
+              value: value,
+              onChanged: onChanged,
+              activeColor: accentColor,
+              activeTrackColor: accentColor.withOpacity(0.35),
+              inactiveThumbColor: Colors.white38,
+              inactiveTrackColor: Colors.white10,
+            ),
           ],
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeColor: accentColor,
-            activeTrackColor: accentColor.withOpacity(0.35),
-            inactiveThumbColor: Colors.white38,
-            inactiveTrackColor: Colors.white10,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -931,6 +969,7 @@ class _LuxurySliderRow extends StatelessWidget {
     required this.enabled,
     required this.accentColor,
     required this.onChanged,
+    this.onChangeEnd,
   });
 
   final IconData icon;
@@ -939,6 +978,7 @@ class _LuxurySliderRow extends StatelessWidget {
   final bool enabled;
   final Color accentColor;
   final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChangeEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -968,6 +1008,7 @@ class _LuxurySliderRow extends StatelessWidget {
               child: Slider(
                 value: value,
                 onChanged: enabled ? onChanged : null,
+                onChangeEnd: enabled ? onChangeEnd : null,
               ),
             ),
           ),
