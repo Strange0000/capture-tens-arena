@@ -35,39 +35,157 @@
   <link rel="manifest" href="manifest.json">
   <style>
     /* Branded splash: the page must never look blank white while the
-       Flutter engine downloads. Same ink/gold identity as the app. */
-    html, body { background: #070B13; margin: 0; height: 100%; }
+       Flutter engine downloads. Same luxury casino emerald/gold identity as the app. */
+    html, body { background: #040907; margin: 0; height: 100%; }
     #arena-splash {
       position: fixed; inset: 0; z-index: 9999;
       display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 18px;
-      background: #070B13; color: #fff;
+      align-items: center; justify-content: center; gap: 16px;
+      background: radial-gradient(circle at 50% 42%, rgba(15, 56, 39, 0.82) 0%, rgba(9, 34, 24, 0.92) 55%, #040A07 100%),
+                  url('assets/assets/images/arena_loading_bg.jpg') center/cover no-repeat;
+      color: #fff;
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       text-align: center; padding: 24px;
+      user-select: none;
     }
-    #arena-splash .logo { font-size: 44px; letter-spacing: 6px; }
+    #arena-splash .emblem-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 6px;
+    }
+    #arena-splash .emblem-glow {
+      position: absolute;
+      width: 120px; height: 120px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 200, 87, 0.22) 0%, rgba(27, 122, 77, 0.35) 60%, transparent 75%);
+      filter: blur(20px);
+      animation: arena-pulse 2.4s ease-in-out infinite alternate;
+    }
+    #arena-splash .emblem-img {
+      position: relative;
+      width: 96px; height: 96px;
+      border-radius: 20px;
+      border: 1.5px solid rgba(255, 200, 87, 0.45);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+      object-fit: contain;
+    }
     #arena-splash h1 {
-      margin: 0; font-size: 15px; font-weight: 800;
-      letter-spacing: 3px; text-transform: uppercase;
+      margin: 0; font-size: 16px; font-weight: 900;
+      letter-spacing: 4.5px; text-transform: uppercase;
+      background: linear-gradient(180deg, #FFF9E6 0%, #FFD166 60%, #D4A017 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
-    #arena-splash h1 span { color: #FFC857; }
-    #arena-splash p { margin: 0; font-size: 13px; color: rgba(255,255,255,.55); }
-    #arena-splash .spinner {
-      width: 28px; height: 28px; border-radius: 50%;
-      border: 3px solid rgba(255,200,87,.2);
-      border-top-color: #FFC857;
-      animation: arena-spin 0.9s linear infinite;
+    #arena-splash .divider {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    #arena-splash .divider-line {
+      width: 44px; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,200,87,0.5));
+    }
+    #arena-splash .divider-line.right {
+      background: linear-gradient(90deg, rgba(255,200,87,0.5), transparent);
+    }
+    #arena-splash .divider-pip {
+      color: #FFC857; font-size: 9px;
+    }
+    /* Luxury Dual-Ring Loader */
+    #arena-splash .astrolabe {
+      position: relative;
+      width: 52px; height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #arena-splash .ring-outer {
+      position: absolute;
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(255, 200, 87, 0.28);
+      border-top-color: #FFD166;
+      animation: arena-spin 2.2s linear infinite;
+    }
+    #arena-splash .ring-inner {
+      position: absolute;
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(63, 169, 124, 0.35);
+      border-bottom-color: #3FA97C;
+      animation: arena-spin-rev 1.5s linear infinite;
+    }
+    #arena-splash .core-gem {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: #FFD166;
+      box-shadow: 0 0 10px #FFD166;
+      animation: arena-pulse 1.8s ease-in-out infinite alternate;
+    }
+    #arena-splash .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(12, 43, 30, 0.85);
+      border: 1.2px solid rgba(63, 169, 124, 0.45);
+      border-radius: 20px;
+      padding: 6px 16px;
+      box-shadow: 0 0 14px rgba(63, 169, 124, 0.15);
+      margin-top: 6px;
+    }
+    #arena-splash .status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #3FA97C;
+      box-shadow: 0 0 8px #3FA97C;
+    }
+    #arena-splash .status-text {
+      color: #fff;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.6px;
+    }
+    #arena-splash p.sub {
+      margin: 0;
+      font-size: 12.5px;
+      color: rgba(255,255,255,0.65);
+      letter-spacing: 0.3px;
     }
     @keyframes arena-spin { to { transform: rotate(360deg); } }
+    @keyframes arena-spin-rev { to { transform: rotate(-360deg); } }
+    @keyframes arena-pulse {
+      0% { transform: scale(0.96); opacity: 0.75; }
+      100% { transform: scale(1.06); opacity: 1; }
+    }
   </style>
 </head>
 <body>
   <!-- Branded loading screen, removed on Flutter's first frame. -->
   <div id="arena-splash" role="status" aria-label="Loading Capture Tens Arena">
-    <div class="logo" aria-hidden="true">♠ ♥ ♣ ♦</div>
-    <h1>Capture Tens <span>Arena</span></h1>
-    <div class="spinner" aria-hidden="true"></div>
-    <p>Loading the Arena…</p>
+    <div class="emblem-wrap">
+      <div class="emblem-glow"></div>
+      <img class="emblem-img" src="assets/assets/images/lobby_hero_logo.png" alt="Capture Tens Arena" onerror="this.style.display='none'">
+    </div>
+    <h1>Capture Tens Arena</h1>
+    <div class="divider">
+      <div class="divider-line"></div>
+      <div class="divider-pip">♦</div>
+      <div class="divider-line right"></div>
+    </div>
+    <div class="astrolabe">
+      <div class="ring-outer"></div>
+      <div class="ring-inner"></div>
+      <div class="core-gem"></div>
+    </div>
+    <div class="status-pill">
+      <div class="status-dot"></div>
+      <span class="status-text">Entering the Arena…</span>
+    </div>
+    <p class="sub">Shuffling the 52-card Royal deck…</p>
   </div>
   <script>
     // Clean cache and unregister old service workers so updates load immediately
